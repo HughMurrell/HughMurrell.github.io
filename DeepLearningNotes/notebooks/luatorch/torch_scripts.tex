@@ -1,0 +1,1135 @@
+\appendix
+
+\chapter{Torch Scripts}
+\label{chap:appendix}
+\typeout{START_CHAPTER "appendix" \theabspage}
+
+\section{Linear Regression}
+\label{app:linear_regression}
+
+The following script called {\tt example-linear-regression.lua}, 
+provides a very simple step-by-step example of
+linear regression, using Torch7's neural network (nn) package,
+and the optimization package (optim).
+
+Packages can be easily done using Torch7's package manager:
+
+{\tt torch-pkg install optim}
+
+To run this script and get an interactive shell once it terminates simply do:
+
+{\tt  th -i example-linear-regression.lua }
+
+The script starts by loading the necessary packages and defining a log file.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- example-linear-regression.lua
+-- 
+-- we first require the necessary packages.
+
+require 'torch'
+require 'optim'
+require 'nn'
+
+-- We write the loss to a text file and read from there to plot 
+-- the loss as training proceeds
+
+logger = optim.Logger('loss_log.txt')
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection{Create the training data}
+
+In all regression problems, some training data needs to be provided. 
+In a realistic scenarios, data comes from some database
+or file system, and needs to be loaded from disk. 
+In general, the data can be stored in arbitrary forms, and using
+Lua's flexible table data structure is usually a good idea. 
+
+Here we store the data as a Torch Tensor (2D Array), where each
+row represents a training sample, and each column a variable. The
+first column is the target variable, and the others are the
+input variables.
+
+The data for this example are from \cite{schaum}.
+The data relate the amount of corn produced, given certain amounts
+of fertilizer and insecticide. See p 157 of the text.
+
+In this example, we want to be able to predict the amount of
+corn produced, given the amount of fertilizer and insecticide used.
+In other words: fertilizer and insecticide are our two input variables,
+and corn is our target value.
+
+The script continues
+
+\begin{verbatim}
+----------------------------------------------------------------------
+--  {corn, fertilizer, insecticide}
+data = torch.Tensor{
+   {40,  6,  4},
+   {44, 10,  4},
+   {46, 12,  5},
+   {48, 14,  7},
+   {52, 16,  9},
+   {58, 18, 12},
+   {60, 22, 14},
+   {68, 24, 20},
+   {74, 26, 21},
+   {80, 32, 24}
+}
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection{Define the model (predictor)}
+
+The model will have one layer (called a module), which takes the 
+2 inputs (fertilizer and insecticide) and a bias input and produces one output, 
+(corn).
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{diagrams/linearmodel.png}
+\caption{A linear neural network consisting of 3 inputs to one node with one output.}
+\label{fig:linearmodel}
+\end{figure}
+
+
+Note that the Linear model specified below has 3 parameters:
+
+\begin{itemize}
+\item the weight assigned to fertilizer
+\item the weight assigned to insecticide
+\item the weight assigned to the bias term
+\end{itemize}
+
+In some other model specification schemes, one needs to augment the
+training data to include a constant value of 1, but this isn't done
+with the linear model.
+
+The linear model must be held in a container. A sequential container
+is appropriate since the outputs of each module become the inputs of 
+the subsequent module in the model. In this case, there is only one
+module. In more complex cases, multiple modules can be stacked using
+the sequential container.
+
+The modules are all defined in the neural network package, which is
+named {\tt nn}.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+ -- define the container
+model = nn.Sequential()         
+
+ -- define the only module       
+ninputs = 2
+noutputs = 1
+model:add(nn.Linear(ninputs, noutputs))
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection{Define a loss function, to be minimised.}
+
+In this example, we minimise the Mean Square Error (MSE) between
+the predictions of our linear model and the ground truth available
+in the dataset.
+
+Torch provides many common criterions to train neural networks.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+criterion = nn.MSECriterion()
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection{Train the model}
+
+To minimise the loss defined above, using the linear model defined
+in 'model', we follow a stochastic gradient descent procedure (SGD).
+
+SGD is a good optimisation algorithm when the amount of training data
+is large, and estimating the gradient of the loss function over the 
+entire training set is too costly.
+
+Given an arbitrarily complex model, we can retrieve its trainable
+parameters, and the gradients of our loss function with respect to these 
+parameters by doing so:
+
+\begin{verbatim}
+----------------------------------------------------------------------
+theta, dl_dtheta = model:getParameters() 
+----------------------------------------------------------------------
+\end{verbatim}
+
+In the following code, we define a closure, {\tt feval}, which computes
+the value of the loss function at a given point, $ \vtheta$, and the gradient of
+that function with respect to $\vtheta$. $\vtheta$ is the vector of trainable weights,
+which, in this example, are all the weights of the linear matrix of
+our model, plus one bias.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+feval = function(theta_new)
+   -- set theta to theta_new, if different
+   -- (in this simple example, theta_new will typically always point to theta,
+   -- so the copy is really useless)
+   if theta ~= theta_new then
+      theta:copy(theta_new)
+   end
+
+   -- select a new training sample
+   _nidtheta_ = (_nidtheta_ or 0) + 1
+   if _nidtheta_ > (#data)[1] then _nidtheta_ = 1 end
+
+   local sample = data[_nidtheta_]
+   local target = sample[{ {1} }]      -- this funny looking syntax allows
+   local inputs = sample[{ {2,3} }]    -- slicing of arrays.
+
+   -- reset gradients (gradients are always accumulated, to accommodate 
+   -- batch methods)
+   dl_dtheta:zero()
+
+   -- evaluate the loss function and its derivative wrt theta, for that sample
+   local loss_theta = criterion:forward(model:forward(inputs), target)
+   model:backward(inputs, criterion:backward(model.output, target))
+
+   -- return loss(theta) and dloss/dtheta
+   return loss_theta, dl_dtheta
+end
+----------------------------------------------------------------------
+\end{verbatim}
+
+Given the function above, we can now easily train the model using SGD.
+For that, we need to define four key parameters:
+
+\begin{itemize}
+\item  a learning rate: the size of the step taken at each stochastic estimate of the gradient
+\item a weight decay, to regularize the solution (L2 regularization)
+\item a momentum term, to average steps over time
+\item a learning rate decay, to let the algorithm converge more precisely
+\end{itemize}
+
+\begin{verbatim}
+----------------------------------------------------------------------
+sgd_params = {
+   learningRate = 1e-3,
+   learningRateDecay = 1e-4,
+   weightDecay = 0,
+   momentum = 0
+}
+----------------------------------------------------------------------
+\end{verbatim}
+
+We're now good to go... all we have left to do is run over the dataset
+for a certain number of iterations, and perform a stochastic update 
+at each iteration. The number of iterations is found empirically here,
+but should typically be determined using cross-validation (see later).
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- we cycle 1e3 times over our training data
+for i = 1,1e3 do
+
+   -- this variable is used to estimate the average loss
+   current_loss = 0
+
+   -- an epoch is a full loop over our training data
+   for i = 1,(#data)[1] do
+
+      -- optim contains several optimization algorithms. 
+      -- All of these algorithms assume the same parameters:
+      --   + a closure that computes the loss, 
+      --      and its gradient wrt to theta, given a point theta
+      --   + a point theta
+      --   + some parameters, which are algorithm-specific
+      
+      _,fs = optim.sgd(feval,theta,sgd_params)
+
+      -- Functions in optim all return two things:
+      --   + the new theta, found by the optimisation method (here SGD)
+      --   + the value of the loss functions at all points that were used by
+      --     the algorithm. SGD only estimates the function once, so
+      --     that list just contains one value.
+
+      current_loss = current_loss + fs[1]
+   end
+
+   -- report average error on epoch
+   current_loss = current_loss / (#data)[1]
+   print('current loss = ' .. current_loss)
+   
+   logger:add{['training error'] = current_loss}
+   logger:style{['training error'] = '-'}
+   logger:plot()  
+end
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection{Test the trained model.}
+
+Now that the model is trained, one can test it by evaluating it on new samples.
+
+\cite{schaum} solves the model exactly using matrix techniques and determines that 
+
+{\tt corn = 31.98 + 0.65 * fertilizer + 1.11 * insecticides}
+
+We compare our approximate results with the text's results.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+ text = {40.32, 42.92, 45.33, 48.85, 52.37, 57, 61.82, 69.78, 72.19, 79.42}
+
+print('id  approx   text')
+for i = 1,(#data)[1] do
+   local myPrediction = model:forward(data[i][{{2,3}}])
+   print(string.format("%2d  %6.2f %6.2f", i, myPrediction[1], text[i]))
+end
+----------------------------------------------------------------------
+\end{verbatim}
+
+At the end of this run the script prints the following predictions on the training set
+next to the exact solution from \cite{schaum}.
+
+\begin{verbatim}
+........
+current loss = 1.5821231708945	
+current loss = 1.5821000124998	
+current loss = 1.5820768593215	
+id  approx   text	
+ 1   40.09  40.32	
+ 2   42.77  42.92	
+ 3   45.21  45.33	
+ 4   48.78  48.85	
+ 5   52.34  52.37	
+ 6   57.02  57.00	
+ 7   61.92  61.82	
+ 8   69.95  69.78	
+ 9   72.40  72.19	
+10   79.74  79.42	
+ \end{verbatim}
+
+and the weights for the optimised model are:
+
+\begin{verbatim}
+th> theta
+  0.6676
+  1.1146
+ 31.6305
+[torch.DoubleTensor of size 3]
+\end{verbatim}
+
+which leads one to suspect that $theta[3]$ is the bias weight whilst $theta[1]$ and $theta[2]$ are the
+fertilizer and insecticide weights respectively.
+\clearpage
+
+
+
+\section{RBF regression with Torch}
+\label{app:rbf_regression}
+
+In the following script we perform RBF regression with Torch on an artificial data set.
+We choose the locations of the kernels to be the same as the locations of the training data.
+The width of the kernels is more tricky as the output of the script for various kernel widths will show.
+
+\small
+\begin{verbatim}
+----------------------------------------------------------------------
+-- ex02-kernel-regression
+--
+-- This script provides a very simple step-by-step example of
+-- kernel regression, using Torch7's neural network (nn) package,
+-- and the optimization package (optim).
+--
+
+-- note: to run this script, simply do:
+-- th ex02-kernel-regression.lua
+
+-- to run the script, and get an interactive shell once it terminates:
+-- th -i ex02-kernel-regression.lua
+
+-- we first require the necessary packages.
+
+require 'torch'
+require 'gnuplot'
+-- require 'optim'
+-- require 'nn'
+
+----------------------------------------------------------------------
+-- 1. Create the training data by adding a small error to a parabola
+
+local nData = 10 -- number of data points
+local kWidth = 1  -- kernel width
+
+local xTrain = torch.linspace(-1,1,nData) -- spread the x-data evenly
+local yTrain = torch.pow(xTrain,2) -- y is x^2
+local yTrain = yTrain + torch.mul(torch.randn(nData),0.1) -- plus error
+
+
+---------------------------------------------------------------------
+-- 2. define the Kernel
+
+local function phi(x, y)
+    return torch.exp(-(1/kWidth)*torch.sum(torch.pow(x-y,2)))
+end
+
+local Phi = torch.Tensor(nData,nData)
+for i=1,nData do
+    for j=1,nData do
+        Phi[i][j] = phi(xTrain[{{i}}],xTrain[{{j}}])
+    end
+end
+
+---------------------------------------------------------------------
+-- 3. solve for model parameters using a regulariser
+
+local reg = torch.mul(torch.eye(nData),0.001)
+local theta = torch.inverse((Phi:t()*Phi) + reg) * Phi:t() * yTrain
+
+---------------------------------------------------------------------
+-- 4. generate some test data and use the model to predict
+
+local nTestData = 100  -- number of test points
+local xTest = torch.linspace(-1,1,nTestData)
+
+local PhiTest = torch.Tensor(nData, nTestData)
+for i = 1,nData do
+    for j = 1,nTestData do
+        PhiTest[i][j] = phi(xTrain[{{i}}], xTest[{{j}}])
+    end
+end
+
+local yPred = PhiTest:t() * theta
+
+---------------------------------------------------------------------
+-- 5. plot the train and test data
+
+gnuplot.plot({'Data',xTrain,yTrain,'+'},{'Prediction',xTest,yPred,'-'})
+
+
+\end{verbatim}
+\clearpage
+
+\section{Logistic Regression}
+\label{app:logistic_regression}
+
+In this script we attempt logistic regression using sample data from UCLA,
+\url{http://www.ats.ucla.edu/stat/r/dae/mlogit.htm}
+
+The data concerns {\bf brand preference}, where there are 3 brands and 2
+explanatory variables. The variables are coded:
+
+\begin{itemize}
+   \item {\bf brand}: 1, 2 or 3
+   \item {\bf female}: 1 if the person is a female, 0 if a male
+   \item {\bf age}: a positive integer
+ \end{itemize}
+ 
+ \subsection*{Load the data}
+
+The data are stored in a {\tt csv} file, {\tt example-logistic-regression.csv},
+and read with the {\tt csvigo} package. 
+
+The data is converted into dense tensors. The tensor form has the
+advantage that it stores its elements contiguously (which leads to
+better performance) and a tensor allows one to select columns and rows
+easily, using slicing methods.
+
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- 1. Create the training data
+
+require 'nn'
+require 'optim'
+require 'csvigo'
+
+print('')
+print('Constructing dataset')
+print('')
+
+loaded = csvigo.load('example-logistic-regression.csv')
+
+
+-- first convert each variable list to a tensor:
+brands = torch.Tensor(loaded.brand)
+females = torch.Tensor(loaded.female)
+ages = torch.Tensor(loaded.age)
+
+-- copy all the input variables into a single tensor:
+dataset_inputs = torch.Tensor( (#brands)[1],2 )
+dataset_inputs[{ {},1 }] = females
+dataset_inputs[{ {},2 }] = ages
+
+-- the outputs are just the brands
+dataset_outputs = brands
+
+\end{verbatim}
+
+\subsection*{Summarise the data}
+
+\begin{verbatim}
+
+----------------------------------------------------------------------
+-- 2. summarise the data
+
+-- To implement the model, we need to know how many categories there are.
+numberOfBrands = torch.max(dataset_outputs) - torch.min(dataset_outputs) + 1
+
+function summarizeData()
+   function p(name,value) 
+      print(string.format('%20s %f', name, value) )
+   end
+   p('number of brands', numberOfBrands)
+   p('min brand', torch.min(brands))
+   p('max brand', torch.max(brands))
+   
+   p('min female', torch.min(females))
+   p('max female', torch.max(females))
+   
+   p('min age', torch.min(ages))
+   p('max age', torch.max(ages))
+end
+summarizeData()
+
+-- Pause to continue
+io.write"Press Enter to continue...";io.read()
+
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection*{Visualise the data}
+
+We use {\tt gnuplot} to produce a
+scatterplot of the data. As many of the data points overlap we
+add a small random offset to one variable so we can observe the
+data distribution.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- 3. make a scatterplot of the data
+
+require("gnuplot")
+gnuplot.figure(1)
+
+gnuplot.xlabel('age')
+gnuplot.ylabel('sex')
+gnuplot.title('Brand choice depending on sex and age')
+
+indices = torch.linspace(1,brands:size(1),brands:size(1)):long()
+selected1 = indices[brands:eq(1)]
+selected2 = indices[brands:eq(2)]
+selected3 = indices[brands:eq(3)]
+gnuplot.plot( {'Brand 1' , ages:index(1,selected1), females:index(1,selected1)
++ torch.randn(selected1:size(1)):mul(0.1), '+'}, 
+ {'Brand 2' , ages:index(1,selected2), females:index(1,selected2)
++ torch.randn(selected2:size(1)):mul(0.1), '+'}, 
+ {'Brand 3' , ages:index(1,selected3), females:index(1,selected3)
++ torch.randn(selected3:size(1)):mul(0.1), '+'} 
+)
+
+-- Pause to continue
+io.write"Press Enter to continue...";io.read()
+
+----------------------------------------------------------------------
+\end{verbatim}
+
+The resulting scatterplot for the data is shown in figure \ref{fig:brandscatter}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{diagrams/brandscatter.png}
+\caption{A scatterplot for brand preferences produced by {\tt gnuplot}.}
+\label{fig:brandscatter}
+\end{figure}
+
+\subsection*{Define the model and the loss function }
+
+The model is a multinomial logistic regression. 
+It will consist of three layers that operate sequentially:
+
+\begin{itemize}
+
+\item[1] a linear model
+\item[2] a log soft max layer
+\item[3] a  cross entropy layer
+\end{itemize}
+
+The linear model supposes that the un-normalized probability of choosing
+a specific brand is proportional to the product of unknown weights and 
+the observed variables plus a bias:
+
+{\tt Prob(brand = b) = bias + weight1 * female * weight2 * age }
+
+There are two inputs (female and age) and three outputs (one for each
+value that brand can take on)
+
+
+The soft max layer takes the 3 outputs from the linear layer and
+transforms them to lie in the range (0,1) and to sum to 1. The output
+of the soft max layer will be normalised probabilities. 
+
+The log soft max layer takes the log of these 3 outputs. This is done
+because we want to feed the log values into the {\tt ClassNLLCriterion}
+where  we minimise the cross entropy between
+the predictions of our linear model and the ground truth available
+in the dataset. The {\tt ClassNLLCriterion} expects to be fed the log probabilities in a
+tensor. Hence, the use of the LogSoftMax layer in the model instead just of SoftMax.
+
+
+We put all the layers into a sequential container.
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- 4 define the model
+
+linLayer = nn.Linear(2,3)
+softMaxLayer = nn.LogSoftMax()  
+model = nn.Sequential()
+model:add(linLayer)
+model:add(softMaxLayer)
+criterion = nn.ClassNLLCriterion()
+
+-----------------------------------------------------------------------
+
+\end{verbatim}
+
+\subsection*{Train the model}
+
+We use a second-order method: {\tt L-BFGS}, which typically yields
+more accurate results (for linear models), but can be significantly
+slower. For very large datasets, {\tt SGD} is typically much faster
+to converge, and {\tt L-FBGS} can be used to refine the results.
+
+The {\tt BFGS} method belongs to quasi-Newton methods, 
+a class of hill-climbing optimisation techniques that seek a stationary point 
+of a (preferably twice continuously differentiable) function. 
+For such problems, a necessary condition for optimality is that the gradient be zero. 
+Newton's method and the BFGS methods are not guaranteed to converge unless 
+the function has a quadratic Taylor expansion near an optimum. 
+However, BFGS has proven to have good performance even for non-smooth optimisations.
+
+In quasi-Newton methods, the Hessian matrix of second derivatives is not computed. 
+Instead, the Hessian matrix is approximated using updates specified by gradient evaluations. 
+{\tt L-BFGS} is a limited-memory version of {\tt BFGS} that is particularly suited to problems 
+with very large numbers of variables.
+
+The algorithm is named after Charles George Broyden, Roger Fletcher, Donald Goldfarb and David Shanno.
+
+In the {\tt Torch} implementation {\tt L-BFGS} parameters are
+
+\begin{itemize}
+\item {\bf line search method}: we specify a built-in line search method, which aims at 
+finding the point that minimises the loss locally
+\item {\bf max iterations}: the maximum number of iterations for the batch.
+\end{itemize}
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- 4 Train the model (Using L-BFGS)
+
+theta, dl_dtheta = model:getParameters()
+
+-- next we define the closure that evaluates f and df/dtheta, so that
+-- it estimates the true f, and true (exact) df/dtheta, over the entire
+-- dataset. This is a full batch approach.
+
+feval = function(theta_new)
+   -- set theta to theta_new, if different
+   if theta ~= theta_new then
+      theta:copy(theta_new)
+   end
+
+   -- reset gradients (gradients are always accumulated)
+   dl_dtheta:zero()
+
+   -- and batch over the whole training dataset:
+   local loss_theta = 0
+   for i = 1,(#dataset_inputs)[1] do
+      -- select a new training sample
+      _nidx_ = (_nidx_ or 0) + 1
+      if _nidx_ > (#dataset_inputs)[1] then _nidx_ = 1 end
+
+      local inputs = dataset_inputs[_nidx_]
+      local target = dataset_outputs[_nidx_]
+
+      -- evaluate the loss function and its derivative wrt theta, for that sample
+      loss_theta = loss_theta + criterion:forward(model:forward(inputs), target)
+      model:backward(inputs, criterion:backward(model.output, target))
+   end
+
+   -- normalize with batch size
+   loss_theta = loss_theta / (#dataset_inputs)[1]
+   dl_dtheta = dl_dtheta:div( (#dataset_inputs)[1] )
+
+   -- return loss(theta) and dloss/dtheta
+   return loss_theta, dl_dtheta
+end
+
+-- define the L-BFGS parameters
+lbfgs_params = {
+   lineSearch = optim.lswolfe,
+   maxIter = 1e2,
+   verbose = true
+}
+
+print('')
+print('============================================================')
+print('Training with L-BFGS')
+print('')
+
+_,fs = optim.lbfgs(feval,theta,lbfgs_params)
+
+-- fs contains all the evaluations of f, during optimization
+
+print('history of L-BFGS evaluations:')
+print(fs)
+
+io.write"Press Enter to continue...";io.read()
+
+----------------------------------------------------------------------
+\end{verbatim}
+
+\subsection*{Test the model}
+
+Now that the model is trained, one can test it by evaluating it on new data.
+
+The model constructed and trained above computes the probabilities
+of each class given the input values.
+
+We want to compare our model's results with those from the training data set.
+The input variables have narrow ranges, so we just use the model to predict
+class on all possible input variables in the training data and compare these
+predictions with the actual frequency of the classes for each female-age pair 
+in the training data
+
+The results of this exercise are shown in figure \ref{fig:logreg_results}.
+
+
+\begin{verbatim}
+----------------------------------------------------------------------
+-- 5. Test the trained model.
+
+-- first some helper functions
+
+-- return index of largest value
+function maxIndex(a,b,c)
+   if a >=b and a >= c then return 1 
+   elseif b >= a and b >= c then return 2
+   else return 3 end
+end
+
+-- return predicted brand and the probabilities of each brand
+-- for our model
+function predictOur(age, female)
+   local input = torch.Tensor(2)
+   input[1] = female  -- must be in same order as when the model was trained!
+   input[2] = age
+   local logProbs = model:forward(input)  
+   --print('predictOur', age, female, input)
+   local probs = torch.exp(logProbs)
+   --print('logProbs', logProbs)
+   --print('probs', probs[1], probs[2], probs[3] )
+   local prob1, prob2, prob3 = probs[1], probs[2], probs[3]
+   return maxIndex(prob1, prob2, prob3), prob1, prob2, prob3
+end
+      
+counts = {}
+
+function makeKey(age, brand, female)
+   -- return a string containing the values
+
+   -- Note that returning a table will not work, because each
+   -- table is unique.
+
+   -- Because Lua interns the strings, a string with a given sequence
+   -- of characters is stored only once.
+   return string.format('%2d%1d%1f', age, brand, female)
+end
+
+for i = 1,(#brands)[1] do
+   local brand = brands[i]
+   local female = females[i]
+   local age = ages[i]
+   local key = makeKey (age, brand, female)
+   counts[key] = (counts[key] or 0) + 1
+end
+
+-- return probability of each brand conditioned on age and female
+function actualProbabilities(age, female)
+   function countOf(age, brand, female)
+      return counts[makeKey(age, brand, female)] or 0
+   end
+   local count1 = countOf(age, 1, female)
+   local count2 = countOf(age, 2, female)
+   local count3 = countOf(age, 3, female)
+   local sumCounts = count1 + count2 + count3
+   if sumCounts == 0 then
+      return 0, 0, 0
+   else
+      return count1/sumCounts, count2/sumCounts, count3/sumCounts
+   end
+end
+
+-- print the headers 
+print(' ')
+lineFormat = '%-6s %-3s| %-17s | %-17s | %-1s %-1s'
+print(
+   string.format(lineFormat,
+		 '', '', 
+		 'actual probs', 'our probs', 
+		 'best', '', ''))
+choices = 'brnd1 brnd2 brnd3'
+print(string.format(lineFormat,
+		    'female', 'age', 
+		    choices, choices, 
+		    'a', 'o'))
+
+function formatFemale(female)
+   return string.format('%1d', female)
+end
+
+function formatAge(age)
+   return string.format('%2d', age)
+end
+
+function formatProbs(p1, p2, p3)
+   return string.format('%5.3f %5.3f %5.3f', p1, p2, p3)
+end
+
+function indexString(p1, p2, p3)
+   -- return index of highest probability or '-' if nearly all zeroes
+   if p1 < 0.001 and p2 < 0.001 and p3 < 0.001 then
+      return '-'
+   else 
+      return string.format('%1d', maxIndex(p1, p2, p3))
+   end
+end
+
+-- now predict class on all possible inputs and compare to actual frequencies
+-- in the training data, print table rows and accumulate accuracy
+
+for female = 0,1 do
+   for age = torch.min(ages),torch.max(ages) do
+      -- calculate the actual probabilities in the training data
+      local actual1, actual2, actual3 = actualProbabilities(age, female)
+      -- calculate the probabilities using the model we just trained
+      --print("main", age, female)
+      local ourBrand, ourProb1, ourProb2, ourProb3 = 
+	 predictOur(age, female)
+      print(
+	 string.format(lineFormat,
+		       formatFemale(female), 
+		       formatAge(age),
+		       formatProbs(actual1, actual2, actual3),
+		       formatProbs(ourProb1, ourProb2, ourProb3),
+		       indexString(actual1,actual2,actual3),
+		       indexString(ourProb1,ourProb2,ourProb3))
+	   )
+   end
+end
+
+-- thats all
+----------------------------------------------------------------------
+
+\end{verbatim}
+\clearpage
+
+\subsection*{Results}
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.8]{diagrams/logreg_results.png}
+\caption{Tabular results from the logistic regression exercise.}
+\label{fig:logreg_results}
+\end{figure}
+\begin{verbatim}
+
+\end{verbatim}
+\clearpage
+
+\section{ConvNet}
+\label{app:convnet}
+
+In the following script we create and train a ConvNet to recognise hand written digits.
+
+\small
+\begin{verbatim}
+-----------------------------------------------------------------------------
+-- load some packages
+    require 'torch'
+    require 'nn'
+    require 'nnx'
+    require 'optim'
+    require 'image'
+    require 'dataset-mnist'
+    require 'pl'
+    require 'paths'
+
+-- define model to train on the 10-class problem
+    classes = {'1','2','3','4','5','6','7','8','9','10'}
+
+-- geometry: width and height of input images
+   geometry = {32,32}
+
+-- define model to train
+   model = nn.Sequential()
+
+-- convolutional network
+-- stage 1 : mean suppresion -> filter bank -> squashing -> max pooling
+    model:add(nn.SpatialConvolutionMM(1, 32, 5, 5))
+    model:add(nn.Tanh())
+    model:add(nn.SpatialMaxPooling(3, 3, 3, 3, 1, 1))
+-- stage 2 : mean suppresion -> filter bank -> squashing -> max pooling
+    model:add(nn.SpatialConvolutionMM(32, 64, 5, 5))
+    model:add(nn.Tanh())
+    model:add(nn.SpatialMaxPooling(2, 2, 2, 2))
+-- stage 3 : standard 2-layer MLP:
+    model:add(nn.Reshape(64*3*3))
+    model:add(nn.Linear(64*3*3, 200))
+    model:add(nn.Tanh())
+    model:add(nn.Linear(200, #classes))
+
+-- retrieve parameters and gradients
+    parameters,gradParameters = model:getParameters()
+
+-- loss function: negative log-likelihood
+   model:add(nn.LogSoftMax())
+   criterion = nn.ClassNLLCriterion()
+   
+-- get/create dataset
+    nbTrainingPatches = 2000
+    nbTestingPatches = 1000
+-- create training set and normalize
+    trainData = mnist.loadTrainSet(nbTrainingPatches, geometry)
+    trainData:normalizeGlobal(mean, std)
+-- create test set and normalize
+    testData = mnist.loadTestSet(nbTestingPatches, geometry)
+    testData:normalizeGlobal(mean, std)
+
+-- optimization parameters
+   opt = {}
+   opt.batchSize = 100
+   opt.optimization = 'LBFGS'
+   opt.save = 'logs'
+   opt.coefL1 = 0
+   opt.coefL2 = 0
+   opt.plot = true
+   
+-- create logs
+-- this matrix records the current confusion across classes
+    confusion = optim.ConfusionMatrix(classes)
+-- log results to files
+   trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
+   testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
+
+------------------------------------------------------------------------------
+\end{verbatim}
+
+We have created the ConvNet and loaded the data, 
+now we need a training procedure.
+
+\begin{verbatim}
+------------------------------------------------------------------------------
+-- training function
+function train(dataset)
+   -- epoch tracker
+   epoch = epoch or 1
+
+   -- local vars
+   local time = sys.clock()
+
+   -- do one epoch
+   print('<trainer> on training set:')
+   print("<trainer> online epoch # " .. epoch .. 
+                               ' [batchSize = ' .. opt.batchSize .. ']')
+   for t = 1,dataset:size(),opt.batchSize do
+      -- create mini batch
+      local inputs = torch.Tensor(opt.batchSize,1,
+                                                  geometry[1],geometry[2])
+      local targets = torch.Tensor(opt.batchSize)
+      local k = 1
+      for i = t,math.min(t+opt.batchSize-1,dataset:size()) do
+         -- load new sample
+         local sample = dataset[i]
+         local input = sample[1]:clone()
+         local _,target = sample[2]:clone():max(1)
+         target = target:squeeze()
+         inputs[k] = input
+         targets[k] = target
+         k = k + 1
+      end
+
+      -- create closure to evaluate f(X) and df/dX
+      local feval = function(x)
+         -- just in case:
+         collectgarbage()
+
+         -- get new parameters
+         if x ~= parameters then
+            parameters:copy(x)
+         end
+
+         -- reset gradients
+         gradParameters:zero()
+
+         -- evaluate function for complete mini batch
+         local outputs = model:forward(inputs)
+         local f = criterion:forward(outputs, targets)
+
+         -- estimate df/dW
+         local df_do = criterion:backward(outputs, targets)
+         model:backward(inputs, df_do)
+
+        -- penalties (L1 and L2):
+         if opt.coefL1 ~= 0 or opt.coefL2 ~= 0 then
+            -- locals:
+            local norm,sign= torch.norm,torch.sign
+
+            -- Loss:
+            f = f + opt.coefL1 * norm(parameters,1)
+            f = f + opt.coefL2 * norm(parameters,2)^2/2
+
+            -- Gradients:
+            gradParameters:add( sign(parameters):mul(opt.coefL1) + 
+                                              parameters:clone():mul(opt.coefL2) )
+         end
+
+         -- update confusion
+         for i = 1,opt.batchSize do
+            confusion:add(outputs[i], targets[i])
+         end
+
+         -- return f and df/dX
+         return f,gradParameters
+      end
+
+      -- optimize on current mini-batch
+         -- Perform LBFGS step:
+         lbfgsState = lbfgsState or {
+            maxIter = opt.maxIter,
+            lineSearch = optim.lswolfe
+         }
+         optim.lbfgs(feval, parameters, lbfgsState)
+
+         -- disp report:
+         print('LBFGS step')
+         print(' - progress in batch: ' .. t .. '/' .. dataset:size())
+         print(' - nb of iterations: ' .. lbfgsState.nIter)
+         print(' - nb of function evalutions: ' .. lbfgsState.funcEval)
+
+   end
+
+   -- time taken
+   time = sys.clock() - time
+   time = time / dataset:size()
+   print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
+
+   -- print confusion matrix
+   print(confusion)
+   trainLogger:add{['% mean class accuracy (train set)'] = 
+                                              confusion.totalValid * 100}
+   confusion:zero()
+
+   -- save/log current net
+   local filename = paths.concat(opt.save, 'mnist.net')
+   os.execute('mkdir -p ' .. sys.dirname(filename))
+   if paths.filep(filename) then
+      os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
+   end
+   print('<trainer> saving network to '..filename)
+   -- torch.save(filename, model)
+
+   -- next epoch
+   epoch = epoch + 1
+end
+-----------------------------------------------------------------------
+\end{verbatim}
+
+and we need a {\tt testing} procedure to see how successful the training was
+
+\begin{verbatim}
+-----------------------------------------------------------------------
+-- test function
+function test(dataset)
+   -- local vars
+   local time = sys.clock()
+
+   -- test over given dataset
+   print('<trainer> on testing Set:')
+   for t = 1,dataset:size(),opt.batchSize do
+      -- disp progress
+      xlua.progress(t, dataset:size())
+
+      -- create mini batch
+      local inputs = torch.Tensor(opt.batchSize,1,
+                                                 geometry[1],geometry[2])
+      local targets = torch.Tensor(opt.batchSize)
+      local k = 1
+      for i = t,math.min(t+opt.batchSize-1,dataset:size()) do
+         -- load new sample
+         local sample = dataset[i]
+         local input = sample[1]:clone()
+         local _,target = sample[2]:clone():max(1)
+         target = target:squeeze()
+         inputs[k] = input
+         targets[k] = target
+         k = k + 1
+      end
+
+      -- test samples
+      local preds = model:forward(inputs)
+
+      -- confusion:
+      for i = 1,opt.batchSize do
+         confusion:add(preds[i], targets[i])
+      end
+   end
+
+   -- timing
+   time = sys.clock() - time
+   time = time / dataset:size()
+   print("<testing> time to test 1 sample = " .. (time*1000) .. 'ms')
+
+   -- print confusion matrix
+   print(confusion)
+   testLogger:add{['% mean class accuracy (test set)'] = 
+                                         confusion.totalValid * 100}
+   confusion:zero()
+end
+-------------------------------------------------------------------------
+\end{verbatim}
+
+now everything is set up, we are ready to train and test
+
+\begin{verbatim}
+--------------------------------------------------------------------------
+-- and train!
+   train(trainData)
+-- and test!
+   test(testData)
+\end{verbatim}
+
+the confusion matrix gives the test results for each class
+\tiny
+\begin{verbatim}
+<testing> time to test 1 sample = 0.73742604255676ms	
+ConfusionMatrix:
+[[      82       0       2       0       1       0       0       0       0       0]   96.471% 	[class: 1]
+ [       0     124       2       0       0       0       0       0       0       0]   98.413% 	[class: 2]
+ [       0       0      98       2       1       0       4       1      10       0]   84.483% 	[class: 3]
+ [       1       0       5      77       0      12       0       0      11       1]   71.963% 	[class: 4]
+ [       0       0       0       0      99       1       1       0       0       9]   90.000% 	[class: 5]
+ [       1       0       1       3       2      77       0       0       2       1]   88.506% 	[class: 6]
+ [       3       0       2       0       2       1      78       0       1       0]   89.655% 	[class: 7]
+ [       0       0       4       5       1       0       0      73       4      12]   73.737% 	[class: 8]
+ [       0       0       1       4       0       2       2       0      77       3]   86.517% 	[class: 9]
+ [       0       0       0       1       8       2       0       2       5      76]]  80.851% 	[class: 10]
+ + average row correct: 86.059486865997% 
+ + average rowUcol correct (VOC measure): 75.985155105591% 
+ + global correct: 86.1%
+\end{verbatim}
+   \clearpage
+
+\small
+%%
+\typeout{END_CHAPTER "intro" \theabspage}
