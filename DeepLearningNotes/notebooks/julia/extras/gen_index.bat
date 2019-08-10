@@ -1,1 +1,1 @@
-tree -H '.' -T "Jupyter notebooks using Julia and Flux <br> Deep Learning Notes <br> (use right click and save to download)" -FL 1 --noreport --charset utf-8 --matchdirs -P "*.ipynb" | grep -v extras > index.html
+tree -H '.' -T "Jupyter notebooks <br> using Julia and Flux <br> with Deep Learning Notes <br> (use right click to download)" -FL 1 --noreport --charset utf-8 --matchdirs -P "*.ipynb" | grep -v extras > index.html
