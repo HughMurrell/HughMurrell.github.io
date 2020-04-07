@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>                                                                  
+ <head>                                                                  
+ <script type="text/javascript" src="jquery-1.7.1.min.js"></script>          
+ <script type="text/javascript" src="jquery.flot.min.js"></script>
+ <script type="text/javascript" src="d3.min.js"></script>
+ <script type="text/javascript" src="d3.geom.min.js"></script>
+ <script type="text/javascript" src="d3.layout.min.js"></script>
+ <link type="text/css" rel="stylesheet" href="sirtoy.css"/>
+ <title>SIR toy</title>
+ </head>
+
+<body>
+    
+    <h2> SIR discrete model for COVID-19 case counts from John Hopkins </h2>
+
+  <div id="container">
+
+  <div id="epicurves"></div>
+
+<!--
+  <div id="counters">
+     <span id="susceptible"><span id="count_S">0</span> susceptible</span><br />
+     <span id="infectious"><span id="count_I">0</span> infectious</span><br />
+     <span id="recovered"><span id="count_R">0</span> recovered</span>
+  </div>
+-->
+ 
+ <div id="controls">
+    &beta; &rarr;  <input id="p_SI" type="text" name="p_SI" value="0.00" /> &rarr; <input id="p_SI_ld" type="text" name="p_SI_ld" value="0.00" /><br />
+    &gamma; &rarr; <input id="p_IR" type="text" name="p_IR" value="0.00" /> &rarr; <input id="p_IR_ld" type="text" name="p_IR_ld" value="0.00" /><br />
+    <br />
+    
+    <math>
+           S<sub>n+1</sub> = S<sub>n</sub> - &beta; S<sub>n</sub> I<sub>n</sub> <br />
+           I<sub>n+1</sub> = I<sub>n</sub> + &beta; S<sub>n</sub> I<sub>n</sub> - &gamma; I<sub>n</sub> <br />
+           R<sub>n+1</sub> = R<sub>n</sub> + &gamma; I<sub>n</sub> <br />
+           C<sub>n+1</sub> = I<sub>n+1</sub> + R<sub>n+1</sub> <br />
+    </math>
+    
+    <br /><br />
+    
+   <span><button id="reset-button">reset</button></span>
+   <span><button id="start-button">start</button></span>
+   <span><button id="stop-button">stop</button></span>
+   <span><button id="continue-button">continue</button></span>
+
+ </div>
+    
+  <script type="text/javascript" src="sirtoy.js"></script>
+  
+ </body>                                                                 
+</html>
+
+
+
