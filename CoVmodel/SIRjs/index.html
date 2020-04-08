@@ -13,7 +13,22 @@
 
 <body>
     
-    <h2> SIR discrete model for COVID-19 case counts from John Hopkins </h2>
+    <h2> Piecewise discrete SIR model for COVID-19 case counts</h2>
+     
+     <p> This tool allows the user to fit the simplest possible SIR epidemic model to massaged data from
+     the <a href="https://github.com/CSSEGISandData/COVID-19" target=blank>COVID-19 John Hopkins</a> repository.
+     SIR parameters can be set to model data <b>before</b> and <b>after</b> an intervention date.
+     Use the buttons to initiate simulations. The x-axis is days since start of breakout whilst
+     the y-axis is case counts.
+     The intervention date can be changed by clicking on a data point.
+     The default settings are optimal for the <b>South Africa</b> data. The user can experiment with
+     data for other countries but will have to manually optimise the intervention date
+     and the associated SIR parameters. It is hoped that later versions of the tool will
+     include optimal SIR parameters for all countries. New massaged data will be uploaded periodically
+     as the epidemic unfolds.
+     Note that no attempt is made to attribute trends to intervention policy, to learn more
+     about intervention effects listen to this
+     <a href=https://www.youtube.com/watch?v=gxAaO2rsdIs target=blank> 3blue1brown </a> youtube video.</p>
 
   <div id="container">
 
@@ -28,20 +43,20 @@
 -->
  
  <div id="controls">
-     
+          
     <div style='text-align:center;'>
         <script type= "text/javascript" src = "countries.js"></script>
         Select Country:   <select id="country2" name ="country2"></select>
     </div>
-    <br /><br />
+    <br />
    
-   <script language="javascript">
+    <script language="javascript">
           populateCountries("country2");
-      </script>
+    </script>
+    
     
     &beta; &rarr;  <input id="p_SI" type="text" name="p_SI" value="0.00" /> &rarr; <input id="p_SI_ld" type="text" name="p_SI_ld" value="0.00" /><br />
-    &gamma; &rarr; <input id="p_IR" type="text" name="p_IR" value="0.00" /> &rarr; <input id="p_IR_ld" type="text" name="p_IR_ld" value="0.00" /><br />
-    <br />
+    &gamma; &rarr; <input id="p_IR" type="text" name="p_IR" value="0.00" /> &rarr; <input id="p_IR_ld" type="text" name="p_IR_ld" value="0.00" /><br /><br />
     
     <math>
            S<sub>n+1</sub> = S<sub>n</sub> - &beta; S<sub>n</sub> I<sub>n</sub> <br />
@@ -49,17 +64,22 @@
            R<sub>n+1</sub> = R<sub>n</sub> + &gamma; I<sub>n</sub> <br />
            C<sub>n+1</sub> = I<sub>n+1</sub> + R<sub>n+1</sub> <br />
     </math>
-    
-    <br /><br />
+    <br />
     
    <span><button id="reset-button">reset</button></span>
    <span><button id="start-button">start</button></span>
    <span><button id="stop-button">stop</button></span>
    <span><button id="continue-button">continue</button></span>
+   <br />
+   
+ 
 
  </div>
     
   <script type="text/javascript" src="sirtoy.js"></script>
+  
+  </div>
+  
 
  </body>                                                                 
 </html>

@@ -25,6 +25,8 @@ div#controls {
    text-align: left;
 }
 
+
+
 #p_SI, #p_IR, #p_SI_ld, #p_IR_ld {
  width: 75px;
  padding: 3px;
@@ -103,6 +105,10 @@ button#reset-button, button#start-button, button#stop-button, button#continue-bu
   font-size: 28px;
   color: #666;
   pointer-events: all;
+}
+
+select#country2 {
+    font-size: 16px;
 }
 
 div#credits {

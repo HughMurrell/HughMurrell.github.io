@@ -1,5 +1,5 @@
 // -----------------------------------------------------------
-
+// get the clean John Hopkins data
 console.log("started")
 
 var csv = `country,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76
@@ -188,22 +188,20 @@ Sao Tome and Principe,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 
 var jh_data = d3.csvParse(csv);
 
-var keys = Object.keys(jh_data[56])
-console.log(keys)
+// var keys = Object.keys(jh_data[56])
 
-var values = Object.values(jh_data[56])
-console.log(values)
+// var values = Object.values(jh_data[56])
 
-var int_values = values.slice(0,values.length-1).map(Number)
-console.log(int_values)
+// var int_values = values.slice(0,values.length-1).map(Number)
 
-var index=int_values.findIndex(function(number) {
-  return number > 0;
-});
-console.log(index);
 
-latest_data = int_values.slice(index,int_values.length)
-console.log(latest_data);
+// var index=int_values.findIndex(function(number) {
+//   return number > 0;
+// });
+
+
+// latest_data = int_values.slice(index,int_values.length)
+ var latest_data = []
 
 var countries = [];
 for (var i = 0; i < jh_data.length; i++){
@@ -217,7 +215,7 @@ function populateCountries(countryElementId){
     // given the id of the <select> tag as function argument, it inserts <option> tags
     var countryElement = document.getElementById(countryElementId);
     countryElement.length=0;
-    countryElement.options[0] = new Option('Select Country','-1');
+    // countryElement.options[0] = new Option('Select Country','-1');
     countryElement.selectedIndex = 0;
     for (var i=0; i<countries.length; i++) {
         countryElement.options[countryElement.length] = new Option(countries[i],countries[i]);
@@ -225,7 +223,7 @@ function populateCountries(countryElementId){
     // Assigned all countries. Now assign event listener.
 
     countryElement.onchange = function(){
-        country = countries[countryElement.selectedIndex-1];
+        country = countries[countryElement.selectedIndex];
         for (var i=0; i<jh_data.length; i++){
             if (jh_data[i]["country"] == country){
                 values = Object.values(jh_data[i]);
@@ -242,6 +240,7 @@ function populateCountries(countryElementId){
 }
 
 populateCountries("country2");
+
 
 // latest_data = [1, 1, 1, 3, 3, 7, 13, 17, 24, 38, 51, 62, 62, 116, 150, 202, 240, 274, 402, 554, 709, 927, 1170, 1187, 1280, 1326, 1353, 1380, 1462, 1505, 1585]
 
@@ -289,16 +288,20 @@ function reset_params () {
 
 function reset_history () {
 
-  timeseries = {D: {label: "D", color: sir_color.D, data: []},
-                S: {label: "S", color: sir_color.S, data: []},
-                I: {label: "I", color: sir_color.I, data: []},
-                R: {label: "R", color: sir_color.R, data: []},
-                C: {label: "C", color: sir_color.C, data: []}
+  timeseries = {D: {label: "Data", color: sir_color.D, data: []},
+                S: {label: "Susceptible", color: sir_color.S, data: []},
+                I: {label: "Infective", color: sir_color.I, data: []},
+                R: {label: "Removed", color: sir_color.R, data: []},
+                C: {label: "Cumulative", color: sir_color.C, data: []},
+                B: {label: "Intervention", color: sir_color.B, data: [] }
   };
     
   for (i = 0; i < latest_data.length; i++) {
         timeseries.D.data.push([i, latest_data[i]]);
   }
+    
+  timeseries.B.data.push([break_point, 0]);
+  timeseries.B.data.push([break_point, latest_data[latest_data.length-1]]);
 
   timeseries.S.data.push([count, N*epi_state.S]);
   timeseries.I.data.push([count, N*epi_state.I]);
@@ -313,10 +316,34 @@ var plotOptions = {
         lines: { show: true },
 	    points: { show: true },
         xaxis: {min: 0},
-        series: { shadowSize: 0 }
+        series: { shadowSize: 0 },
+        grid: {hoverable: true, clickable:true},
+         legend:{
+                   // backgroundOpacity: 0.5,
+                   // noColumns: 0,
+                   // backgroundColor: "green",
+                   position: "nw"
+               }
     };
 
 var plot = $.plot($("#epicurves"), [], plotOptions);
+
+
+$("#epicurves").on("plotclick",function(event,pos,item){
+    if(item){
+        break_point = item.series.data[item.dataIndex][0];
+        console.log(break_point);
+        reset_all();
+    }
+});
+
+// set default country and default intervention break point
+var break_point = 22;
+var series_point;
+var element = document.getElementById('country2');
+element.value = 'South Africa';
+var event = new Event('change');
+element.dispatchEvent(event);
 
 update_plot();
 update_counters();
@@ -344,7 +371,7 @@ function run_SIR() {
     var beta = p_SI;
     var gamma = p_IR;
     
-    if (count > 21) {
+    if (count >= break_point) {
        beta = p_SI_ld;
        gamma = p_IR_ld;
     }
@@ -369,7 +396,8 @@ function run_SIR() {
 }
 
 function update_plot () {
- plot.setData([timeseries.D, timeseries.I, timeseries.R, timeseries.C ]);
+ plot.setData([timeseries.D, timeseries.I, timeseries.R,
+               timeseries.C, timeseries.B ]);
  plot.setupGrid();
  plot.draw();
 }
