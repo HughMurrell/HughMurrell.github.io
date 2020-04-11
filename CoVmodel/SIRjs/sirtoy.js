@@ -101,7 +101,6 @@ function populateCountries(countryElementId){
                 $("#p_N").prop('disabled', true);
                 $('#p_N').val(N);
                 p_R0 = (p_SI / p_IR).toFixed(1);
-                console.log(p_R0);
                 p_R0_ld = (p_SI_ld / p_IR_ld).toFixed(1);
                 $("#p_R0").prop('disabled', true);
                 $('#p_R0').val(p_R0);
@@ -115,9 +114,6 @@ function populateCountries(countryElementId){
 }
 
 populateCountries("country2");
-
-
-// latest_data = [1, 1, 1, 3, 3, 7, 13, 17, 24, 38, 51, 62, 62, 116, 150, 202, 240, 274, 402, 554, 709, 927, 1170, 1187, 1280, 1326, 1353, 1380, 1462, 1505, 1585]
 
 var valid_data = 1;
 var running = 0;
@@ -166,9 +162,7 @@ function reset_params () {
 
 function reset_history () {
     
-  // console.log(latest_data[latest_data.length-1]);
-
-  timeseries = {D: {label: "Data", color: sir_color.D, data: []},
+   timeseries = {D: {label: "Data", color: sir_color.D, data: []},
                 S: {label: "Susceptible", color: sir_color.S, data: []},
                 I: {label: "Infective", color: sir_color.I, data: []},
                 R: {label: "Recovered (or dead)", color: sir_color.R, data: []},
@@ -226,7 +220,6 @@ var event = new Event('change');
 element.dispatchEvent(event);
 
 update_plot();
-update_counters();
 
 $("#reset-button").click(reset_all);
 $("#start-button").click(start_all);
@@ -267,8 +260,6 @@ function run_SIR() {
 
     update_plot();
 
-    update_counters();
-
     if (Math.round(N*epi_state.I) == 0)
        running = 0;
 }
@@ -279,17 +270,15 @@ function update_plot () {
  plot.setupGrid();
  plot.draw();
 }
-
-
-function update_counters () {
-  $("#count_S").html(Math.round(N*epi_state.S));
-  $("#count_I").html(Math.round(N*epi_state.I));
-  $("#count_R").html(Math.round(N*epi_state.R));
+                           
+function update_p_R0 () {
+    p_R0 = (p_SI / p_IR).toFixed(1);
+    $('#p_R0').val(p_R0);
 }
-
-function update_country () {
-    country = $("#country").val
-    console.log("update_country()",country)
+                                      
+function update_p_R0_ld () {
+   p_R0_ld = (p_SI_ld / p_IR_ld).toFixed(1);
+   $('#p_R0_ld').val(p_R0_ld);
 }
 
 function update_p_SI () {
@@ -300,6 +289,7 @@ function update_p_SI () {
   } else {
      p_SI = p;
      valid_data = 1;
+     update_p_R0();
      $("#p_SI").css("background-color", "#fff");
   }
 }
@@ -312,6 +302,7 @@ function update_p_SI_ld () {
   } else {
      p_SI_ld = p;
      valid_data = 1;
+     update_p_R0_ld();
      $("#p_SI_ld").css("background-color", "#fff");
   }
 }
@@ -324,6 +315,7 @@ function update_p_IR () {
   } else {
      p_IR = p;
      valid_data = 1;
+     update_p_R0();
      $("#p_IR").css("background-color", "#fff");
   }
 }
@@ -336,6 +328,7 @@ function update_p_IR_ld () {
   } else {
      p_IR_ld = p;
      valid_data = 1;
+     update_p_R0_ld();
      $("#p_IR_ld").css("background-color", "#fff");
   }
 }
@@ -349,8 +342,6 @@ function reset_all () {
     reset_params();
     reset_history();
     update_plot();
-
-  update_counters();
     
 }
 
@@ -360,17 +351,14 @@ function start_all () {
     epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
     reset_history();
     update_plot();
-    update_counters();
 }
 
 function stop_all () {
     running = 0;
     update_plot();
-    update_counters();
 }
 
 function continue_all () {
     running = 1;
     update_plot();
-    update_counters();
 }
