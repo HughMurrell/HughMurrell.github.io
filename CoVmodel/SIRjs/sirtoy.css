@@ -34,6 +34,13 @@ div#controls {
  border: 1px solid #aaa;
 }
 
+#p_R0, #p_R0_ld {
+    width: 60px;
+    padding: 3px;
+    font-size: 16px;
+    border: 1px solid #aaa;
+}
+
 span#susceptible {
 	color: #00f;
     font-size: 14px;
