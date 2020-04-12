@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>File Handling</title>
+    <link href="https://fonts.googleapis.com/css?family=Lato|Roboto|Source+Code+Pro" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.6/styles/monokai.min.css">
+    <link rel="stylesheet" href="demo.css">
+  </head>
+
+  <body>
+      
+      <script>
+        var global = global || window;
+        var Buffer = Buffer || [];
+        var process = process || {
+          env: { DEBUG: undefined },
+          version: []
+        };
+      </script>
+
+    <div id="header">
+      <h1 id="title">Load from File</h1>
+      <div id="link"><a href="https://github.com/typeiii/jquery-csv">GitHub</a></div>
+    </div>
+    <div id="container">
+      <section id="content">
+        <h2>Description</h2>
+        <p>The following demonstrates how to use the HTML5 File API to load a file from the client.</p>
+        <hr>
+        <h2>Input</h2>
+        <input type="file" id="files" name="files[]" multiple />
+        <hr />
+        <h2>FileInfo</h2>
+        <div id="file-info"></div>
+        <hr />
+        <h2>Result</h2>
+        <textarea id="result" style="height: 250px;"></textarea>
+      </section>
+    </div>
+
+    <script src="http://code.jquery.com/jquery-3.3.1.slim.js" integrity="sha256-fNXJFIlca05BIO2Y5zh1xrShK3ME+/lYZ0j+ChxX2DA=" crossorigin="anonymous"></script>
+    <script src="jquery.csv.js"></script>
+    <script src="helpers.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.15.6/highlight.min.js"></script>
+    <script>
+      // enable syntax highlighting
+      hljs.initHighlightingOnLoad();
+
+      $(document).ready(function() {
+        if(isFileAPIAvailable()) {
+          $('#files').bind('change', handleDialog);
+        }
+      });
+
+      function handleDialog(event) {
+        var files = event.target.files;
+        var file = files[0];
+
+        var fileInfo = `
+          <span style="font-weight:bold;">${escape(file.name)}</span><br>
+          - FileType: ${file.type || 'n/a'}<br>
+          - FileSize: ${file.size} bytes<br>
+          - LastModified: ${file.lastModifiedDate ? file.lastModifiedDate.toLocaleDateString() : 'n/a'}
+        `;
+        $('#file-info').append(fileInfo);
+
+        var reader = new FileReader();
+        reader.readAsText(file);
+        reader.onload = function(event){
+          var csv = event.target.result;
+          var data = $.csv.toArrays(csv);
+          $('#result').empty();
+          $('#result').html(JSON.stringify(data, null, 2));
+        }
+      }
+    </script>
+  </body>
+</html>

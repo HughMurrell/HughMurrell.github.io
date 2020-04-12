@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>                                                                  
+ <head>                                                                  
+ <script type="text/javascript" src="jquery-1.7.1.min.js"></script>          
+ <script type="text/javascript" src="jquery.flot.min.js"></script>
+ <script type="text/javascript" src="d3.min.js"></script>
+ <script type="text/javascript" src="d3.geom.min.js"></script>
+ <script type="text/javascript" src="d3.layout.min.js"></script>
+ <script src="https://d3js.org/d3-dsv.v1.min.js"></script>
+  <link type="text/css" rel="stylesheet" href="sirtoy.css"/>
+ <title>SIR toy</title>
+ </head>
+
+<body>
+    
+    <h2> Piecewise discrete SIR model for COVID-19 case counts</h2>
+     
+     <p> This tool allows the user to fit the simplest possible SIR epidemic model to massaged data from
+     the <a href="https://github.com/CSSEGISandData/COVID-19" target=blank>COVID-19 John Hopkins</a> repository.
+     SIR parameters can be set to model data <b>before</b> and <b>after</b> an intervention date.
+     Use the buttons to initiate simulations. The x-axis is days since start of breakout whilst
+     the y-axis is case counts.
+     The intervention date can be changed by clicking on a data point.
+     The default settings are optimal for the <b>South Africa</b> data. The user can experiment with
+     data for other countries but will have to manually optimise the intervention date
+     and the associated SIR parameters. It is hoped that later versions of the tool will
+     include optimal SIR parameters for all countries. New massaged data will be uploaded periodically
+     as the epidemic unfolds.
+     Note that no attempt is made to attribute trends to intervention policy, to learn more
+     about intervention effects listen to this
+     <a href=https://www.youtube.com/watch?v=gxAaO2rsdIs target=blank> 3blue1brown </a> youtube video.</p>
+
+  <div id="container">
+
+  <div id="epicurves"></div>
+
+<!--
+  <div id="counters">
+     <span id="susceptible"><span id="count_S">0</span> susceptible</span><br />
+     <span id="infectious"><span id="count_I">0</span> infectious</span><br />
+     <span id="recovered"><span id="count_R">0</span> recovered</span>
+  </div>
+-->
+ 
+ <div id="controls">
+          
+    <div style='text-align:center;'>
+        <script type= "text/javascript" src = "countries.js"></script>
+        Select Country:   <select id="country2" name ="country2"></select>
+    </div>
+   
+    <script language="javascript">
+          populateCountries("country2");
+    </script>
+    
+    Population: <input id="p_N" type="text" name="p_N" value="1000" />
+    <br /><br />
+    
+    &beta; &rarr;  <input id="p_SI" type="text" name="p_SI" value="0.00" /> &rarr; <input id="p_SI_ld" type="text" name="p_SI_ld" value="0.00" /><br />
+    &gamma; &rarr; <input id="p_IR" type="text" name="p_IR" value="0.00" /> &rarr; <input id="p_IR_ld" type="text" name="p_IR_ld" value="0.00" /><br />
+    R<sub>0</sub> &rarr; <input id="p_R0" type="text" name="p_R0" value="0.00" /> &rarr; <input id="p_R0_ld" type="text" name="p_R0_ld" value="0.00" /><br /><br />
+    
+    <math>
+           S<sub>n+1</sub> = S<sub>n</sub> - &beta; S<sub>n</sub> I<sub>n</sub> <br />
+           I<sub>n+1</sub> = I<sub>n</sub> + &beta; S<sub>n</sub> I<sub>n</sub> - &gamma; I<sub>n</sub> <br />
+           R<sub>n+1</sub> = R<sub>n</sub> + &gamma; I<sub>n</sub> <br />
+           C<sub>n+1</sub> = I<sub>n+1</sub> + R<sub>n+1</sub> <br />
+    </math>
+    <br />
+    
+   <span><button id="reset-button">reset</button></span>
+   <span><button id="start-button">start</button></span>
+   <span><button id="stop-button">stop</button></span>
+   <span><button id="continue-button">continue</button></span>
+   <br />
+   
+ 
+
+ </div>
+    
+  <script type="text/javascript" src="sirtoy.js"></script>
+  
+  </div>
+  
+
+ </body>                                                                 
+</html>
+
+
+
