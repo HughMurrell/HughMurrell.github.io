@@ -12,7 +12,7 @@ var break_point;
 var series_point;
 
 
-fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/data_jhp_clean.csv')
+fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/confirmedcases-Table 1.csv')
 .then(
   function(response) {
     if (response.status !== 200) {
@@ -26,9 +26,10 @@ fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/data_jhp_clean.csv')
       // console.log(data);
       csv = data;
       jh_data = d3.csvParse(csv);
+      console.log(jh_data[0]);
 
       for (var i = 0; i < jh_data.length; i++){
-            countries.push(jh_data[i]["country"]);
+            countries.push(jh_data[i]["CountryName"]);
       }
       countries.sort();
       populateCountries("country2");
@@ -49,6 +50,7 @@ fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/data_jhp_clean.csv')
   console.log('Fetch Error :-S', err);
 });
 
+
 function populateCountries(countryElementId){
     // given the id of the <select> tag as function argument, it inserts <option> tags
     var countryElement = document.getElementById(countryElementId);
@@ -60,23 +62,24 @@ function populateCountries(countryElementId){
     }
     // Assigned all countries. Now assign event listener.
 
-    countryElement.onchange = async function(){
+    countryElement.onchange = function(){
         country = countries[countryElement.selectedIndex];
+        console.log(country);
         for (var i=0; i<jh_data.length; i++){
-            if (jh_data[i]["country"] == country){
+            if (jh_data[i]["CountryName"] == country){
                 values = Object.values(jh_data[i]);
                 // the 9 below is to drop non-data fields
-                int_values = values.slice(11,values.length).map(Number);
+                int_values = values.slice(2,values.length).map(Number);
                 index=int_values.findIndex(function(number) {
                   return number > 0;
                 });
                 latest_data = int_values.slice(index,int_values.length);
-                break_point = jh_data[i]["intervention"] - index;
-                p_SI = jh_data[i]["beta_before"];
-                p_SI_ld = jh_data[i]["beta_after"];
-                p_IR = jh_data[i]["gamma_before"];
-                p_IR_ld = jh_data[i]["gamma_after"];
-                N = jh_data[i]["population"];
+                // break_point = jh_data[i]["intervention"] - index;
+                // p_SI = jh_data[i]["beta_before"];
+                // p_SI_ld = jh_data[i]["beta_after"];
+                // p_IR = jh_data[i]["gamma_before"];
+                // p_IR_ld = jh_data[i]["gamma_after"];
+                // N = jh_data[i]["population"];
                 $("#p_N").prop('disabled', true);
                 $('#p_N').val(N);
                 p_R0 = (p_SI / p_IR).toFixed(1);
