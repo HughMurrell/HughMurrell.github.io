@@ -103,10 +103,6 @@ function defaultStartPlot() {
        update_plot();
 }
 
-
-
-
-
 function populateCountries(countryElementId){
     // given the id of the <select> tag as function argument, it inserts <option> tags
     var countryElement = document.getElementById(countryElementId);
@@ -190,11 +186,11 @@ var count = 0;
 var N = 60000000;
 var timeseries;
 
-var sir_color = {D: "#000000", S: "#00ffff", I: "#f00000", R: "#00f000", C: "#0000f0" ,L: "#ffff00"}
+var sir_color = {D: "#000000", S: "#00ffff", I: "#f00000", R: "#00f000", C: "#0000f0" ,L: "#ffff00", A: "#0ffff0"}
 
 var epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
 
-function reset_params () {
+function reset_default_params () {
     
     p_SI = p_SI_default;
     p_IR = p_IR_default;
@@ -202,6 +198,11 @@ function reset_params () {
     p_mu = p_mu_default;
     p_eta = p_eta_default;
     
+    reset_params();
+}
+                        
+function reset_params () {
+                            
     $("#p_SI").val(p_SI)
     $("#p_SI").keyup(update_p_SI);
 
@@ -213,7 +214,7 @@ function reset_params () {
 
     $("#p_mu").val(p_mu)
     $("#p_mu").keyup(update_p_mu);
-                        
+                                                
     $("#p_eta").val(p_eta)
     $("#p_eta").keyup(update_p_eta);
 }
@@ -225,15 +226,19 @@ function reset_history () {
                 I: {label: "Infective", color: sir_color.I, data: []},
                 R: {label: "Recovered (or dead)", color: sir_color.R, data: []},
                 C: {label: "Cumulative (Infective + Recovered)", color: sir_color.C, data: []},
-                L: {label: "Stringency Index * max(Data)", color: sir_color.L, data: [] }
+                L: {label: "Stringency Index * max(Data)", color: sir_color.L, data: []},
+                A: {label: "Amelioration Factor * max(Data)", color: sir_color.A, data: []
+                        }
   };
     
   var max_case = Math.max(...cases);
-  console.log(max_case);
   for (i = 0; i < cases.length; i++) {
         timeseries.D.data.push([i, cases[i]]);
         timeseries.L.data.push([i, indicies[i] * max_case]);
+        timeseries.A.data.push([i, sigmoid( indicies[i], p_lambda, p_mu, p_eta)* max_case]);
   }
+                        
+  count = 0;
     
   timeseries.S.data.push([count, N*epi_state.S]);
   timeseries.I.data.push([count, N*epi_state.I]);
@@ -274,8 +279,42 @@ $("#reset-button").click(reset_all);
 $("#start-button").click(start_all);
 $("#stop-button").click(stop_all);
 $("#continue-button").click(continue_all);
+$("#optimize-button").click(optimize_all);
 
 setInterval(run_SIR, time_interval);
+                        
+function sigmoid(t,lambda,mu,eta) {
+    var k = 10*eta;
+    return 1 - lambda / (1+Math.pow(Math.E, - k * (t-mu) )) ;
+}
+                        
+function simulate_loss(n, m, x, con) {
+    var beta = x[0];
+    var gamma = x[1];
+    var lambda = x[2];
+    var mu = x[3];
+    var eta = x[4];
+                        
+    var state = { S: (N-1)/N, I: 1/N, R: 0, C: 1/N };
+    var loss = Math.abs(cases[0]-N*state.C);
+    var s;
+    var i;
+    var f;
+    
+    for (var j=1; j<cases.length; j++) {
+        f = sigmoid( indicies[j-1], lambda, mu, eta);
+        s = state.S;
+        i = state.I;
+        state.S += ( - f * beta * s * i );
+        state.I += ( + f * beta * s * i - gamma * i );
+        state.R += (gamma * i);
+        state.C = state.I + state.R;
+        loss += Math.abs(cases[j]-N*state.C);
+    }
+
+    return loss;
+    
+}
 
 
 function run_SIR() {
@@ -283,7 +322,8 @@ function run_SIR() {
     if (running == 0)
        return;
 
-    
+    count++;
+
     var s = epi_state.S;
     var i = epi_state.I;
     var r = epi_state.R;
@@ -294,36 +334,24 @@ function run_SIR() {
     var mu = p_mu;
     var eta = p_eta;
     
-    // function sigmoid(x,x0,b) {
-    //     return Math.pow(  ( 1/(1+Math.pow(Math.E, -b*(x-(1-x0))) ) * x ), 1-x ) ;
-    // }
-                           
-    function sigmoid(x,lambda,mu,eta) {
-        var k = 400*eta;
-        return 1 - lambda / (1+Math.pow(Math.E, - k * (x-mu) )) ;
-    }
-    
-                        /*
+    /*
     function sigmoid(x,lambda,mu) {
-                        if (x > mu) {
-                          return 1 - lambda * x;
-                        } else {
-                          return 1
-                        }
+        if (x > mu) {
+            return 1 - lambda * x;
+        } else {
+            return 1
+        }
     }
-                        */
+    */
                         
-    var max_count = Math.abs(Math.min(count-1, indicies.length-1))
-    var f = sigmoid( indicies[max_count], lambda, mu, eta)
-                        
-                        console.log(f);
+    var prev_count = Math.abs(Math.min(count-1, indicies.length-1))
+    var f = sigmoid( indicies[prev_count], lambda, mu, eta)
     
     epi_state.S += ( - f * beta * s * i );
     epi_state.I += ( + f * beta * s * i - gamma * i );
     epi_state.R += (gamma * i);
                     
-    count++;
-
+ 
     timeseries.S.data.push([count, Math.round(N*epi_state.S)]);
     timeseries.I.data.push([count, Math.round(N*epi_state.I)]);
     timeseries.R.data.push([count, Math.round(N*epi_state.R)]);
@@ -338,7 +366,7 @@ function run_SIR() {
                            
 function update_plot () {
  plot.setData([timeseries.D, timeseries.I, timeseries.R,
-               timeseries.C, timeseries.L ]);
+               timeseries.C, timeseries.L, timeseries.A ]);
  plot.setupGrid();
  max_y = plot.getOptions().yaxes[0].max;
  plot.draw();
@@ -417,17 +445,17 @@ function reset_all () {
     count = 0;
     epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
 
-    reset_params();
+    reset_default_params();
     reset_history();
     update_plot();
     
 }
 
 function start_all () {
-    running = 1;
     count = 0;
     epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
     reset_history();
+    running = 1;
     update_plot();
 }
 
@@ -438,5 +466,42 @@ function stop_all () {
 
 function continue_all () {
     running = 1;
+    update_plot();
+}
+            
+function optimize_all () {
+    running = 0;
+    console.log("optimizing....");
+            
+    var nv=5;             // + of variables
+    var x=new Array(nv);
+    var mc=10;             // number of constraints
+    var rhobeg = 5.0;    // Various Cobyla constants, see Cobyla docs in Cobyja.js
+    var rhoend = 1.0e-6;
+    var iprint = 0;
+    var maxfun = 35000;
+    
+    function loss(nv,mc,x,con) {      // objective function
+       con[0]=-(x[0]-1);         // first inequality constraints params < 1
+       con[1]=-(x[1]-1/5);
+       con[2]=-(x[2]-1);
+       con[3]=-(x[3]-1);
+       con[4]=-(x[4]-1);
+       con[5]=x[0];          // second inequality constraints params > 0
+       con[6]=x[1]-1/20;
+       con[7]=x[2];
+       con[8]=x[3];
+       con[9]=x[4];
+       return simulate_loss(nv,mc,x,con); // objective function
+    }
+            
+    x[0]=p_SI; x[1]=p_IR; x[2]=p_lambda; x[3]=p_mu; x[4]=p_eta;
+    console.log("before"+x);
+    var r=FindMinimum(loss, nv,  mc, x, rhobeg, rhoend,  iprint,  maxfun);
+    console.log("Result="+r)
+    console.log("Params="+x);
+    p_SI=x[0]; p_IR=x[1]; p_lambda=x[2]; p_mu=x[3]; p_eta=x[4];
+    reset_params();
+    reset_history();
     update_plot();
 }

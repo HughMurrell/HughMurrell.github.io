@@ -113,7 +113,7 @@ span#start-text {
   padding: 10px;
 }
 
-button#reset-button, button#start-button, button#stop-button, button#continue-button {
+button#reset-button, button#start-button, button#stop-button, button#continue-button, button#optimize-button {
   float: left;
   font-size: 28px;
   color: #666;
