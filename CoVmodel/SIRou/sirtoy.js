@@ -3,13 +3,64 @@
 console.log("started")
 
 
-var csv;
-var latest_data = [];
 var countries = [];
+var populations ={};
 var country;
+var case_data = [];
+var cases = [];
+var indicies_data = [];
+var indicies = [];
 var data_read = false;
 var break_point;
 var series_point;
+
+
+fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/wb_population.csv')
+.then(
+  function(response) {
+    if (response.status !== 200) {
+      console.log('Looks like there was a problem. Status Code: ' +
+        response.status);
+      return;
+    }
+
+    // Examine the text in the response
+    response.text().then(function(data) {
+      // console.log(data);
+      pop_data = d3.csvParse(data);
+
+      for (var i = 0; i < pop_data.length; i++){
+                         populations[ pop_data[i]["CountryName"] ] = pop_data[i]["2018"];
+      }
+      defaultStartPlot();
+    });
+  }
+)
+.catch(function(err) {
+  console.log('Fetch Population Error', err);
+});
+
+fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/stringencyindex-Table 1.csv')
+.then(
+  function(response) {
+    if (response.status !== 200) {
+      console.log('Looks like there was a problem. Status Code: ' +
+        response.status);
+      return;
+    }
+
+    // Examine the text in the response
+    response.text().then(function(data) {
+      // console.log(data);
+      csv = data;
+      indicies_data = d3.csvParse(csv);
+      defaultStartPlot();
+    });
+  }
+)
+.catch(function(err) {
+  console.log('Fetch Cases Error', err);
+});
 
 
 fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/confirmedcases-Table 1.csv')
@@ -25,30 +76,35 @@ fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/confirmedcases-Table 1.
     response.text().then(function(data) {
       // console.log(data);
       csv = data;
-      jh_data = d3.csvParse(csv);
-      console.log(jh_data[0]);
+      case_data = d3.csvParse(csv);
 
-      for (var i = 0; i < jh_data.length; i++){
-            countries.push(jh_data[i]["CountryName"]);
+      for (var i = 0; i < case_data.length; i++){
+            countries.push(case_data[i]["CountryName"]);
       }
       countries.sort();
       populateCountries("country2");
                          
-    // set default country and default intervention break point
-    var element = document.getElementById('country2');
-    element.value = 'South Africa';
-    var event = new Event('change');
-    element.dispatchEvent(event);
+      defaultStartPlot();
 
-    update_plot();
-
-      data_read = true;
     });
   }
 )
 .catch(function(err) {
-  console.log('Fetch Error :-S', err);
+  console.log('Fetch Cases Error', err);
 });
+
+function defaultStartPlot() {
+    // set default country and default intervention break point
+       var element = document.getElementById('country2');
+       element.value = 'South Africa';
+       var event = new Event('change');
+       element.dispatchEvent(event);
+
+       update_plot();
+}
+
+
+
 
 
 function populateCountries(countryElementId){
@@ -65,29 +121,45 @@ function populateCountries(countryElementId){
     countryElement.onchange = function(){
         country = countries[countryElement.selectedIndex];
         console.log(country);
-        for (var i=0; i<jh_data.length; i++){
-            if (jh_data[i]["CountryName"] == country){
-                values = Object.values(jh_data[i]);
-                // the 9 below is to drop non-data fields
+        for (var i=0; i<case_data.length; i++){
+            if (case_data[i]["CountryName"] == country){
+                values = Object.values(case_data[i]);
+                keys = Object.keys(case_data[i]);
+                // the 2 below is to drop non-data fields
                 int_values = values.slice(2,values.length).map(Number);
                 index=int_values.findIndex(function(number) {
                   return number > 0;
                 });
-                latest_data = int_values.slice(index,int_values.length);
-                // break_point = jh_data[i]["intervention"] - index;
-                // p_SI = jh_data[i]["beta_before"];
-                // p_SI_ld = jh_data[i]["beta_after"];
-                // p_IR = jh_data[i]["gamma_before"];
-                // p_IR_ld = jh_data[i]["gamma_after"];
-                // N = jh_data[i]["population"];
+                var first_case_date = keys[index+2];
+                console.log(first_case_date);
+                cases = int_values.slice(index,int_values.length);
+                if (typeof indicies_data[i] != "undefined") {
+                    values = Object.values(indicies_data[i]);
+                    // replace missing values with previous value
+                    for (var j=0; j<values.length-1; j++){
+                        if ( values[j+1] == "" ) {
+                            values[j+1]=values[j];
+                        }
+                    }
+                    keys = Object.keys(indicies_data[i]);
+                    int_values = values.slice(2,values.length).map(Number);
+                    indicies = int_values.slice(index,int_values.length);
+                    for (var j=0; j<indicies.length; j++){
+                        indicies[j] = (indicies[j] ) / 100.0;
+                    }
+                }
+                
+                // break_point = case_data[i]["intervention"] - index;
+                // p_SI = case_data[i]["beta_before"];
+                // p_SI_ld = case_data[i]["beta_after"];
+                // p_IR = case_data[i]["gamma_before"];
+                // p_IR_ld = case_data[i]["gamma_after"];
+                N = populations[country];
                 $("#p_N").prop('disabled', true);
                 $('#p_N').val(N);
                 p_R0 = (p_SI / p_IR).toFixed(1);
-                p_R0_ld = (p_SI_ld / p_IR_ld).toFixed(1);
                 $("#p_R0").prop('disabled', true);
                 $('#p_R0').val(p_R0);
-                $("#p_R0_ld").prop('disabled', true);
-                $('#p_R0_ld').val(p_R0_ld);
             }
         }
         reset_all();
@@ -98,26 +170,25 @@ function populateCountries(countryElementId){
 
 var valid_data = 1;
 var running = 0;
-var p_SI_default = 0.46;
+var p_SI_default = 0.463;
 var p_IR_default = 0.1;
-var p_SI_ld_default = 0.08;
-var p_IR_ld_default = 0.1;
+var p_lambda_default = 0.87
+var p_mu_default = 0.95
 
 var p_SI = p_SI_default;
 var p_IR = p_IR_default;
-var p_SI_ld = p_SI_ld_default;
-var p_IR_ld = p_IR_ld_default;
+                           
+var p_lambda = p_lambda_default;
+var p_mu = p_mu_default;
                                      
 var p_R0;
-var p_R0_ld;
         
 var time_interval = 200;
 var count = 0;
 var N = 60000000;
 var timeseries;
 
-
-var sir_color = {D: "#000000", S: "#00ffff", I: "#f00000", R: "#00f000", C: "#0000f0" }
+var sir_color = {D: "#000000", S: "#00ffff", I: "#f00000", R: "#00f000", C: "#0000f0" ,L: "#ffff00"}
 
 var epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
 
@@ -134,11 +205,11 @@ function reset_params () {
     $("#p_IR").val(p_IR)
     $("#p_IR").keyup(update_p_IR);
 
-    $("#p_SI_ld").val(p_SI_ld)
-    $("#p_SI_ld").keyup(update_p_SI_ld);
+    $("#p_lambda").val(p_lambda)
+    $("#p_lambda").keyup(update_p_lambda);
 
-    $("#p_IR_ld").val(p_IR_ld)
-    $("#p_IR_ld").keyup(update_p_IR_ld);
+    $("#p_mu").val(p_mu)
+    $("#p_mu").keyup(update_p_mu);
 }
 
 function reset_history () {
@@ -148,16 +219,16 @@ function reset_history () {
                 I: {label: "Infective", color: sir_color.I, data: []},
                 R: {label: "Recovered (or dead)", color: sir_color.R, data: []},
                 C: {label: "Cumulative (Infective + Recovered)", color: sir_color.C, data: []},
-                B: {label: "Start of Intervention", color: sir_color.B, data: [] }
+                L: {label: "Lockdown Index", color: sir_color.L, data: [] }
   };
     
-  for (i = 0; i < latest_data.length; i++) {
-        timeseries.D.data.push([i, latest_data[i]]);
+  var max_case = Math.max(...cases);
+  console.log(max_case);
+  for (i = 0; i < cases.length; i++) {
+        timeseries.D.data.push([i, cases[i]]);
+        timeseries.L.data.push([i, indicies[i] * max_case]);
   }
     
-  timeseries.B.data.push([break_point, 0]);
-  timeseries.B.data.push([break_point, latest_data[latest_data.length-1]]);
-
   timeseries.S.data.push([count, N*epi_state.S]);
   timeseries.I.data.push([count, N*epi_state.I]);
   timeseries.R.data.push([count, N*epi_state.R]);
@@ -213,14 +284,35 @@ function run_SIR() {
     
     var beta = p_SI;
     var gamma = p_IR;
+    var lambda = p_lambda;
+    var mu = p_mu;
     
-    if (count >= break_point) {
-       beta = p_SI_ld;
-       gamma = p_IR_ld;
+    // function sigmoid(x,x0,b) {
+    //     return Math.pow(  ( 1/(1+Math.pow(Math.E, -b*(x-(1-x0))) ) * x ), 1-x ) ;
+    // }
+                           
+    function sigmoid(x,lambda,mu) {
+        var k = 400;
+        return 1 - lambda / (1+Math.pow(Math.E, - k * (x-mu) )) ;
     }
     
-    epi_state.S += ( - beta * s * i );
-    epi_state.I += ( + beta * s * i - gamma * i );
+                        /*
+    function sigmoid(x,lambda,mu) {
+                        if (x > mu) {
+                          return 1 - lambda * x;
+                        } else {
+                          return 1
+                        }
+    }
+                        */
+                        
+    var max_count = Math.abs(Math.min(count-1, indicies.length-1))
+    var f = sigmoid( indicies[max_count], lambda, mu)
+                        
+                        console.log(f);
+    
+    epi_state.S += ( - f * beta * s * i );
+    epi_state.I += ( + f * beta * s * i - gamma * i );
     epi_state.R += (gamma * i);
                     
     count++;
@@ -236,21 +328,18 @@ function run_SIR() {
        running = 0;
 }
 
+                           
 function update_plot () {
  plot.setData([timeseries.D, timeseries.I, timeseries.R,
-               timeseries.C, timeseries.B ]);
+               timeseries.C, timeseries.L ]);
  plot.setupGrid();
+ max_y = plot.getOptions().yaxes[0].max;
  plot.draw();
 }
                            
 function update_p_R0 () {
     p_R0 = (p_SI / p_IR).toFixed(1);
     $('#p_R0').val(p_R0);
-}
-                                      
-function update_p_R0_ld () {
-   p_R0_ld = (p_SI_ld / p_IR_ld).toFixed(1);
-   $('#p_R0_ld').val(p_R0_ld);
 }
 
 function update_p_SI () {
@@ -263,19 +352,6 @@ function update_p_SI () {
      valid_data = 1;
      update_p_R0();
      $("#p_SI").css("background-color", "#fff");
-  }
-}
-
-function update_p_SI_ld () {
-  p = Number($("#p_SI_ld").val());
-  if (isNaN(p) || p<0.0 || p>1.0) {
-     valid_data = 0;
-     $("#p_SI_ld").css("background-color", "#f88");
-  } else {
-     p_SI_ld = p;
-     valid_data = 1;
-     update_p_R0_ld();
-     $("#p_SI_ld").css("background-color", "#fff");
   }
 }
 
@@ -292,16 +368,27 @@ function update_p_IR () {
   }
 }
 
-function update_p_IR_ld () {
-  p = Number($("#p_IR_ld").val());
+function update_p_lambda () {
+    p = Number($("#p_lambda").val());
+    if (isNaN(p) || p<0.0 || p>1.0) {
+        valid_data = 0;
+    $("#p_lambda").css("background-color", "#f88");
+    } else {
+        p_lambda = p;
+        valid_data = 1;
+        $("#p_lambda").css("background-color", "#fff");
+    }
+}
+
+function update_p_mu () {
+  p = Number($("#p_mu").val());
   if (isNaN(p) || p<0.0 || p>1.0) {
      valid_data = 0;
-     $("#p_IR_ld").css("background-color", "#f88");
+     $("#p_mu").css("background-color", "#f88");
   } else {
-     p_IR_ld = p;
+     p_mu = p;
      valid_data = 1;
-     update_p_R0_ld();
-     $("#p_IR_ld").css("background-color", "#fff");
+     $("#p_mu").css("background-color", "#fff");
   }
 }
 

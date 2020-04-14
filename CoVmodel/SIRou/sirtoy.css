@@ -26,15 +26,21 @@ div#controls {
 }
 
 
+#p_N {
+ width: 90px;
+ padding: 3px;
+ font-size: 16px;
+ border: 1px solid #aaa;
+}
 
-#p_SI, #p_IR, #p_SI_ld, #p_IR_ld, #p_N {
+#p_SI, #p_IR, #p_lambda, #p_mu {
  width: 75px;
  padding: 3px;
  font-size: 16px;
  border: 1px solid #aaa;
 }
 
-#p_R0, #p_R0_ld {
+#p_R0 {
     width: 60px;
     padding: 3px;
     font-size: 16px;
