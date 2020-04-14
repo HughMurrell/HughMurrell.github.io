@@ -172,14 +172,16 @@ var valid_data = 1;
 var running = 0;
 var p_SI_default = 0.463;
 var p_IR_default = 0.1;
-var p_lambda_default = 0.87
-var p_mu_default = 0.95
+var p_lambda_default = 0.87;
+var p_mu_default = 0.95;
+var p_eta_default = 1.0;
 
 var p_SI = p_SI_default;
 var p_IR = p_IR_default;
                            
 var p_lambda = p_lambda_default;
 var p_mu = p_mu_default;
+var p_eta = p_eta_default;
                                      
 var p_R0;
         
@@ -194,10 +196,11 @@ var epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
 
 function reset_params () {
     
-    // p_SI = p_SI_default;
-    // p_IR = p_IR_default;
-    // p_SI_ld = p_SI_ld_default;
-    // p_IR_ld = p_IR_ld_default;
+    p_SI = p_SI_default;
+    p_IR = p_IR_default;
+    p_lambda = p_lambda_default;
+    p_mu = p_mu_default;
+    p_eta = p_eta_default;
     
     $("#p_SI").val(p_SI)
     $("#p_SI").keyup(update_p_SI);
@@ -210,6 +213,9 @@ function reset_params () {
 
     $("#p_mu").val(p_mu)
     $("#p_mu").keyup(update_p_mu);
+                        
+    $("#p_eta").val(p_eta)
+    $("#p_eta").keyup(update_p_eta);
 }
 
 function reset_history () {
@@ -219,7 +225,7 @@ function reset_history () {
                 I: {label: "Infective", color: sir_color.I, data: []},
                 R: {label: "Recovered (or dead)", color: sir_color.R, data: []},
                 C: {label: "Cumulative (Infective + Recovered)", color: sir_color.C, data: []},
-                L: {label: "Lockdown Index", color: sir_color.L, data: [] }
+                L: {label: "Stringency Index * max(Data)", color: sir_color.L, data: [] }
   };
     
   var max_case = Math.max(...cases);
@@ -286,13 +292,14 @@ function run_SIR() {
     var gamma = p_IR;
     var lambda = p_lambda;
     var mu = p_mu;
+    var eta = p_eta;
     
     // function sigmoid(x,x0,b) {
     //     return Math.pow(  ( 1/(1+Math.pow(Math.E, -b*(x-(1-x0))) ) * x ), 1-x ) ;
     // }
                            
-    function sigmoid(x,lambda,mu) {
-        var k = 400;
+    function sigmoid(x,lambda,mu,eta) {
+        var k = 400*eta;
         return 1 - lambda / (1+Math.pow(Math.E, - k * (x-mu) )) ;
     }
     
@@ -307,7 +314,7 @@ function run_SIR() {
                         */
                         
     var max_count = Math.abs(Math.min(count-1, indicies.length-1))
-    var f = sigmoid( indicies[max_count], lambda, mu)
+    var f = sigmoid( indicies[max_count], lambda, mu, eta)
                         
                         console.log(f);
     
@@ -390,6 +397,18 @@ function update_p_mu () {
      valid_data = 1;
      $("#p_mu").css("background-color", "#fff");
   }
+}
+            
+function update_p_eta () {
+    p = Number($("#p_eta").val());
+    if (isNaN(p) || p<0.0 || p>1.0) {
+        valid_data = 0;
+        $("#p_eta").css("background-color", "#f88");
+    } else {
+        p_eta = p;
+        valid_data = 1;
+        $("#p_eta").css("background-color", "#fff");
+    }
 }
 
 function reset_all () {

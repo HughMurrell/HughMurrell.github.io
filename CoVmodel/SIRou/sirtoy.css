@@ -33,7 +33,7 @@ div#controls {
  border: 1px solid #aaa;
 }
 
-#p_SI, #p_IR, #p_lambda, #p_mu {
+#p_SI, #p_IR, #p_lambda, #p_mu, #p_eta {
  width: 75px;
  padding: 3px;
  font-size: 16px;
