@@ -113,9 +113,10 @@ span#start-text {
   padding: 10px;
 }
 
-button#reset-button, button#start-button, button#stop-button, button#continue-button, button#optimize-button {
-  float: left;
-  font-size: 28px;
+button#reset-button, button#start-button, button#stop-button, button#continue-button,
+    button#opt-beta-button, button#opt-lambda-button {
+  /* float: right; */
+  font-size: 24px;
   color: #666;
   pointer-events: all;
 }

@@ -7,7 +7,8 @@
  <script type="text/javascript" src="d3.geom.min.js"></script>
  <script type="text/javascript" src="d3.layout.min.js"></script>
  <script src="https://d3js.org/d3-dsv.v1.min.js"></script>
- <script src='Cobyla.js' type='text/javascript'></script>
+ <script type='text/javascript' src='Cobyla.js' ></script>
+  <script type='text/javascript' src='fmin.min.js'></script>
   <link type="text/css" rel="stylesheet" href="sirtoy.css"/>
  <title>SIR toy</title>
  </head>
@@ -48,29 +49,40 @@
           
     <div style='text-align:center;'>
         <script type= "text/javascript" src = "countries.js"></script>
-        Select Country:   <select id="country2" name ="country2"></select>
+        Country:   <select id="country2" name ="country2"></select>
+        Pop: <input id="p_N" type="text" name="p_N" value="1000" />
     </div>
    
     <script language="javascript">
           populateCountries("country2");
     </script>
     
-    Population: <input id="p_N" type="text" name="p_N" value="1000" />
-    <br /><br />
+    
+    <br />
+    
+    &lambda; =  <input id="p_lambda" type="text" name="p_lambda" value="0.00" />
+    &eta; = <input id="p_eta" type="text" name="p_eta" value="20" />
+    &mu; = <input id="p_mu" type="text" name="p_mu" value="0.00" />
+    <br />
     
     &beta; =  <input id="p_SI" type="text" name="p_SI" value="0.00" />
     &gamma; = <input id="p_IR" type="text" name="p_IR" value="0.00" />
     R<sub>0</sub> = <input id="p_R0" type="text" name="p_R0" value="0.00" />
     <br />
-    
-    &lambda; =  <input id="p_lambda" type="text" name="p_lambda" value="0.00" />
-    &mu; = <input id="p_mu" type="text" name="p_mu" value="0.00" />
-    &eta; = <input id="p_eta" type="text" name="p_eta" value="0.00" />
+    Optimise:
+    <span><button id="opt-beta-button">&beta;</button></span>
+    <span><button id="opt-lambda-button">&lambda;</button></span>
+    <br /><br />
+    Simulate:
+    <span><button id="reset-button">reset</button></span>
+    <span><button id="start-button">start</button></span>
+    <span><button id="stop-button">stop</button></span>
+    <span><button id="continue-button">continue</button></span>
     <br /><br />
     
     <math>
            &nu; = current stringency index (yellow curve) <br />
-           &sigma; = 1 - &lambda; / (1 + E<sup> - 400 &eta; (&nu; - &mu;) </sup>)
+           &sigma;<sub>n+1</sub> = 1 - &lambda; (&nu;<sub>n-&mu;</sub>)<sup> &eta; </sup> = current ameliorate (cyan curve)
            <br />
            S<sub>n+1</sub> = S<sub>n</sub> - &sigma; &beta; S<sub>n</sub> I<sub>n</sub>
            <br />
@@ -80,12 +92,7 @@
     </math>
     <br />
     
-   <span><button id="reset-button">reset</button></span>
-   <span><button id="start-button">start</button></span>
-   <span><button id="stop-button">stop</button></span>
-   <span><button id="continue-button">continue</button></span>
-   <span><button id="optimize-button">optimize</button></span>
-   <br />
+   
    
  
 
