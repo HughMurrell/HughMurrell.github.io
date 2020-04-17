@@ -477,6 +477,7 @@ function recompute_ameliorates(lag) {
                 var lambda = p_lambda;
                 var eta = p_eta;
                 var mu = p_mu;
+                console.log(beta+" "+gamma+" "+lambda+" "+eta+" "+mu);
                         
                 var state = { S: (N-1)/N, I: 1/N, R: 0, C: 1/N };
                 var loss = Math.abs(cases[0] - N * state.C );
@@ -486,8 +487,8 @@ function recompute_ameliorates(lag) {
                 var f;
                 
                 var j=1;
-            //indicies[j] < mu
-                while (j<break_point & j<cases.length) {
+            //indicies[j] < mu   j<break_point & 
+                while (j<cases.length) {
                     var ind = Math.max(0,j-mu)   // allowing for lag
                     f = sigmoid( indicies[ind], lambda, eta);
                     s = state.S;
@@ -501,7 +502,7 @@ function recompute_ameliorates(lag) {
                     j++
                 }
                         
-                // console.log("loss = "+loss+"at "+x+" after call "+sim_count);
+                console.log("loss = "+loss+"at "+x+" after call "+sim_count);
 
                 return loss;
                 
