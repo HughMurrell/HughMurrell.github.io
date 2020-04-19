@@ -153,13 +153,17 @@ function populateCountries(countryElementId){
                 N = populations[country.substring(country.length-3)];
                 $("#p_N").prop('disabled', true);
                 $('#p_N').val(N);
-                p_R0 = (p_SI / p_IR).toFixed(1);
+                p_R0 = (p_SI / p_IR).toFixed(2);
                 $("#p_R0").prop('disabled', true);
                 $('#p_R0').val(p_R0);
+                p_Rn = (p_SI / p_IR).toFixed(2);
+                $("#p_Rn").prop('disabled', true);
+                $('#p_Rn').val(p_Rn);
             }
         }
+                        timeseries.M.data = [];
         reset_all();
-        // console.log(country)
+        console.log("Country = "+country+" with population "+N+" log2(N) = "+Math.log2(N))
     }
 }
 
@@ -169,8 +173,9 @@ var running = 0;
 var p_SI_default = 0.463;
 var p_IR_default = 0.1;
 var p_lambda_default = 0;
-var p_eta_default = 10;
-var p_mu_default = 1;
+var p_eta_default = 1;
+var p_mu_default = 0;
+var p_eps_default = 1;
                         
 
 var p_SI = p_SI_default;
@@ -179,8 +184,10 @@ var p_IR = p_IR_default;
 var p_lambda = p_lambda_default;
 var p_eta = p_eta_default;
 var p_mu = p_mu_default;
+var p_eps = p_eps_default;
 
 var p_R0;
+var p_Rn;
         
 var time_interval = 200;
 var count = 0;
@@ -188,7 +195,7 @@ var sim_count = 0;
 var N = 60000000;
 var timeseries;
 
-var sir_color = {D: "#000000", S: "#00ffff", I: "#f00000", R: "#00f000", C: "#0000f0" ,L: "#ffff00", A: "#0ffff0"}
+var sir_color = {D: "#000000", S: "#ffffff", I: "#ff0000", R: "#008800", C: "#000088" , L: "#f0f000", A: "#00ff00", M: "#00f0f0"}
 
 var epi_state = { S: (N-1)/N, I: 1/N, R: 0 };
                         
@@ -224,8 +231,10 @@ function reset_params () {
     $("#p_mu").val(p_mu)
     $("#p_mu").keyup(update_p_mu);
                         
-    p_R0 = (p_SI / p_IR).toFixed(1);
+    p_R0 = (p_SI / p_IR).toFixed(2);
     $('#p_R0').val(p_R0);
+    p_Rn = p_R0;
+    $('#p_Rn').val(p_Rn);
                         
     recompute_ameliorates(p_mu);
                                                  
@@ -233,14 +242,20 @@ function reset_params () {
 
 function reset_history () {
     
+            var model_fit = [];
+             
+            if (timeseries != null) {
+              model_fit = timeseries.M.data;
+            }
+
    timeseries = {D: {label: "Data", color: sir_color.D, data: []},
                 S: {label: "Susceptible", color: sir_color.S, data: []},
                 I: {label: "Infective", color: sir_color.I, data: []},
                 R: {label: "Recovered (or dead)", color: sir_color.R, data: []},
                 C: {label: "Cumulative (Infective + Recovered)", color: sir_color.C, data: []},
                 L: {label: "Stringency Index * max(Data)", color: sir_color.L, data: []},
-                A: {label: "Amelioration Factor * max(Data)", color: sir_color.A, data: []
-                        }
+                A: {label: "Amelioration Factor * max(Data)", color: sir_color.A, data: []},
+                M: {label: "Last Optimal Model fit", color: sir_color.M, data: model_fit}
   };
     
   var max_case = Math.max(...cases);
@@ -294,6 +309,7 @@ $("#stop-button").click(stop_all);
 $("#continue-button").click(continue_all);
 $("#opt-beta-button").click(optimize_beta);
 $("#opt-lambda-button").click(optimize_lambda);
+$("#opt-beta-lambda-button").click(optimize_beta_lambda);
 
 setInterval(run_SIR, time_interval);
 
@@ -311,37 +327,50 @@ function run_SIR() {
     var beta = p_SI;
     var gamma = p_IR;
                         
-    var prev_count = Math.abs(Math.min(count-1, indicies.length-1))
+    var prev_count = Math.abs(Math.min(count, indicies.length-1))
     var f = ameliorates[prev_count];
     
     epi_state.S += ( - f * beta * s * i );
     epi_state.I += ( + f * beta * s * i - gamma * i );
     epi_state.R += (gamma * i);
                     
- 
     timeseries.S.data.push([count, Math.round(N*epi_state.S)]);
     timeseries.I.data.push([count, Math.round(N*epi_state.I)]);
     timeseries.R.data.push([count, Math.round(N*epi_state.R)]);
     timeseries.C.data.push([count, N*(epi_state.R+epi_state.I)]);
+            
+    update_p_Rn(f);
 
     update_plot();
 
-    if (Math.round(N*epi_state.I) == 0)
-       running = 0;
+    /*
+            if (count >= cases.length - 1) {    // (Math.round(N*epi_state.I) == 0) {
+              console.log("loss = "+sim_loss(p_SI, p_IR, p_lambda, p_eta, p_mu, p_eps));
+              running = 0;
+            }
+     */
+       
 }
 
                            
 function update_plot () {
+ // console.log(timeseries.M);
+
  plot.setData([timeseries.D, timeseries.I, timeseries.R,
-               timeseries.C, timeseries.L, timeseries.A ]);
+               timeseries.L, timeseries.A, timeseries.M, timeseries.C ]);
  plot.setupGrid();
  max_y = plot.getOptions().yaxes[0].max;
  plot.draw();
 }
                            
 function update_p_R0 () {
-    p_R0 = (p_SI / p_IR).toFixed(1);
+    p_R0 = (p_SI / p_IR).toFixed(2);
     $('#p_R0').val(p_R0);
+}
+            
+function update_p_Rn (lambda) {
+    p_Rn = (lambda * p_SI / p_IR).toFixed(2);
+    $('#p_Rn').val(p_Rn);
 }
 
 function update_p_SI () {
@@ -470,43 +499,51 @@ function recompute_ameliorates(lag) {
                 }
 }
             
-    function simulate_loss_beta(x){
-                sim_count += 1;
-                var beta = x;
-                var gamma = p_IR;
-                var lambda = p_lambda;
-                var eta = p_eta;
-                var mu = p_mu;
-                console.log(beta+" "+gamma+" "+lambda+" "+eta+" "+mu);
-                        
-                var state = { S: (N-1)/N, I: 1/N, R: 0, C: 1/N };
-                var loss = Math.abs(cases[0] - N * state.C );
-                console.log("loss 0 = "+loss);
-                var s;
-                var i;
-                var f;
-                
-                var j=1;
-            //indicies[j] < mu   j<break_point & 
-                while (j<cases.length) {
-                    var ind = Math.max(0,j-mu)   // allowing for lag
-                    f = sigmoid( indicies[ind], lambda, eta);
-                    s = state.S;
-                    i = state.I;
-                    state.S += ( - f * beta * s * i );
-                    state.I += ( + f * beta * s * i - gamma * i );
-                    state.R += (gamma * i);
-                    state.C = state.I + state.R;
-                    loss += Math.abs(cases[j] - N * state.C );
-                    // console.log("loss = "+loss+" at iteration "+j);
-                    j++
-                }
-                        
-                console.log("loss = "+loss+"at "+x+" after call "+sim_count);
-
-                return loss;
-                
-            }
+function sim_loss(beta, gamma, lambda, eta, mu, eps) {
+    reset_history();
+    timeseries.M.data = [];
+    var state = { S: (N-1)/N, I: 1/N, R: 0, C: 1/N };
+    timeseries.M.data.push([0, state.C]);
+    var loss = Math.abs(cases[0] - N * state.C );
+    var s;
+    var i;
+    var f;
+    var j=1;
+            //indicies[j] < mu   j<break_point &
+    while (j<cases.length) {
+        var ind = Math.max(0,j-mu)   // allowing for lag
+        f = sigmoid( indicies[ind], lambda, eta);
+        s = state.S;
+        i = state.I;
+        state.S += ( - f * beta * s * i );
+        state.I += ( + f * beta * s * i - gamma * i );
+        state.R += (gamma * i);
+        state.C = state.I + state.R;
+        // console.log("cases = "+cases[j]+" state = "+(N*state.C));
+        // if ( Math.abs(cases[j] - N*state.C ) > (eps* Math.log2(N)) ) {
+        //               loss += 1;
+        // }
+        loss += Math.abs((cases[j]) - (N * state.C) );
+        if ( N*state.C < cases[cases.length-1] ) {
+            timeseries.M.data.push([j, N*state.C]);
+        }
+        j++;
+    }
+    return loss
+}
+            
+function simulate_loss_beta(x){
+    sim_count += 1;
+    var beta = x;
+    var gamma = p_IR;
+    var lambda = p_lambda;
+    var eta = p_eta;
+    var mu = p_mu;
+    var eps = p_eps;
+    var loss = sim_loss(beta, gamma, lambda, eta, mu, eps);
+    // console.log("loss = "+loss+" at "+x+" after call "+sim_count);
+    return loss;
+}
 
 function optimize_beta () {
     running = 0;
@@ -528,6 +565,7 @@ function optimize_beta () {
               if ( curr_loss < best_loss ) {
                 best = guess;
                 best_loss = curr_loss;
+                update_plot();
               }
             }
             
@@ -555,41 +593,21 @@ function optimize_beta () {
     update_plot();
 }
                                      
-                                        function simulate_loss_lambda(x){
-                                                     sim_count += 1;
-                                                     var beta = p_SI;
-                                                     var gamma = p_IR;
-                                                     var lambda = x;
-                                                     var mu = p_mu;
-                                                     var eta = p_eta;
-                                                             
-                                                     var state = { S: (N-1)/N, I: 1/N, R: 0, C: 1/N };
-                                                     var loss = Math.abs(cases[0] - N * state.C );
-                                                     // console.log("loss 0 = "+loss);
-                                                     var s;
-                                                     var i;
-                                                     var f;
+function simulate_loss_lambda(x){
+    sim_count += 1;
+    var beta = p_SI;
+    var gamma = p_IR;
+    var lambda = x;
+    var eta = p_eta;
+    var mu = p_mu;
+    var eps = p_eps;
                                                      
-                                                     var j=1;
-                                                     while (j<cases.length) {
-                                                         var ind = Math.max(0,j-mu)   // allowing for lag
-                                                         f = sigmoid( indicies[ind], lambda, eta);
-                                                         s = state.S;
-                                                         i = state.I;
-                                                         state.S += ( - f * beta * s * i );
-                                                         state.I += ( + f * beta * s * i - gamma * i );
-                                                         state.R += (gamma * i);
-                                                         state.C = state.I + state.R;
-                                                         loss = Math.abs(cases[j] - N * state.C );
-                                                         // console.log("loss = "+loss+" at iteration "+j);
-                                                         j++
-                                                     }
-                                                             
-                                                     // console.log("loss = "+loss+"at "+x+" after call "+sim_count);
+    var loss = sim_loss(beta, gamma, lambda, eta, mu, eps)
+    // console.log("loss = "+loss+" at "+x+" after call "+sim_count);
 
-                                                     return loss;
+    return loss;
                                                      
-                                                 }
+}
 
                                      function optimize_lambda () {
                                          running = 0;
@@ -603,7 +621,7 @@ function optimize_beta () {
                                          var guess = 0.01;
                                          var best_loss = loss(guess);
                                          var curr_loss = best_loss;
-                                         var delta = 0.01;
+                                         var delta = 0.001;
                                                  
                                                  while ( guess <= 1.0-delta ) {
                                                    guess += delta;
@@ -638,3 +656,55 @@ function optimize_beta () {
                                          update_plot();
                                      }
 
+function simulate_loss_beta_lambda(x_beta, x_lambda){
+    sim_count += 1;
+    var beta = x_beta;
+    var gamma = p_IR;
+    var lambda = x_lambda;
+    var eta = p_eta;
+    var mu = p_mu;
+    var eps = p_eps;
+                                                     
+    var loss = sim_loss(beta, gamma, lambda, eta, mu, eps)
+    // console.log("loss = "+loss+" at "+x+" after call "+sim_count);
+
+    return loss;
+                                                     
+}
+
+function optimize_beta_lambda () {
+        running = 0;
+        console.log("optimizing beta and lambda ....");
+                                         
+        function loss(x_beta,x_lambda) {
+            return simulate_loss_beta_lambda(x_beta, x_lambda);
+        }
+            
+        sim_count = 0;
+        var delta = 0.001;
+        var best_loss = loss(0,0);
+        var curr_loss = best_loss;
+        var best_beta = 0;
+        var best_lambda = 0;
+                                         
+
+            
+        for (var x_beta = 0; x_beta <= 1; x_beta += delta) {
+            for (var x_lambda = 0; x_lambda <= 1; x_lambda+=delta ) {
+                curr_loss = loss(x_beta, x_lambda);
+                if (curr_loss < best_loss) {
+                    best_loss = curr_loss;
+                    best_beta = x_beta;
+                    best_lambda = x_lambda;
+                }
+            }
+        }
+            
+        console.log("loss = "+loss(best_beta,best_lambda)+" at "+best_beta+" , "+best_lambda+
+                    " after "+sim_count+" function calls");
+        p_SI=best_beta;
+        p_lambda=best_lambda;
+        reset_params();
+        reset_history();
+        update_plot();
+}

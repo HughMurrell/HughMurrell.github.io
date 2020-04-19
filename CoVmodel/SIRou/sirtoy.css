@@ -9,6 +9,10 @@ div#container {
    margin: 10px;
 }
 
+div#container2 {
+   float: left;
+}
+
 div#counters {
    font-size: 36px;
    float: left;
@@ -19,7 +23,7 @@ div#counters {
 
 div#controls {
    font-size: 20px;
-   float: right;
+   float: left;
    height: 180px;
    margin: 20px;
    text-align: left;
@@ -40,7 +44,7 @@ div#controls {
  border: 1px solid #aaa;
 }
 
-#p_R0 {
+#p_R0, #p_Rn {
     width: 60px;
     padding: 3px;
     font-size: 16px;
@@ -114,10 +118,12 @@ span#start-text {
 }
 
 button#reset-button, button#start-button, button#stop-button, button#continue-button,
-    button#opt-beta-button, button#opt-lambda-button {
+    button#opt-beta-button, button#opt-lambda-button,
+    button#opt-beta-lambda-button {
   /* float: right; */
   font-size: 24px;
   color: #666;
+  onclick="chBackcolor('red')
   pointer-events: all;
 }
 

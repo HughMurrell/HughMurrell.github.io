@@ -17,36 +17,35 @@
     
     <h2> Discrete SIR model with intervention amelioration for COVID-19 case counts</h2>
      
-     <p> This tool allows the user to fit the simplest possible SIR epidemic model to data from
-     the <a href="https://www.bsg.ox.ac.uk/research/research-projects/oxford-covid-19-government-response-tracker" target=blank>Oxford COVID-19 Government Response Tracker </a>.</p>
+     <p> This tool allows the user to fit the simplest possible SIR epidemic model to data from the <a href="https://www.bsg.ox.ac.uk/research/research-projects/oxford-covid-19-government-response-tracker" target=blank>Oxford COVID-19 Government Response Tracker </a>.</p>
      
      <p>Standard SIR parameters, &beta; and &gamma;, can be set to model case count data and
-     three novel parameters, &lambda;, &mu; and &eta;, can be set to model the effect of the
+     two novel parameters, &lambda; and &eta;, can be set to model the effect of the
      Oxford stringency index on the SIR parameter &beta;.
-     Once the parameters are set use the buttons to initiate simulations.
+     The parameters can be set manually or by using the optimize buttons which
+     perform a rudamentary grid search of parameter space.
+     Once the parameters are set, use the simulate buttons to watch the epidemic unfold.
      The x-axis shows days since start of breakout whilst the y-axis shows case counts.</p>
      
-     <p> The default settings are optimal for the <b>South Africa</b> data. The user can experiment with
-     data for other countries but will have to manually optimise the SIR parameters.
-     It is hoped that later versions of the tool will include code to automate the optimisation of parameters.
-     New data will be uploaded periodically as the epidemic unfolds.
-     To learn more about intervention effects on epidemics listen to this
-     <a href=https://www.youtube.com/watch?v=gxAaO2rsdIs target=blank> 3blue1brown </a> youtube video.</p>
-
-  <div id="container">
+     
+    
+ 
 
   <div id="epicurves"></div>
 
 <!--
+ <div id="container">
   <div id="counters">
      <span id="susceptible"><span id="count_S">0</span> susceptible</span><br />
      <span id="infectious"><span id="count_I">0</span> infectious</span><br />
      <span id="recovered"><span id="count_R">0</span> recovered</span>
   </div>
+
 -->
  
- <div id="controls">
-          
+ 
+    <div id="controls">
+        
     <div style='text-align:center;'>
         <script type= "text/javascript" src = "countries.js"></script>
         Country:   <select id="country2" name ="country2"></select>
@@ -61,17 +60,18 @@
     <br />
     
     &lambda; =  <input id="p_lambda" type="text" name="p_lambda" value="0.00" />
-    &eta; = <input id="p_eta" type="text" name="p_eta" value="20" />
-    &mu; = <input id="p_mu" type="text" name="p_mu" value="0.00" />
+    &eta; = <input id="p_eta" type="text" name="p_eta" value="10" />
+    R<sub>n</sub> = <input id="p_Rn" type="text" name="p_Rn" value="0.0" />
     <br />
     
     &beta; =  <input id="p_SI" type="text" name="p_SI" value="0.00" />
     &gamma; = <input id="p_IR" type="text" name="p_IR" value="0.00" />
-    R<sub>0</sub> = <input id="p_R0" type="text" name="p_R0" value="0.00" />
+    R<sub>0</sub> = <input id="p_R0" type="text" name="p_R0" value="0.0" />
     <br />
     Optimise:
     <span><button id="opt-beta-button">&beta;</button></span>
     <span><button id="opt-lambda-button">&lambda;</button></span>
+    <span><button id="opt-beta-lambda-button">&beta;&lambda;</button></span>
     <br /><br />
     Simulate:
     <span><button id="reset-button">reset</button></span>
@@ -80,27 +80,32 @@
     <span><button id="continue-button">continue</button></span>
     <br /><br />
     
-    <math>
-           &nu; = stringency index (yellow curve) <br />
-           &sigma;<sub>n+1</sub> = 1 - &lambda; (&nu;<sub>n-&mu;</sub>)<sup> &eta; </sup> = ameliorate (cyan curve)
-           <br />
-           S<sub>n+1</sub> = S<sub>n</sub> - &sigma; &beta; S<sub>n</sub> I<sub>n</sub>
-           <br />
-           I<sub>n+1</sub> = I<sub>n</sub> + &sigma; &beta; S<sub>n</sub> I<sub>n</sub> - &gamma; I<sub>n</sub> <br />
-           R<sub>n+1</sub> = R<sub>n</sub> + &gamma; I<sub>n</sub> <br />
-           C<sub>n+1</sub> = I<sub>n+1</sub> + R<sub>n+1</sub> <br />
-    </math>
-    <br />
+   </div>
     
-   
-   
  
-
+ 
+ <script type="text/javascript" src="sirtoy.js"></script>
+ 
+<div id="container2">
+    <h4> Modified SIR discrete model </h4>
+    <math>
+              &nu; Oxford stringency index (yellow) <br />
+              &sigma; = 1 - &lambda; &nu;<sup> &eta; </sup> model amelioration factor (light green) <br />
+              S<sub>n+1</sub> = S<sub>n</sub> - &sigma; &beta; S<sub>n</sub> I<sub>n</sub> Susceptibles <br />
+              I<sub>n+1</sub> = I<sub>n</sub> + &sigma; &beta; S<sub>n</sub> I<sub>n</sub> - &gamma; I<sub>n</sub>  Infectives <br />
+              R<sub>n+1</sub> = R<sub>n</sub> + &gamma; I<sub>n</sub>  Recovered or dead <br />
+              C<sub>n+1</sub> = I<sub>n+1</sub> + R<sub>n+1</sub>  Cumulative Cases <br />
+       </math>
  </div>
+<div id="container2">
+    <p> The default settings are optimal for the <b>South Africa</b> data. The user can experiment with
+     data for other countries but will have to set appropriate parameters. </p>
     
-  <script type="text/javascript" src="sirtoy.js"></script>
+ <p> New data will be uploaded periodically as the epidemic unfolds.
+     To learn more about intervention effects on epidemics listen to this
+     <a href=https://www.youtube.com/watch?v=gxAaO2rsdIs target=blank> 3blue1brown </a> youtube video.</p>
+</div>
   
-  </div>
   
 
  </body>                                                                 
