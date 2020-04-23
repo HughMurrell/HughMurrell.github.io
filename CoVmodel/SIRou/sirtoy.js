@@ -40,7 +40,7 @@ fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/wb_population.csv')
   console.log('Fetch Population Error', err);
 });
 
-fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/stringencyindex-Table 1.csv')
+fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/stringencyindex.csv')
 .then(
   function(response) {
     if (response.status !== 200) {
@@ -63,7 +63,7 @@ fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/stringencyindex-Table 1
 });
 
 
-fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/confirmedcases-Table 1.csv')
+fetch('https://hughmurrell.github.io/CoVmodel/SIRou/data/confirmedcases.csv')
 .then(
   function(response) {
     if (response.status !== 200) {
@@ -523,7 +523,7 @@ function sim_loss(beta, gamma, lambda, eta, mu, eps) {
         // if ( Math.abs(cases[j] - N*state.C ) > (eps* Math.log2(N)) ) {
         //               loss += 1;
         // }
-        loss += Math.abs((cases[j]) - (N * state.C) );
+        loss += Math.pow((Math.log(1+cases[j]) - Math.log(1+N * state.C)),2 );
         if ( N*state.C < cases[cases.length-1] ) {
             timeseries.M.data.push([j, N*state.C]);
         }
