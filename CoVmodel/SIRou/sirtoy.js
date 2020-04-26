@@ -127,7 +127,7 @@ function populateCountries(countryElementId){
                   return number > 0;
                 });
                 var first_case_date = keys[index+2];
-                console.log(first_case_date);
+                console.log("first non-zero case on ",first_case_date);
                 cases = int_values.slice(index,int_values.length);
                 if (typeof indicies_data[i] != "undefined") {
                     values = Object.values(indicies_data[i]);
@@ -140,6 +140,8 @@ function populateCountries(countryElementId){
                     keys = Object.keys(indicies_data[i]);
                     int_values = values.slice(2,values.length).map(Number);
                     indicies = int_values.slice(index,int_values.length);
+                    var first_indecies_date = keys[index+2];
+                    console.log("first index on ",first_indecies_date);
                     for (var j=0; j<indicies.length; j++){
                         indicies[j] = (indicies[j] ) / 100.0;
                     }
