@@ -24,7 +24,7 @@
     
 	<script type="text/javascript">
         
-        function show_image(file_name) {
+        function show_image(file_name,place) {
             var data = [[[file_name, 0, 0, 50, 2]]];
 
             var options = {
@@ -51,7 +51,7 @@
             
 
             $.plot.image.loadDataImages(data, options, function () {
-                $.plot("#placeholder2", data, options);
+                $.plot(place, data, options);
             });
         }
 
@@ -88,8 +88,9 @@
       console.log("first value = "+vals[0]);
     
       var image_file_name = "plots/Rt_"+labs[0][1]+".png";
-             console.log("leader = "+image_file_name);
-             show_image(image_file_name);
+        show_image(image_file_name,"#placeholder2");
+        image_file_name = "plots/Nc_"+labs[0][1]+".png";
+        show_image(image_file_name,"#placeholder3");
 
 		var plot = $.plot("#placeholder", [
 			{ data: vals, label: "mlRt"}
@@ -188,9 +189,10 @@
 				plot.highlight(item.series, item.datapoint);
                                var ind = item.datapoint[0];
                                console.log("country index = "+ind);
-                               image_file_name = "plots/Rt_"+labs[ind][1]+".png";
-                               console.log(image_file_name);
-                show_image(image_file_name);
+                image_file_name = "plots/Rt_"+labs[ind][1]+".png";
+                show_image(image_file_name,"#placeholder2");
+                image_file_name = "plots/Nc_"+labs[ind][1]+".png";
+                show_image(image_file_name,"#placeholder3");
 			}
 		});
 
@@ -233,11 +235,20 @@
 		<p>A tooltip is easy to build with a bit of jQuery code and the data returned from the plot.</p>
  -->
 
-       
-        
-        <div class="demo-container" style="width:600px;height:400px;">
-            <div id="placeholder2" class="demo-placeholder"></div>
-        </div>
+       <table style="width:100%">
+       <tr>
+         <td>
+             <div class="demo-container" style="width:600px;height:400px;">
+                 <div id="placeholder2" class="demo-placeholder"></div>
+             </div>
+         </td>
+         <td>
+             <div class="demo-container" style="width:600px;height:400px;">
+                 <div id="placeholder3" class="demo-placeholder"></div>
+             </div>
+         </td>
+       </tr>
+       </table>
 
 	</div>
 
