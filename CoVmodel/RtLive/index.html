@@ -102,20 +102,18 @@
 				},
 				points: {
                     radius: 8,
-					show: true,
-                          fill: true,
-                          fillcolor: false
-                    
-                    // fillColor: { colors: [ { opacity: 0.8 }, { opacity: 0.1 } ] }
+					show: true
 				}
 			},
+                          colors: ["rgba(0,0,255,0.3)"],
 			grid: {
 				hoverable: true,
 				clickable: true,
-                fill: true,
-                fillColor: {
-                    colors: ["#ff0000", "#0000ff"]
-                }
+                markings:[
+                          {yaxis: { from: 0.0, to: 0.5 },color: "rgba(0,255,0,0.7)"},
+                          {yaxis: { from: 0.5, to: 1.0 },color: "rgba(0,255,0,0.3)"},
+                          {yaxis: { from: 1.0, to: 1.5 },color: "rgba(255,0,0,0.3)"},
+                          {yaxis: { from: 1.5, to: 2.0 },color: "rgba(255,0,0,0.7)"}]
 			},
 			yaxis: {
                 tickLength: 0,
@@ -139,7 +137,7 @@
 
 		window.setInterval(function () {
 			plot.setData([
-                { data: vals, label: "mlRt"}
+                          { data: vals, label: "mlRt"}
                 // { data: highs, label: "high"},
                 // { data: lows, label: "low"}
 
@@ -166,7 +164,7 @@
 				$("#hoverdata").text(str);
 			}
 */
-			if ($("#enableTooltip:checked").length > 0) {
+//			if ($("#enableTooltip:checked").length > 0) {
 				if (item) {
 					var x = item.datapoint[0].toFixed(0),
 						y = item.datapoint[1].toFixed(2);
@@ -177,7 +175,7 @@
 				} else {
 					$("#tooltip").stop().hide();
 				}
-			}
+//			}
 		});
 
 		$("#placeholder").bind("plothovercleanup", function (event, pos, item) {
@@ -214,8 +212,10 @@
     
 
 	<div id="content">
-        
+
+<!--
         <p><label><input id="enableTooltip" type="checkbox" checked="checked"></input>Enable tooltip</label></p>
+-->
 
 		<div class="demo-container" >
 			<div id="placeholder" class="demo-placeholder"></div>
