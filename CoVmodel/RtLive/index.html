@@ -24,6 +24,35 @@
     
 	<script type="text/javascript">
         
+        function display_plots(country) {
+            image_file_name = "plots/Rt_"+country+".png";
+            show_image(image_file_name,"#placeholder2");
+            image_file_name = "plots/Nc_"+country+".png";
+            show_image(image_file_name,"#placeholder3");
+        }
+        
+        function populateCountries(countryElementId, names){
+            // given the id of the <select> tag as function argument, it inserts <option> tags
+            var countryElement = document.getElementById(countryElementId);
+            countryElement.length=0;
+            // countryElement.options[0] = new Option('Select Country','-1');
+            countryElement.selectedIndex = 0;
+            for (var i=0; i<names.length; i++) {
+                countryElement.options[countryElement.length] = new Option(names[i],names[i]);
+            }
+            country = names[0];
+            console.log(country);
+            display_plots(country);
+            // Assigned all countries. Now assign event listener.
+
+            countryElement.onchange = function(){
+                country = names[countryElement.selectedIndex];
+                console.log(country);
+                display_plots(country);
+            }
+        }
+
+        
         function show_image(file_name,place) {
             var data = [[[file_name, 0, 0, 50, 2]]];
 
@@ -62,7 +91,7 @@
       d3.csv("data/ranking.csv", function(data) {
              var i = 0;
              data.forEach((d) => {
-                   var dObj = {code: d.Code, name: d.Name, value: d.MLRt, low: d.Low, high: d.High, i: i++};
+                   var dObj = {country: d.country, value: d.mlrt, low: d.low, high: d.high, i: i++};
                    adata.push(dObj);
                    });
              console.log("data read inside d3.csv, length = "+adata.length);
@@ -81,17 +110,15 @@
         vals.push([i, adata[i]['value']]);
         highs.push([i, adata[i]['high']]);
         lows.push([i, adata[i]['low']]);
-        labs.push([i, adata[i]['code']]);
-        names.push(adata[i]['name']);
+        names.push(adata[i]['country']);
       }
       
+      console.log("first name = "+names[0]);
       console.log("first value = "+vals[0]);
-    
-      var image_file_name = "plots/Rt_"+labs[0][1]+".png";
-        show_image(image_file_name,"#placeholder2");
-        image_file_name = "plots/Nc_"+labs[0][1]+".png";
-        show_image(image_file_name,"#placeholder3");
-
+             
+      populateCountries("country",names);
+             
+      
 		var plot = $.plot("#placeholder", [
 			{ data: vals, label: "mlRt"}
 			// { data: highs, label: "high"},
@@ -130,13 +157,13 @@
                           {yaxis: { from: 1.6, to: 1.7 },color: "rgba(255,0,0,0.7)"},
                           {yaxis: { from: 1.7, to: 1.8 },color: "rgba(255,0,0,0.8)"},
                           {yaxis: { from: 1.8, to: 1.9 },color: "rgba(255,0,0,0.9)"},
-                          {yaxis: { from: 1.9, to: 2.0 },color: "rgba(255,0,0,1.0)"}]
+                          {yaxis: { from: 1.9, to: 3.2 },color: "rgba(255,0,0,1.0)"}]
 			},
 			yaxis: {
                 tickLength: 0,
                 ticks: [0, 1, 2],
 				min: -0.2,
-				max: 1.2
+				max: 3.2
 			},
             xaxis: {
                 tickLength: 0,
@@ -205,16 +232,16 @@
 				plot.highlight(item.series, item.datapoint);
                                var ind = item.datapoint[0];
                                console.log("country index = "+ind);
-                image_file_name = "plots/Rt_"+labs[ind][1]+".png";
-                show_image(image_file_name,"#placeholder2");
-                image_file_name = "plots/Nc_"+labs[ind][1]+".png";
-                show_image(image_file_name,"#placeholder3");
+                var countryElement = document.getElementById('country');
+                countryElement.selectedIndex = ind;
+                display_plots(names[ind]);
+                
 			}
 		});
 
 		// Add the Flot version string to the footer
 
-		$("#footer").prepend("Flot " + $.plot.version + " &ndash; ");
+		// $("#footer").prepend("Flot " + $.plot.version + " &ndash; ");
              
              });  // end of d3.csv
       
@@ -225,7 +252,6 @@
 <body>
 	<div id="header">
 		<h2>World R(t) rankings</h2>
-        <h4>by: Hugh, Ben and Dan Murrell <h4>
 	</div>
 
     
@@ -251,6 +277,17 @@
 
 		<p>A tooltip is easy to build with a bit of jQuery code and the data returned from the plot.</p>
  -->
+<!--
+<script type= "text/javascript" src = "countries.js"></script>
+<script language="javascript">
+      populateCountries("country");
+</script>
+-->
+
+<div style='text-align:left;'>
+     Country:   <select id="country" name ="country"></select>
+ </div>
+
 
        <table style="width:100%">
        <tr>
@@ -270,7 +307,7 @@
 	</div>
 
 	<div id="footer">
-		Copyright &copy; 2007 - 2014 IOLA and Ole Laursen
+        CREDITS: created by: Hugh Murrell, with help from Ben Murrell, on a suggestion from Dan Murrell, based on a model by Kevin Systrom, using Flot by IOLA and Ole Laursen and using COVID-19 data from OWID.
 	</div>
 
 </body>
