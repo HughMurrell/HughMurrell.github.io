@@ -46,7 +46,8 @@
             // Assigned all countries. Now assign event listener.
 
             countryElement.onchange = function(){
-                country = names[countryElement.selectedIndex];
+                ind = countryElement.selectedIndex;
+                country = names[ind];
                 console.log(country);
                 display_plots(country);
             }
@@ -88,12 +89,15 @@
       
       var adata = [];
       
-      d3.csv("data/ranking.csv", function(data) {
+      d3.csv("data/ranking_alpha.csv", function(data) {
              var i = 0;
              data.forEach((d) => {
                    var dObj = {country: d.country, value: d.mlrt, low: d.low, high: d.high, i: i++};
                    adata.push(dObj);
                    });
+//             adata.sort(function(a,b) {
+//                 return a[0]-b[0]
+//             });
              console.log("data read inside d3.csv, length = "+adata.length);
              
       
@@ -228,7 +232,7 @@
 
 		$("#placeholder").bind("plotclick", function (event, pos, item) {
 			if (item) {
-				$("#clickdata").text(" - click point " + item.dataIndex + " in " + item.series.label);
+				// $("#clickdata").text(" - click point " + item.dataIndex + " in " + item.series.label);
 				plot.highlight(item.series, item.datapoint);
                                var ind = item.datapoint[0];
                                console.log("country index = "+ind);
