@@ -15,6 +15,7 @@ h2 {
 }
 
 h3 {
+    text-align: center;
 	margin-left: 30px;
 	font: normal 26px "omnes-pro", Helvetica, Arial, sans-serif;
 	color: #666;
@@ -64,6 +65,10 @@ input[type=checkbox] {
 	text-align: center;
 	font-size: 12px;
 	color: #999;
+}
+
+#date {
+    
 }
 
 .demo-container {

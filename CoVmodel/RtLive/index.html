@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-	<title>Flot Examples: Interactivity</title>
+	<title>Intervention Ranking</title>
 	<link href="examples.css" rel="stylesheet" type="text/css">
     <script language="javascript" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js" ></script>
 	<script language="javascript" type="text/javascript" src="source/jquery.js"></script>
@@ -25,8 +25,21 @@
 	<script language="javascript" type="text/javascript" src="source/jquery.flot.touch.js"></script>
 	<script language="javascript" type="text/javascript" src="source/jquery.flot.selection.js"></script>
     <script language="javascript" type="text/javascript" src="source/jquery.flot.image.js"></script>
+    <script language="javascript" type="text/javascript" src="source/jquery.flot.symbol.js"></script>
     
 	<script type="text/javascript">
+        
+        var plot;
+        
+        var vals = [],
+            highs = [],
+            lows = [],
+            labs = [],
+            names = [],
+            alpha_names = [],
+            selected_vals = [],
+            latest_date = "2020-01-01"
+        ;
         
         function display_plots(country) {
              image_file_name = "plots/Rt_"+country+".png";
@@ -35,15 +48,16 @@
             show_image(image_file_name,"#placeholder3");
         }
         
-        function populateCountries(countryElementId, names){
+        function populateCountries(countryElementId, nams){
             // given the id of the <select> tag as function argument, it inserts <option> tags
             var countryElement = document.getElementById(countryElementId);
             countryElement.length=0;
             // countryElement.options[0] = new Option('Select Country','-1');
             countryElement.selectedIndex = 0;
-            for (var i=0; i<names.length; i++) {
-                countryElement.options[countryElement.length] = new Option(names[i],names[i]);
+            for (var i=0; i<nams.length; i++) {
+                countryElement.options[countryElement.length] = new Option(nams[i],nams[i]);
             }
+            countryElement.style.fontSize = "120%" ;
             country = names[0];
             console.log(country);
             display_plots(country);
@@ -51,9 +65,16 @@
 
             countryElement.onchange = function(){
                 ind = countryElement.selectedIndex;
-                country = names[ind];
+                country = nams[ind];
                 console.log(country);
                 display_plots(country);
+                rank_ind = names.findIndex((x) => x === country);
+                selected_vals = [ [rank_ind, -0.5] ];
+                plot.setData([
+                         { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+                         { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,1.0)" }
+                ]);
+                plot.draw();
             }
         }
 
@@ -93,10 +114,10 @@
       
       var adata = [];
       
-      d3.csv("data/ranking_alpha.csv", function(data) {
+      d3.csv("data/ranking_mlrt.csv", function(data) {
              var i = 0;
              data.forEach((d) => {
-                   var dObj = {country: d.country, value: d.mlrt, low: d.low, high: d.high, i: i++};
+                          var dObj = {country: d.country, value: d.mlrt, low: d.low, high: d.high, date: d.end_date, i: i++};
                    adata.push(dObj);
                    });
 //             adata.sort(function(a,b) {
@@ -107,46 +128,52 @@
       
         console.log("data read, length = "+adata.length);
 
-		var vals = [],
-			highs = [],
-            lows = [],
-            labs = [],
-            names = []
-        ;
 
       for (var i = 0; i < adata.length; i++) {
         vals.push([i, adata[i]['value']]);
         highs.push([i, adata[i]['high']]);
         lows.push([i, adata[i]['low']]);
         names.push(adata[i]['country']);
+        alpha_names.push(adata[i]['country']);
+             if (adata[i]['date'].localeCompare(latest_date)>0) {
+                latest_date = adata[i]['date']
+             }
       }
+             
+      alpha_names.sort();
       
+      console.log("latest date = "+latest_date);
       console.log("first name = "+names[0]);
       console.log("first value = "+vals[0]);
+      selected_vals = [ [0, -0.5] ];
              
-      populateCountries("country",names);
+      populateCountries("country",alpha_names);
+             
+      alpha_ind = alpha_names.findIndex((x) => x === names[0]);
+      var countryElement = document.getElementById('country');
+      countryElement.selectedIndex = alpha_ind;
+
              
       
-		var plot = $.plot("#placeholder", [
-			{ data: vals, label: "mlRt"}
-			// { data: highs, label: "high"},
-            // { data: lows, label: "low"}
+		plot = $.plot("#placeholder", [
+            { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+            { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,0.3)" }
 		], {
 			series: {
 				lines: {
 					show: false
 				},
 				points: {
-                    radius: 8,
+                    radius: 6,
 					show: true
 				}
 			},
-                          colors: ["rgba(0,0,255,0.3)"],
+            // colors: ["rgba(0,0,255,0.3)", "rgba(0,0,0,1.0)"],
 			grid: {
 				hoverable: true,
 				clickable: true,
                 markings:[
-                          {yaxis: { from: 0.0, to: 0.1 },color: "rgba(0,255,0,1.0)"},
+                          {yaxis: { from: -0.5, to: 0.1 },color: "rgba(0,255,0,1.0)"},
                           {yaxis: { from: 0.1, to: 0.2 },color: "rgba(0,255,0,0.9)"},
                           {yaxis: { from: 0.2, to: 0.3 },color: "rgba(0,255,0,0.8)"},
                           {yaxis: { from: 0.3, to: 0.4 },color: "rgba(0,255,0,0.7)"},
@@ -171,7 +198,8 @@
                 tickLength: 0,
                 ticks: [0, 1, 2],
 				min: -0.2,
-				max: 3.2
+				max: 3.2,
+                      label: "R(t)"
 			},
             xaxis: {
                 tickLength: 0,
@@ -189,7 +217,8 @@
 
 		window.setInterval(function () {
 			plot.setData([
-                          { data: vals, label: "mlRt"}
+                     { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+                     { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,1.0)" }
                 // { data: highs, label: "high"},
                 // { data: lows, label: "low"}
 
@@ -239,13 +268,21 @@
 				// $("#clickdata").text(" - click point " + item.dataIndex + " in " + item.series.label);
 				plot.highlight(item.series, item.datapoint);
                                var ind = item.datapoint[0];
-                               console.log("country index = "+ind);
+                               console.log(names[ind]);
                 var countryElement = document.getElementById('country');
-                countryElement.selectedIndex = ind;
+                alpha_ind = alpha_names.findIndex((x) => x === names[ind]);
+                countryElement.selectedIndex = alpha_ind;
+                selected_vals = [ [ind, -0.5] ];
                 display_plots(names[ind]);
-                
+                plot.setData([
+                         { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+                         { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,1.0)" }
+                ]);
+                plot.draw();
 			}
 		});
+             
+             $("#date").append(latest_date);
 
 		// Add the Flot version string to the footer
 
@@ -260,7 +297,7 @@
 </head>
 <body>
 	<div id="header">
-		<h2>COVID-19, Current Global R estimates</h2>
+		<h3><div id="date">Covid-19 <br> R(t) intervention ranking as of week ending </div></h3>
 	</div>
 
     
@@ -294,7 +331,7 @@
 -->
 
 <div style='text-align:center;'>
-     Country:   <select id="country" name ="country"></select>
+     <select id="country" name ="country"></select> 
  </div>
 
 
