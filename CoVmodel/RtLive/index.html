@@ -114,10 +114,10 @@
       
       var adata = [];
       
-      d3.csv("data/ranking_mlrt.csv", function(data) {
+      d3.csv("data/ranking_rank.csv", function(data) {
              var i = 0;
              data.forEach((d) => {
-                          var dObj = {country: d.country, value: d.mlrt, low: d.low, high: d.high, date: d.end_date, i: i++};
+                          var dObj = {country: d.country, value: d.rank, low: d.low, high: d.high, date: d.end_date, i: i++};
                    adata.push(dObj);
                    });
 //             adata.sort(function(a,b) {
@@ -297,7 +297,7 @@
 </head>
 <body>
 	<div id="header">
-		<h3><div id="date">using R(t) to rank Covid-19 interventions <br> as of week ending </div></h3>
+		<h3><div id="date"><b> R * I / Imax </b> ranking of global Covid-19 interventions at </div></h3>
 	</div>
 
     
