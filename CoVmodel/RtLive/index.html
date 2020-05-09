@@ -37,9 +37,11 @@
             labs = [],
             names = [],
             alpha_names = [],
-            selected_vals = [],
+            selected_vals = [ [0, -0.5] ],
             latest_date = "2020-01-01"
         ;
+        
+        console.log("starting with selected ... ",selected_vals[0][0]);
         
         function display_plots(country) {
              image_file_name = "plots/Rt_"+country+".png";
@@ -267,8 +269,8 @@
 			if (item) {
 				// $("#clickdata").text(" - click point " + item.dataIndex + " in " + item.series.label);
 				plot.highlight(item.series, item.datapoint);
-                               var ind = item.datapoint[0];
-                               console.log(names[ind]);
+                var ind = item.datapoint[0];
+                console.log(names[ind]);
                 var countryElement = document.getElementById('country');
                 alpha_ind = alpha_names.findIndex((x) => x === names[ind]);
                 countryElement.selectedIndex = alpha_ind;
@@ -282,7 +284,41 @@
 			}
 		});
              
-             $("#date").append(latest_date);
+             $(document).keydown(function(e) {
+                 switch(e.which) {
+                     case 37: // left
+                                 var ind = Math.max(0,selected_vals[0][0]-1);
+                     break;
+
+                     case 38: // up
+                     break;
+
+                     case 39: // right
+                                 var ind = Math.min(selected_vals[0][0]+1,names.length-1);
+                     break;
+
+                     case 40: // down
+                     break;
+
+                     default: return; // exit this handler for other keys
+                 }
+                 // console.log("next = ",ind);
+                 e.preventDefault(); // prevent the default action (scroll / move caret)
+                                 
+                                 var countryElement = document.getElementById('country');
+                                 alpha_ind = alpha_names.findIndex((x) => x === names[ind]);
+                                 countryElement.selectedIndex = alpha_ind;
+                                 selected_vals = [ [ind, -0.5] ];
+                                 display_plots(names[ind]);
+                                 plot.setData([
+                                          { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+                                          { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,1.0)" }
+                                 ]);
+                                 plot.draw();
+             });
+    
+             
+        $("#date").append(latest_date);
 
 		// Add the Flot version string to the footer
 
