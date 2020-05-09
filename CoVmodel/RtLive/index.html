@@ -41,8 +41,6 @@
             latest_date = "2020-01-01"
         ;
         
-        console.log("starting with selected ... ",selected_vals[0][0]);
-        
         function display_plots(country) {
              image_file_name = "plots/Rt_"+country+".png";
             show_image(image_file_name,"#placeholder2");
@@ -60,9 +58,9 @@
                 countryElement.options[countryElement.length] = new Option(nams[i],nams[i]);
             }
             countryElement.style.fontSize = "120%" ;
-            country = names[0];
-            console.log(country);
-            display_plots(country);
+            // country = names[0];
+            // console.log(country);
+            // display_plots(country);
             // Assigned all countries. Now assign event listener.
 
             countryElement.onchange = function(){
@@ -145,17 +143,19 @@
       alpha_names.sort();
       
       console.log("latest date = "+latest_date);
-      console.log("first name = "+names[0]);
-      console.log("first value = "+vals[0]);
-      selected_vals = [ [0, -0.5] ];
+      ind = names.findIndex((x) => x === "South Africa");
+      selected_vals = [ [ind, -0.5] ];
+      console.log("first name = "+names[ind]);
+      console.log("first value = "+vals[ind]);
              
       populateCountries("country",alpha_names);
              
-      alpha_ind = alpha_names.findIndex((x) => x === names[0]);
+      // alpha_ind = alpha_names.findIndex((x) => x === names[0]);
+      alpha_ind = alpha_names.findIndex((x) => x === "South Africa");
       var countryElement = document.getElementById('country');
       countryElement.selectedIndex = alpha_ind;
 
-             
+      display_plots(alpha_names[alpha_ind]);
       
 		plot = $.plot("#placeholder", [
             { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
@@ -252,7 +252,7 @@
 					var x = item.datapoint[0].toFixed(0),
 						y = item.datapoint[1].toFixed(2);
 
-					$("#tooltip").html(names[x])   // item.series.label + " of " + x + " = " + y)
+					$("#tooltip").html(names[x]+" "+vals[x][1])   // item.series.label + " of " + x + " = " + y)
 						.css({top: item.pageY+5, left: item.pageX+5})
 						.fadeIn(200);
 				} else {
@@ -302,7 +302,7 @@
 
                      default: return; // exit this handler for other keys
                  }
-                 // console.log("next = ",ind);
+                 console.log(names[ind]);
                  e.preventDefault(); // prevent the default action (scroll / move caret)
                                  
                                  var countryElement = document.getElementById('country');
