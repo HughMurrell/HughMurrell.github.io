@@ -32,8 +32,8 @@
         var plot;
         
         var vals = [],
-            highs = [],
-            lows = [],
+            mlrts = [],
+            ranks = [],
             labs = [],
             names = [],
             alpha_names = [],
@@ -114,25 +114,22 @@
       
       var adata = [];
       
-      d3.csv("data/ranking_rank.csv", function(data) {
+      d3.csv("data/ranking_rt.csv", function(data) {
              var i = 0;
              data.forEach((d) => {
-                          var dObj = {country: d.country, value: d.rank, low: d.low, high: d.high, date: d.end_date, i: i++};
+                          var dObj = {country: d.country, value: d.mlrt, date: d.end_date, i: i++};
                    adata.push(dObj);
                    });
-//             adata.sort(function(a,b) {
-//                 return a[0]-b[0]
-//             });
-             console.log("data read inside d3.csv, length = "+adata.length);
-             
-      
-        console.log("data read, length = "+adata.length);
+             console.log("data read, length = "+adata.length);
 
-
+    function reset_data(adata) {
+             vals = [];
+             names = [];
+             alpha_names = [];
       for (var i = 0; i < adata.length; i++) {
         vals.push([i, adata[i]['value']]);
-        highs.push([i, adata[i]['high']]);
-        lows.push([i, adata[i]['low']]);
+        // mlrts.push([i, adata[i]['mlrt']]);
+        // ranks.push([i, adata[i]['rank']]);
         names.push(adata[i]['country']);
         alpha_names.push(adata[i]['country']);
              if (adata[i]['date'].localeCompare(latest_date)>0) {
@@ -141,7 +138,10 @@
       }
              
       alpha_names.sort();
-      
+    }
+             
+      reset_data(adata);
+             
       console.log("latest date = "+latest_date);
       ind = names.findIndex((x) => x === "South Africa");
       selected_vals = [ [ind, -0.5] ];
@@ -284,6 +284,72 @@
 			}
 		});
              
+        $("input[name=rank_metric]").bind('change', function(){
+            var countryElement = document.getElementById("country");
+            var alpha_ind = countryElement.selectedIndex;
+            switch($('input:radio[name=rank_metric]:checked').val()) {
+                case "R":
+                                          
+                d3.csv("data/ranking_rt.csv", function(data) {
+                       var i = 0;
+                       adata=[];
+                       data.forEach((d) => {
+                                    var dObj = {country: d.country, value: d.mlrt, date: d.end_date, i: i++};
+                                    adata.push(dObj);
+                        });
+                       console.log("data read, length = "+adata.length);
+                
+                       reset_data(adata);
+                       ind = names.findIndex((x) => x === alpha_names[alpha_ind]);
+                       selected_vals = [ [ind, -0.5] ];
+                       // display_plots(names[ind]);
+                       plot.setData([
+                                     { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+                                     { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,1.0)" }
+                        ]);
+                       plot.draw();
+                });
+                break;
+                                          
+                case "RI":
+                                          
+                d3.csv("data/ranking_rtirat.csv", function(data) {
+                        var i = 0;
+                        adata=[];
+                        data.forEach((d) => {
+                            var dObj = {country: d.country, value: d.rank, date: d.end_date, i: i++};
+                            adata.push(dObj);
+                        });
+                        console.log("data read, length = "+adata.length);
+                       reset_data(adata);
+                       ind = names.findIndex((x) => x === alpha_names[alpha_ind]);
+                       selected_vals = [ [ind, -0.5] ];
+                       // display_plots(names[ind]);
+                       plot.setData([
+                                     { data: vals, points: { symbol: "circle" }, color: "rgba(0,0,255,0.3)" },
+                                     { data: selected_vals, points: { symbol: "triangle" }, color: "rgba(0,0,0,1.0)" }
+                       ]);
+                       plot.draw();
+                });
+                break;
+                                          
+            }
+        });
+             
+    /*
+        $("#rank_metric_R").click(function () {
+
+                                  console.log($('input:radio[name=rank_metric]:checked').val());
+
+        });
+             
+        $("#rank_metric_RI").click(function () {
+
+                                  console.log($('input:radio[name=rank_metric]:checked').val());
+
+        });
+    */
+             
              $(document).keydown(function(e) {
                  switch(e.which) {
                      case 37: // left
@@ -333,8 +399,15 @@
 </head>
 <body>
 	<div id="header">
-		<h3><div id="date"><b> R * I / Imax </b> ranking of global Covid-19 interventions at </div></h3>
-        <h4 align=center> use hover and click or arrow keys to navigate ranking chart </h4>
+		<h3><div id="date">Global Covid-19 intervention ranking at </div></h3>
+        <h4> use hover and click or arrow keys to navigate ranking chart </h4>
+        <center>
+        <div>
+            metric: &nbsp; &nbsp;
+        <input type="radio" name="rank_metric" id-"rank_metric_R" value="R" checked="checked">R</input> &nbsp; &nbsp; &nbsp;
+        <input type="radio" name="rank_metric" id-"rank_metric_RI" value="RI">R*I/Imax</input> &nbsp; &nbsp; &nbsp;
+        </div>
+        </center>
 	</div>
 
     
@@ -368,7 +441,7 @@
 -->
 
 <div style='text-align:center;'>
-     <select id="country" name ="country"></select> 
+     <select id="country" name ="country"></select>
  </div>
 
 

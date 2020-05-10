@@ -9,16 +9,17 @@ body {
 a {	color: #069; }
 a:hover { color: #28b; }
 
-h2 {
-	margin-top: 15px;
-	font: normal 32px "omnes-pro", Helvetica, Arial, sans-serif;
-}
-
 h3 {
     text-align: center;
+	margin-top: 15px;
+	font: normal 24px "omnes-pro", Helvetica, Arial, sans-serif;
+}
+
+h4 {
+    text-align: center;
 	margin-left: 30px;
-	font: normal 26px "omnes-pro", Helvetica, Arial, sans-serif;
-	color: #666;
+	font: normal 18px "omnes-pro", Helvetica, Arial, sans-serif;
+    color: #666;
 }
 
 p {
@@ -28,6 +29,16 @@ p {
 button {
 	font-size: 18px;
 	padding: 1px 7px;
+}
+
+input[type=radio]{
+    width: 24px;
+    height: 24px;
+    display: inline-block;
+    vertical-align: top;
+    position: relative;
+    z-index: 1;
+    top: 0px;
 }
 
 input {
