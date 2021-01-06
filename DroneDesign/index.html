@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Rotar Arm Angles" />
+
+    <title>Rotor Arm Angle computation</title>
+    
+    <script src="nerdamer.core.js"></script>
+    <!-- assuming you've saved the file in the root of course -->
+    <!-- LOAD ADD-ONS -->
+    <script src="Algebra.js"></script>
+    <script src="Calculus.js"></script>
+    <script src="Solve.js"></script>
+    <script src="Extra.js"></script>
+    <!-- again assuming you've saved the files in root -->
+    
+    <script>
+        function computeAngles(){
+            document.getElementById("R").defaultValue = "225";
+            var R = document.getElementById("R").value;
+            document.getElementById("Z").defaultValue = "346";
+            var Z = document.getElementById("Z").value;
+            document.getElementById("X").defaultValue = "56";
+            var X = document.getElementById("X").value;
+            document.getElementById("Y").defaultValue = "84";
+            var Y = document.getElementById("Y").value;
+            nerdamer.set('SOLUTIONS_AS_OBJECT', true);
+            nerdamer.setConstant('R', R);
+            nerdamer.setConstant('Z', Z);
+            nerdamer.setConstant('X', X);
+            nerdamer.setConstant('Y', Y);
+            nerdamer.setVar('S','(2*X-Z)/R');
+            console.log(nerdamer('S').evaluate().toString());
+            nerdamer.setVar('T','(Y-X)/R');
+            console.log(nerdamer('T').evaluate().toString());
+            sol = nerdamer('solveEquations([cos(p)-2*sin(p)+cos(q)=S,sin(p)-sin(q)=T])');
+            var p = ( parseFloat(sol['symbol']['p']) * 180 / Math.PI ).toFixed(2);
+            console.log(p)
+            var q = ( parseFloat(sol['symbol']['q']) * 180 / Math.PI ).toFixed(2);
+            console.log(q)
+            alert("\n angle P = "+p+" degrees" + "\n angle Q = "+q+" degrees");
+        }
+    </script>
+
+  </head>
+
+  <body>
+    
+    <h2> Rotor Arm, pivot angle computation </h2>
+    
+    <img src="rotor_arm_diagram.png" width="400"> <br><br>
+    
+    Please enter parameter values in box below (all lengths are in mm) <br>
+    If no entry is made the default (in brackets) will be used. <br><br>
+    
+    When parameters are entered, press the "compute" button. <br>
+    and a window will popup with values for P and Q. <br>
+    Angles are displayed in degrees rounded to two decimal places. <br><br>
+        
+    
+    R --> <input type="text" placeholder="length of arm (225)" id="R"
+                    style="width: 300px"><br>
+    Z --> <input type="text" placeholder="distance between rotor pivots (346)" id="Z"
+                    style="width: 300px"><br>
+    X --> <input type="text" placeholder="front rotor pivot offset (56)" id="X"
+                    style="width: 300px"><br>
+    Y --> <input type="text" placeholder="back rotor pivot offset (84)" id="Y"
+                    style="width: 300px"><br><br>
+        
+        
+    <button type="button" onclick="computeAngles();">Compute</button>
+    
+
+  
+  </body>
+</html>
