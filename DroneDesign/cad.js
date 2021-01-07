@@ -62,15 +62,38 @@ window1.origin = [40, 40];
 var window2 = new makerjs.models.Square(40);
 window2.origin = [-80, 40];
 
+var rot=(Math.PI-P)*180/Math.PI;
+var arm_ft = new makerjs.models.Oval(R+20, 20);
+makerjs.model.move(arm_ft,[cp-10,X-10]);
+makerjs.model.rotate(arm_ft,rot,[cp,X]);
+                                    
+var rot=(Q)*180/Math.PI;
+var arm_bt = new makerjs.models.Oval(R+20, 20);
+makerjs.model.move(arm_bt,[cp+Z-10,Y-10]);
+makerjs.model.rotate(arm_bt,rot,[cp+Z,Y]);
+                                    
+var rot=(Math.PI+P)*180/Math.PI;
+var arm_fb = new makerjs.models.Oval(R+20, 20);
+makerjs.model.move(arm_fb,[cp-10,-X-10]);
+makerjs.model.rotate(arm_fb,rot,[cp,-X]);
+
+var rot=(-Q)*180/Math.PI;
+var arm_bb = new makerjs.models.Oval(R+20, 20);
+makerjs.model.move(arm_bb,[cp+Z-10,-Y-10]);
+makerjs.model.rotate(arm_bb,rot,[cp+Z,-Y]);
+                                    
 var drone = {
   models: {
       "top": top_drone,
       "bottom": bot_drone,
-      "rotor blades": rotors }
+      "rotor blades": rotors,
+      "arm_ft": arm_ft,
+      "arm_bt": arm_bt,
+      "arm_fb": arm_fb,
+      "arm_bb": arm_bb
+                                    }
 };
     
-console.log(drone);
-
 var svg = makerjs.exporter.toSVG(drone);
     
 var frog = window.open("","wildebeast","width=900,height=900,scrollbars=1,resizable=1")
