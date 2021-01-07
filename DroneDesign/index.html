@@ -6,7 +6,7 @@
     <meta http-equiv="X-UA-Compatible" content="chrome=1" />
     <meta name="description" content="Rotar Arm Angles" />
 
-    <title>Rotor Arm Angle computation</title>
+    <title>Drone rotor-arm pivot-angle computation</title>
     
     <script src="nerdamer.core.js"></script>
     <!-- assuming you've saved the file in the root of course -->
@@ -17,10 +17,16 @@
     <script src="Extra.js"></script>
     <!-- again assuming you've saved the files in root -->
     
+    <script src="browser.maker.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bezier-js@2/bezier.js"></script>
+    <script src="cad.js"></script>
+    
     <script>
         function computeAngles(){
             document.getElementById("R").defaultValue = "225";
             var R = document.getElementById("R").value;
+            document.getElementById("D").defaultValue = "200";
+            var D = document.getElementById("D").value;
             document.getElementById("Z").defaultValue = "346";
             var Z = document.getElementById("Z").value;
             document.getElementById("X").defaultValue = "56";
@@ -41,7 +47,23 @@
             console.log(p)
             var q = ( parseFloat(sol['symbol']['q']) * 180 / Math.PI ).toFixed(2);
             console.log(q)
-            alert("\n angle P = "+p+" degrees" + "\n angle Q = "+q+" degrees");
+            // alert("\n angle P = "+p+" degrees" + "\n angle Q = "+q+" degrees");
+            document.getElementById("P").value = ""+p;
+            document.getElementById("Q").value = ""+q;
+                     
+            // check that the Rotor diameter is small enough
+            var d = parseFloat(D);
+            var z = parseFloat(Z);
+            var r = parseFloat(R);
+            var rcp =  r*Math.cos(p*Math.PI/180);
+            console.log(rcp);
+            var rcq =  r*Math.cos(q*Math.PI/180);
+            console.log(rcq);
+            var s = rcp + z + rcq;
+            if (d>s) {
+                        alert("Rotor diameter too big for machine" +
+                              " \n diameter = " + d + " square edge = " + s);
+                     };
         }
     </script>
 
@@ -49,7 +71,7 @@
 
   <body>
     
-    <h2> Rotor Arm, pivot angle computation </h2>
+    <h2>Drone rotor-arm pivot-angle computation </h2>
     
     <img src="rotor_arm_diagram.png" width="400"> <br><br>
     
@@ -63,6 +85,8 @@
     
     R --> <input type="text" placeholder="length of arm (225)" id="R"
                     style="width: 300px"><br>
+    D --> <input type="text" placeholder="rotor diameter (200)" id="D"
+                    style="width: 300px"><br>
     Z --> <input type="text" placeholder="distance between rotor pivots (346)" id="Z"
                     style="width: 300px"><br>
     X --> <input type="text" placeholder="front rotor pivot offset (56)" id="X"
@@ -71,9 +95,16 @@
                     style="width: 300px"><br><br>
         
         
-    <button type="button" onclick="computeAngles();">Compute</button>
+    <button type="button" onclick="computeAngles();">Compute</button> <br><br>
     
-
+    P --> <input type="text" placeholder="angle P" id="P"
+                    style="width: 300px" readonly><br>
+    Q --> <input type="text" placeholder="angle Q" id="Q"
+                    style="width: 300px" readonly><br><br>
+    
+    <button type="button" onclick="draw();">Draw</button>
+    
+    <div id="drawing"></div>
   
   </body>
 </html>
