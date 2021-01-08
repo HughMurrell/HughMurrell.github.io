@@ -62,25 +62,41 @@ window1.origin = [40, 40];
 var window2 = new makerjs.models.Square(40);
 window2.origin = [-80, 40];
 
+var ovr = Math.abs((Y-X)/2);
+                                    
 var rot=(Math.PI-P)*180/Math.PI;
-var arm_ft = new makerjs.models.Oval(R+20, 20);
-makerjs.model.move(arm_ft,[cp-10,X-10]);
+var arm_ft = new makerjs.models.Oval(R+2*ovr, 2*ovr);
+makerjs.model.move(arm_ft,[cp-ovr,X-ovr]);
 makerjs.model.rotate(arm_ft,rot,[cp,X]);
                                     
 var rot=(Q)*180/Math.PI;
-var arm_bt = new makerjs.models.Oval(R+20, 20);
-makerjs.model.move(arm_bt,[cp+Z-10,Y-10]);
+var arm_bt = new makerjs.models.Oval(R+2*ovr, 2*ovr);
+makerjs.model.move(arm_bt,[cp+Z-ovr,Y-ovr]);
 makerjs.model.rotate(arm_bt,rot,[cp+Z,Y]);
                                     
 var rot=(Math.PI+P)*180/Math.PI;
-var arm_fb = new makerjs.models.Oval(R+20, 20);
-makerjs.model.move(arm_fb,[cp-10,-X-10]);
+var arm_fb = new makerjs.models.Oval(R+2*ovr, 2*ovr);
+makerjs.model.move(arm_fb,[cp-ovr,-X-ovr]);
 makerjs.model.rotate(arm_fb,rot,[cp,-X]);
 
 var rot=(-Q)*180/Math.PI;
-var arm_bb = new makerjs.models.Oval(R+20, 20);
-makerjs.model.move(arm_bb,[cp+Z-10,-Y-10]);
+var arm_bb = new makerjs.models.Oval(R+2*ovr, 2*ovr);
+makerjs.model.move(arm_bb,[cp+Z-ovr,-Y-ovr]);
 makerjs.model.rotate(arm_bb,rot,[cp+Z,-Y]);
+                                    
+var cas_tf = new makerjs.models.Oval((2*Z/3)+2*ovr, 2*ovr);
+makerjs.model.move(cas_tf,[cp-ovr,X-ovr]);
+                                      
+var cas_tb = new makerjs.models.Oval((2*Z/3)+2*ovr, 2*ovr);
+makerjs.model.move(cas_tb,[cp+Z-ovr,Y-ovr]);
+makerjs.model.rotate(cas_tb,180,[cp+Z,Y]);
+                                      
+var cas_bf = new makerjs.models.Oval((2*Z/3)+2*ovr, 2*ovr);
+makerjs.model.move(cas_bf,[cp-ovr,-X-ovr]);
+                                                                            
+var cas_bb = new makerjs.models.Oval((2*Z/3)+2*ovr, 2*ovr);
+makerjs.model.move(cas_bb,[cp+Z-ovr,-Y-ovr]);
+makerjs.model.rotate(cas_bb,180,[cp+Z,-Y]);
                                     
 var drone = {
   models: {
@@ -90,8 +106,12 @@ var drone = {
       "arm_ft": arm_ft,
       "arm_bt": arm_bt,
       "arm_fb": arm_fb,
-      "arm_bb": arm_bb
-                                    }
+      "arm_bb": arm_bb,
+      "cas_tf": cas_tf,
+      "cas_tb": cas_tb,
+      "cas_bf": cas_bf,
+      "cas_bb": cas_bb
+                                      }
 };
     
 var svg = makerjs.exporter.toSVG(drone);
