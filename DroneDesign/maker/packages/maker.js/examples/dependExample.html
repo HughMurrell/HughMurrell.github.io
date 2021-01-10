@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Maker.js</title>
+
+    <style type="text/css">
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        svg {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 100%;
+        }
+    </style>
+
+    <script src="../target/js/browser.maker.js"></script>
+    <script src="dependExample_forBrowser.js"></script>
+
+    <script>
+        var makerjs = require('makerjs');
+
+        var _require = window["require"];
+        var require = function(x) {
+            if (x == '../target/js/node.maker.js' || x == 'makerjs') {
+                return makerjs;
+            } else {
+                return _require(x);
+            }
+        }
+    </script>
+
+</head>
+<body>
+
+    <script>
+        var makerjs = require('makerjs');
+        var dependExample = require('dependExample');
+
+        var model = new dependExample();
+
+        var svg = makerjs.exporter.toSVG(model);
+        document.write(svg);
+    </script>
+
+</body>
+</html>

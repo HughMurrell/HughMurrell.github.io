@@ -1,0 +1,16 @@
+node_modules
+web.config
+*.sln
+.vs
+.vscode
+docs/docs/api/assets
+debug.log
+packages/docs/dist
+packages/maker.js/debug
+packages/maker.js/dist
+packages/maker.js/LICENSE
+packages/maker.js/README.md
+Gemfile
+Gemfile.lock
+_site
+.jekyll-metadata
