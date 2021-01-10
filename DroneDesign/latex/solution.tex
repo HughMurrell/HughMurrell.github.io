@@ -52,8 +52,9 @@ S & = & 2 ( Y + R \sin(q) )  \label{eqn1}
 The first equation in (\ref{eqn1}) is derived from an expression for the horizontal edge of length, $S$,
 whilst the last two equations are derived from expressions for the vertical front and back edges of length $S$.
 
-The unknown edge length, $S$, can be eliminated from equations (\ref{eqn1}) yielding two non-linear
-equations for the angles, $p$ and $q$ shown in equations (\ref{eqn2}) below.
+The unknown edge length, $S$, can be eliminated from equations (\ref{eqn1}) 
+yielding two non-linear equations for the angles, $p$ and $q$ shown in 
+equations (\ref{eqn2}) below.
 
 \begin{eqnarray}
 \cos(p) - 2 \sin(p) + \cos(q) & = & \frac{2X-Z}{R} \nonumber \\
@@ -68,14 +69,38 @@ So instead we use standard non-linear root finding technique. For example,
 the {\tt scipy} python package allows us to construct the solution shown in Appendix A.
 
 To make life easier for the reader we have also coded a {\tt javascript} solution to the
-problem, this time using a numerical method called {\it Nelder-Mead} \cite{nelder}. 
+problem, this time using a numerical optimiser called {\it Nelder-Mead} \cite{nelder}. 
 The javascript code for method was lifted from an open source implementation by 
 {\em Ben Frederickson} \cite{benfred}.
 
-We also made use of the Microsoft javascript CAD library,
+The root finding problem given in equation \ref{eqn2} must first be cast as a function
+optimisation problem. To this end we use {\em Nelder-Mead} to minimise the function:
+
+\begin{eqnarray}
+  f(p,q)  & =  & | \cos(p) - 2 \sin(p) + \cos(q) - \frac{2X-Z}{R} | + \nonumber \\
+             &     &  | \sin(p) - \sin(q) - \frac{Y-X}{R} |   \label{eqn3} 
+\end{eqnarray}
+
+This is a highly non-linear function with sudden changes in slope due to the use of the
+absolute value. This often results in optimisers getting stuck in local minima and
+we were surprised that the {\em Nelder-Mead} performed as well as it did.
+
+A sketch of the function we are attempting to minimise is given in figure \ref{fig2}.
+
+\begin{figure}[H]
+\begin{center}
+  \epsfig{file=ftn-min.png,height=3in}
+\end{center}
+\caption{The surface $f(p,q)$ for which a minimum near zero must be found.}  
+\label{fig2}
+\end{figure}
+
+Due to the possiblity of a {\em local minimum} trap we needed to be confident that the
+values of $p$ and $q$ returned by {\em Nelder-Mead} did indeed satisfy the constraints
+of the drone design problem. To this end we made use of the Microsoft javascript CAD library,
 {\tt Maker.js} \cite{maker}, to produce drawings dependent on the user's parameter settings. 
 
-The {\tt maker} code for the {\tt drone} scriptis given in Appendix B, but the interestedreader
+The {\tt maker} code for the {\tt drone} scriptis given in Appendix B, but the interested reader
 can access the script from:
 
 \small
