@@ -2,16 +2,16 @@
 var makerjs = require('makerjs');
 
 
-    // worker for nelderMead
-    function weightedSum(ret, w1, v1, w2, v2) {
+// worker for nelderMead
+function weightedSum(ret, w1, v1, w2, v2) {
         for (var j = 0; j < ret.length; ++j) {
             ret[j] = w1 * v1[j] + w2 * v2[j];
         }
     }
 
 
-    // minimizes a function using the downhill simplex method
-    function nelderMead(f, x0, w, parameters) {
+// minimizes a function using the downhill simplex method
+function nelderMead(f, x0, w, parameters) {
         parameters = parameters || {};
 
         var maxIterations = parameters.maxIterations || x0.length * 200,
@@ -57,7 +57,7 @@ var makerjs = require('makerjs');
             simplex.sort(sortOrder);
 
             if (parameters.history) {
-                // copy the simplex (since later iterations will mutate) and
+                // copy the simplex (since later iterations will mutate)
                 // sort it to have a consistent order between iterations
                 var sortedSimplex = simplex.map(function (x) {
                     var state = x.slice();
@@ -74,7 +74,8 @@ var makerjs = require('makerjs');
 
             maxDiff = 0;
             for (i = 0; i < N; ++i) {
-                maxDiff = Math.max(maxDiff, Math.abs(simplex[0][i] - simplex[1][i]));
+                maxDiff = Math.max(maxDiff, Math.abs(simplex[0][i] -
+                                                     simplex[1][i]));
             }
 
             if ((Math.abs(simplex[0].fx - simplex[N].fx) < minErrorDelta) &&
@@ -124,7 +125,8 @@ var makerjs = require('makerjs');
                     }
                 } else {
                     // do an outside contraction
-                    weightedSum(contracted, 1-psi * rho, centroid, psi*rho, worst);
+                    weightedSum(contracted, 1-psi * rho, centroid,
+                                psi*rho, worst);
                     contracted.fx = f(contracted,w);
                     if (contracted.fx < reflected.fx) {
                         updateSimplex(contracted);
@@ -139,7 +141,8 @@ var makerjs = require('makerjs');
 
                     // do a reduction
                     for (i = 1; i < simplex.length; ++i) {
-                        weightedSum(simplex[i], 1 - sigma, simplex[0], sigma, simplex[i]);
+                        weightedSum(simplex[i], 1 - sigma, simplex[0],
+                                    sigma, simplex[i]);
                         simplex[i].fx = f(simplex[i],w);
                     }
                 }
@@ -327,4 +330,4 @@ function drone(font, fontSize, R, D, Z, X, Y, P, Q){
                            
 
 
-module.exports = drone;
+    module.exports = drone;
