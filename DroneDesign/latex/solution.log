@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.14159265-2.6-1.40.16 (TeX Live 2015) (preloaded format=pdflatex 2016.4.10)  11 JAN 2021 06:06
+This is pdfTeX, Version 3.14159265-2.6-1.40.16 (TeX Live 2015) (preloaded format=pdflatex 2016.4.10)  11 JAN 2021 11:22
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -257,42 +257,48 @@ File: ftn-min.png Graphic file (type png)
  <use ftn-min.png>
 Package pdftex.def Info: ftn-min.png used on input line 92.
 (pdftex.def)             Requested size: 300.29259pt x 216.81pt.
+
+<drone.png, id=25, 975.645pt x 844.15375pt>
+File: drone.png Graphic file (type png)
+ <use drone.png>
+Package pdftex.def Info: drone.png used on input line 108.
+(pdftex.def)             Requested size: 250.58008pt x 216.81pt.
  [4 <./ftn-min.png>]
-Overfull \hbox (15.52454pt too wide) in paragraph at lines 107--109
+Overfull \hbox (15.52454pt too wide) in paragraph at lines 118--120
 []$\OT1/cmtt/m/n/10 "hughmurrell . github . io / DroneDesign / maker / docs / p
 layground / ?script = drone"$\OT1/cmr/m/n/10 . 
  []
 
 
-Underfull \hbox (badness 1460) in paragraph at lines 117--121
+Underfull \hbox (badness 1460) in paragraph at lines 128--132
 []\OT1/cmr/m/n/10.95 Wikipedia Ar-ti-cle, \OT1/cmr/m/it/10.95 Quar-tic func-tio
 n $\OT1/cmtt/m/n/10.95 https : / / en . wikipedia . org /
  []
 
 
-Underfull \hbox (badness 4353) in paragraph at lines 127--131
+Underfull \hbox (badness 4353) in paragraph at lines 138--142
 []\OT1/cmr/m/n/10.95 Ben Fedrick-son, \OT1/cmr/m/it/10.95 fmin, un-con-strained
  func-tion min-i-miza-tion in
  []
 
-LaTeX Font Info:    Try loading font information for OMS+cmr on input line 153.
+[5 <./drone.png>]
+LaTeX Font Info:    Try loading font information for OMS+cmr on input line 164.
 
-(/usr/local/texlive/2015/texmf-dist/tex/latex/base/omscmr.fd
+ (/usr/local/texlive/2015/texmf-dist/tex/latex/base/omscmr.fd
 File: omscmr.fd 2014/09/29 v2.5h Standard LaTeX font definitions
 )
 LaTeX Font Info:    Font shape `OMS/cmr/m/n' in size <6> not available
-(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 153.
- [5]
-LaTeX Font Info:    Try loading font information for OML+cmr on input line 178.
+(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 164.
+[6]
+LaTeX Font Info:    Try loading font information for OML+cmr on input line 189.
 
-
-(/usr/local/texlive/2015/texmf-dist/tex/latex/base/omlcmr.fd
+ (/usr/local/texlive/2015/texmf-dist/tex/latex/base/omlcmr.fd
 File: omlcmr.fd 2014/09/29 v2.5h Standard LaTeX font definitions
 )
 LaTeX Font Info:    Font shape `OML/cmr/m/n' in size <6> not available
-(Font)              Font shape `OML/cmm/m/it' tried instead on input line 178.
- [6] [7] [8]
-[9] [10] (./solution.aux)
+(Font)              Font shape `OML/cmm/m/it' tried instead on input line 189.
+ [7] [8]
+[9] [10] [11] (./solution.aux)
 
 LaTeX Warning: There were undefined references.
 
@@ -301,10 +307,10 @@ LaTeX Warning: There were multiply-defined labels.
 
  ) 
 Here is how much of TeX's memory you used:
- 3500 strings out of 493089
- 48879 string characters out of 6134842
- 171643 words of memory out of 5000000
- 6944 multiletter control sequences out of 15000+600000
+ 3506 strings out of 493089
+ 48949 string characters out of 6134842
+ 171651 words of memory out of 5000000
+ 6949 multiletter control sequences out of 15000+600000
  10845 words of font info for 40 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  38i,6n,32p,253b,1399s stack positions out of 5000i,500n,10000p,200000b,80000s
@@ -320,10 +326,10 @@ texlive/2015/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/t
 exlive/2015/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/tex
 live/2015/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/local/texl
 ive/2015/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb>
-Output written on solution.pdf (10 pages, 520297 bytes).
+Output written on solution.pdf (11 pages, 560927 bytes).
 PDF statistics:
- 90 PDF objects out of 1000 (max. 8388607)
- 61 compressed objects within 1 object stream
+ 95 PDF objects out of 1000 (max. 8388607)
+ 63 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
- 11 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 16 words of extra memory for PDF output out of 10000 (max. 10000000)
 

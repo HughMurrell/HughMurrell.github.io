@@ -96,9 +96,20 @@ A sketch of the function we are attempting to minimise is given in figure \ref{f
 \end{figure}
 
 Due to the possiblity of a {\em local minimum} trap we needed to be confident that the
-values of $p$ and $q$ returned by {\em Nelder-Mead} did indeed satisfy the constraints
+values of $p$ and $q$ returned by {\em Nelder-Mead} do indeed satisfy the constraints
 of the drone design problem. To this end we made use of the Microsoft javascript CAD library,
 {\tt Maker.js} \cite{maker}, to produce drawings dependent on the user's parameter settings. 
+This app allows the use to select parameters and observe the constrained drone configuration.
+Configuration drawings can be downloaded as SVG files.
+An example configuration is shown in figure \ref{fig3}.
+
+\begin{figure}[H]
+\begin{center}
+  \epsfig{file=drone.png,height=3in}
+\end{center}
+\caption{Sample SVG drawing of a drone configuration.}  
+\label{fig3}
+\end{figure}
 
 The {\tt maker} code for the {\tt drone} scriptis given in Appendix B, but the interested reader
 can access the script from:
