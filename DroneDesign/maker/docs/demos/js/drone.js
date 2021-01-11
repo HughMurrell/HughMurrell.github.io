@@ -187,6 +187,7 @@ function drone(font, fontSize, R, D, Z, X, Y, P, Q){
     console.log("user selected:");
     console.log("R = "+R);
     console.log("D = "+D);
+    console.log("Z = "+Z);
     console.log("X = "+X);
     console.log("Y = "+Y);
     console.log("computed:");
@@ -320,12 +321,12 @@ function drone(font, fontSize, R, D, Z, X, Y, P, Q){
                                           
     drone.metaParameters = [
         { title: "font", type: "font", value: '#stencil' },
-        { title: "font size", type: "range", min: 10, max: 200, value: 48 },
-        { title: "R", type: "range", min: 50, max: 400, value: 225 },
-        { title: "D", type: "range", min: 10, max: 300, value: 200 },
+        { title: "font size", type: "range", min: 10, max: 80, value: 48 },
+        { title: "R", type: "range", min: 50, max: 500, value: 225 },
+        { title: "D", type: "range", min: 50, max: 500, value: 300 },
         { title: "Z", type: "range", min: 100, max: 900, value: 346 },
         { title: "X", type: "range", min: 10, max: 100, value: 56 },
-        { title: "Y", type: "range", min: 40, max: 150, value: 84 }
+        { title: "Y", type: "range", min: 40, max: 200, value: 84 }
      ];
                            
 
