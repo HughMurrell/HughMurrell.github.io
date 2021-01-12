@@ -186,7 +186,7 @@ function drone(font, fontSize, R, D, Z, X, Y, P, Q){
     q = solution.x[1];
     
     var fx = solution.fx;
-    var eps = 0.00001;
+    var eps = 0.000000001;
     
     if (fx > eps) {
         console.log("no solution found, trying next quadrant ...");
