@@ -14,11 +14,11 @@ function weightedSum(ret, w1, v1, w2, v2) {
 function nelderMead(f, x0, w, parameters) {
         parameters = parameters || {};
 
-        var maxIterations = parameters.maxIterations || x0.length * 200,
+        var maxIterations = parameters.maxIterations || x0.length * 2000,
             nonZeroDelta = parameters.nonZeroDelta || 1.05,
             zeroDelta = parameters.zeroDelta || 0.001,
-            minErrorDelta = parameters.minErrorDelta || 1e-6,
-            minTolerance = parameters.minErrorDelta || 1e-5,
+            minErrorDelta = parameters.minErrorDelta || 1e-8,
+            minTolerance = parameters.minErrorDelta || 1e-7,
             rho = (parameters.rho !== undefined) ? parameters.rho : 1,
             chi = (parameters.chi !== undefined) ? parameters.chi : 2,
             psi = (parameters.psi !== undefined) ? parameters.psi : -0.5,
@@ -176,13 +176,44 @@ function drone(font, fontSize, R, D, Z, X, Y, P, Q){
         var R = w[0], Z = w[1], X = w[2], Y = w[3];
         var f1 = Math.cos(p) - 2 * Math.sin(p) + Math.cos(q) - (2*X-Z)/R;
         var f2 = Math.sin(p) - Math.sin(q) - (Y-X)/R;
-        return Math.abs(f1) + Math.abs(f2);
+        // return Math.abs(f1) + Math.abs(f2);
+        return Math.pow(f1,2) + Math.pow(f2,2);
     }
 
     var solution = nelderMead(loss, [0.786, 0.786], [R,Z,X,Y]);
      
     p = solution.x[0];
     q = solution.x[1];
+    
+    var fx = solution.fx;
+    var eps = 0.00001;
+    
+    if (fx > eps) {
+        console.log("no solution found, trying next quadrant ...");
+        var solution = nelderMead(loss, [-0.786, 0.786], [R,Z,X,Y]);
+        p = solution.x[0];
+        q = solution.x[1];
+        
+        fx = solution.fx;
+        
+        if (fx > eps) {
+            console.log("no solution found, trying next quadrant ...");
+            var solution = nelderMead(loss, [-0.786, -0.786], [R,Z,X,Y]);
+            p = solution.x[0];
+            q = solution.x[1];
+            
+            fx = solution.fx;
+            
+            if (fx > eps) {
+                console.log("no solution found, trying next quadrant ...");
+                var solution = nelderMead(loss, [0.786, -0.786], [R,Z,X,Y]);
+                p = solution.x[0];
+                q = solution.x[1];
+                
+                fx = solution.fx;
+            }
+        }
+    }
                                     
     console.log("user selected:");
     console.log("R = "+R);
@@ -193,6 +224,8 @@ function drone(font, fontSize, R, D, Z, X, Y, P, Q){
     console.log("computed:");
     console.log("P = " + p*180/Math.PI);
     console.log("Q = " + q*180/Math.PI);
+    console.log("error:");
+    console.log("min = " + fx);
     
     var cp=R*Math.cos(p);
     var sp=R*Math.sin(p);
