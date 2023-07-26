@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022) (preloaded format=pdflatex 2023.3.2)  2 JUN 2023 13:36
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022) (preloaded format=pdflatex 2023.3.2)  25 JUL 2023 11:32
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -451,32 +451,17 @@ Underfull \hbox (badness 5667) in paragraph at lines 193--197
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 197--202
-[]\OT1/cmr/m/n/10.95 In July 2021,
+Underfull \hbox (badness 6204) in paragraph at lines 197--207
+[]\OT1/cmr/m/n/10.95 In July 2021, I
  []
 
 
-Underfull \hbox (badness 7468) in paragraph at lines 197--202
-\OT1/cmr/m/n/10.95 I started sup-port-ing the high
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 197--202
-\OT1/cmr/m/n/10.95 through-put PacBio pipeline,
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 197--202
-\OT1/cmr/m/n/10.95 HIV Di-ver-sity and Patho-gen-e-
- []
-
-
-Underfull \hbox (badness 6348) in paragraph at lines 203--206
-\OT1/cmtt/m/n/10.95 SnakeMake \OT1/cmr/m/n/10.95 sys-tem. The Ju-
+Underfull \hbox (badness 5316) in paragraph at lines 197--207
+\OT1/cmr/m/n/10.95 in Wash-ing-ton joined my cus-
  []
 
 LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <10.95> not available
-(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 213.
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 214.
 [3] (./HughMurrellResume.aux)
 Package rerunfilecheck Info: File `HughMurrellResume.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
@@ -500,10 +485,10 @@ cal/texlive/2022/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local
 /texlive/2022/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/local/
 texlive/2022/texmf-dist/fonts/type1/public/amsfonts/cm/cmtt10.pfb></usr/local/t
 exlive/2022/texmf-dist/fonts/type1/public/cm-super/sfrm1095.pfb>
-Output written on HughMurrellResume.pdf (3 pages, 145688 bytes).
+Output written on HughMurrellResume.pdf (3 pages, 146421 bytes).
 PDF statistics:
- 91 PDF objects out of 1000 (max. 8388607)
- 65 compressed objects within 1 object stream
+ 93 PDF objects out of 1000 (max. 8388607)
+ 67 compressed objects within 1 object stream
  4 named destinations out of 1000 (max. 500000)
  1 words of extra memory for PDF output out of 10000 (max. 10000000)
 
