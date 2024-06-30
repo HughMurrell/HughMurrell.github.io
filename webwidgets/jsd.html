@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amino Acid Alignment Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        #fileInput, #partitionInput {
+            margin-bottom: 10px;
+        }
+        #alignmentContainer {
+            display: flex;
+            height: 400px;
+            border: 1px solid #ccc;
+        }
+        #namesContainer, #sequencesContainer {
+            overflow: auto;
+            white-space: nowrap;
+        }
+        #namesContainer {
+            width: 20%;
+            border-right: 1px solid #ccc;
+        }
+        #sequencesContainer {
+            width: 80%;
+        }
+        .sequence {
+            font-family: monospace;
+        }
+        #heatmapContainer {
+            margin-top: 20px;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #ccc;
+        }
+        .tabcontent {
+            display: none;
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-top: none;
+        }
+    </style>
+</head>
+<body>
+    <h2>Jensen-Shannon Divergence</h2>
+    <div class="tab">
+        <button class="tablinks" onclick="openTab(event, 'InputTab')" id="defaultOpen">Input</button>
+        <button class="tablinks" onclick="openTab(event, 'AlignmentTab')">Alignment</button>
+        <button class="tablinks" onclick="openTab(event, 'HeatmapTab')">Heatmap</button>
+    </div>
+
+    <div id="InputTab" class="tabcontent">
+        <input type="file" id="fileInput" accept=".fasta,.fa,.txt">
+        <br>
+        <input type="text" id="partitionInput" placeholder="Enter space-separated partition strings">
+        <br>
+        <button onclick="loadAlignment()">Load Alignment</button>
+    </div>
+
+    <div id="AlignmentTab" class="tabcontent">
+        <div id="alignmentContainer">
+            <div id="namesContainer"></div>
+            <div id="sequencesContainer"></div>
+        </div>
+        <br>
+        <button onclick="generateHeatmap()">Generate Heatmap</button>
+        <button onclick="clearColumnSelection()">Clear Column Selection</button>
+    </div>
+
+    <div id="HeatmapTab" class="tabcontent">
+        <div id="heatmapContainer"></div>
+        <br>
+        <button id="downloadSvg">Download SVG</button>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
+        let alignment = [];
+        let partitions = [];
+        let selectedColumns = new Set();
+        let fileName = "";
+
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        document.getElementById("defaultOpen").click();
+
+        function loadAlignment() {
+            const file = document.getElementById('fileInput').files[0];
+            fileName = file.name.split('.')[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                alignment = parseFasta(content);
+                displayAlignment();
+            };
+            reader.readAsText(file);
+
+            partitions = document.getElementById('partitionInput').value.split(' ');
+        }
+
+        function parseFasta(fastaString) {
+            const lines = fastaString.split('\n');
+            const sequences = [];
+            let currentSequence = null;
+
+            for (const line of lines) {
+                if (line.startsWith('>')) {
+                    if (currentSequence) {
+                        sequences.push(currentSequence);
+                    }
+                    currentSequence = { name: line.substring(1), sequence: '' };
+                } else if (currentSequence) {
+                    currentSequence.sequence += line.trim();
+                }
+            }
+
+            if (currentSequence) {
+                sequences.push(currentSequence);
+            }
+
+            return sequences;
+        }
+
+        function displayAlignment() {
+            const namesContainer = document.getElementById('namesContainer');
+            const sequencesContainer = document.getElementById('sequencesContainer');
+
+            namesContainer.innerHTML = '';
+            sequencesContainer.innerHTML = '';
+
+            alignment.forEach((seq, index) => {
+                const nameDiv = document.createElement('div');
+                nameDiv.textContent = seq.name;
+                namesContainer.appendChild(nameDiv);
+
+                const seqDiv = document.createElement('div');
+                seqDiv.className = 'sequence';
+                seqDiv.textContent = seq.sequence;
+                seqDiv.addEventListener('mousedown', (e) => handleMouseDown(e, index));
+                seqDiv.addEventListener('mousemove', (e) => handleMouseMove(e, index));
+                sequencesContainer.appendChild(seqDiv);
+            });
+
+            linkScrolling();
+        }
+
+        function linkScrolling() {
+            const namesContainer = document.getElementById('namesContainer');
+            const sequencesContainer = document.getElementById('sequencesContainer');
+
+            namesContainer.addEventListener('scroll', () => {
+                sequencesContainer.scrollTop = namesContainer.scrollTop;
+            });
+
+            sequencesContainer.addEventListener('scroll', () => {
+                namesContainer.scrollTop = sequencesContainer.scrollTop;
+            });
+        }
+
+        let isSelecting = false;
+        let startColumn = -1;
+
+        function handleMouseDown(e, rowIndex) {
+            if (e.target.classList.contains('sequence')) {
+                isSelecting = true;
+                const column = getColumnFromEvent(e);
+                if (e.shiftKey && startColumn !== -1) {
+                    selectColumnRange(startColumn, column);
+                } else {
+                    startColumn = column;
+                    toggleColumnSelection(column);
+                }
+            }
+        }
+
+        function handleMouseMove(e, rowIndex) {
+            if (isSelecting && e.target.classList.contains('sequence')) {
+                const column = getColumnFromEvent(e);
+                if (column !== startColumn) {
+                    selectColumnRange(startColumn, column);
+                }
+            }
+        }
+
+        document.addEventListener('mouseup', () => {
+            isSelecting = false;
+        });
+
+        function getColumnFromEvent(e) {
+            const sequenceDiv = e.target;
+            const rect = sequenceDiv.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            
+            const tempSpan = document.createElement('span');
+            tempSpan.style.font = window.getComputedStyle(sequenceDiv).font;
+            tempSpan.style.visibility = 'hidden';
+            tempSpan.textContent = 'A';
+            document.body.appendChild(tempSpan);
+            const charWidth = tempSpan.getBoundingClientRect().width;
+            document.body.removeChild(tempSpan);
+
+            return Math.floor(x / charWidth);
+        }
+
+        function selectColumnRange(start, end) {
+            const min = Math.min(start, end);
+            const max = Math.max(start, end);
+            for (let i = min; i <= max; i++) {
+                selectedColumns.add(i);
+            }
+            highlightSelectedColumns();
+        }
+
+        function toggleColumnSelection(column) {
+            if (selectedColumns.has(column)) {
+                selectedColumns.delete(column);
+            } else {
+                selectedColumns.add(column);
+            }
+            highlightSelectedColumns();
+        }
+
+        function highlightSelectedColumns() {
+            const sequenceDivs = document.querySelectorAll('.sequence');
+            sequenceDivs.forEach(div => {
+                const text = div.textContent;
+                let highlightedText = '';
+                for (let i = 0; i < text.length; i++) {
+                    if (selectedColumns.has(i)) {
+                        highlightedText += `<span style="background-color: yellow;">${text[i]}</span>`;
+                    } else {
+                        highlightedText += text[i];
+                    }
+                }
+                div.innerHTML = highlightedText;
+            });
+        }
+
+        function clearColumnSelection() {
+            selectedColumns.clear();
+            highlightSelectedColumns();
+        }
+
+        function generateHeatmap() {
+            const heatmapData = calculateEntropy();
+            drawHeatmap(heatmapData);
+            openTab(event, 'HeatmapTab');
+        }
+
+        function calculateEntropy() {
+            const heatmapData = [];
+            const sortedColumns = Array.from(selectedColumns).sort((a, b) => a - b);
+            sortedColumns.forEach(column => {
+                const entropyRow = partitions.map(partition => {
+                    const partitionSequences = alignment.filter(seq => seq.name.includes(partition));
+                    const aminoAcids = partitionSequences.map(seq => seq.sequence[column]);
+                    return calculateEntropyForColumn(aminoAcids);
+                });
+                heatmapData.push({column, entropy: entropyRow});
+            });
+            return heatmapData;
+        }
+
+        function calculateEntropyForColumn(aminoAcids) {
+            const counts = {};
+            aminoAcids.forEach(aa => {
+                counts[aa] = (counts[aa] || 0) + 1;
+            });
+            const totalCount = aminoAcids.length;
+            let entropy = 0;
+            for (const aa in counts) {
+                const p = counts[aa] / totalCount;
+                entropy -= p * Math.log2(p);
+            }
+            return entropy;
+        }
+        
+        function calculateJSD() {
+            const heatmapData = [];
+            const sortedColumns = Array.from(selectedColumns).sort((a, b) => a - b);
+            
+            sortedColumns.forEach(column => {
+                const firstPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[0]));
+                const firstPartitionAminoAcids = firstPartitionSequences.map(seq => seq.sequence[column]);
+                
+                const jsdRow = partitions.map(partition => {
+                    const partitionSequences = alignment.filter(seq => seq.name.includes(partition));
+                    const partitionAminoAcids = partitionSequences.map(seq => seq.sequence[column]);
+                    
+                    return calculateJSDForColumn(partitionAminoAcids, firstPartitionAminoAcids);
+                });
+                heatmapData.push({column, jsd: jsdRow});
+            });
+            return heatmapData;
+        }
+
+        function calculateJSDForColumn(currentPartitionAminoAcids, firstPartitionAminoAcids) {
+            const P = getDistribution(currentPartitionAminoAcids);
+            const Q = getDistribution(firstPartitionAminoAcids);
+            const M = {};
+            
+            const allKeys = new Set([...Object.keys(P), ...Object.keys(Q)]);
+            console.log(allKeys);
+            
+            allKeys.forEach(key => {
+                M[key] = ((P[key] || 0) + (Q[key] || 0)) / 2;
+            });
+            
+            const DPM = calculateKLDivergence(P, M);
+            console.log(DPM)
+            const DQM = calculateKLDivergence(Q, M);
+            console.log(DQM)
+            
+            return (DPM + DQM) / 2;
+        }
+
+        function getDistribution(aminoAcids) {
+            const counts = {};
+            aminoAcids.forEach(aa => {
+                counts[aa] = (counts[aa] || 0) + 1;
+            });
+            console.log(aminoAcids);
+            const total = aminoAcids.length;
+            console.log(total);
+            const distribution = {};
+            Object.keys(counts).forEach(aa => {
+                distribution[aa] = counts[aa] / total;
+            });
+            console.log(distribution);
+            return distribution;
+        }
+
+        function calculateKLDivergence(P, Q) {
+            let divergence = 0;
+            Object.keys(P).forEach(key => {
+                if (P[key] > 0 && Q[key] > 0) {
+                    divergence += P[key] * Math.log2(P[key] / Q[key]);
+                }
+            });
+            return divergence;
+        }
+
+        function generateHeatmap() {
+            const heatmapData = calculateJSD();
+            drawHeatmap(heatmapData);
+            openTab(event, 'HeatmapTab');
+        }
+        
+        
+        function drawHeatmap(data) {
+            const margin = {top: 50, right: 100, bottom: 100, left: 100};
+            const width = 400 - margin.left - margin.right;
+            const height = 800 - margin.top - margin.bottom;
+
+            d3.select("#heatmapContainer").selectAll("*").remove();
+
+            const svg = d3.select("#heatmapContainer")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleBand()
+                .range([0, width])
+                .domain(partitions)
+                .padding(0.01);
+
+            const y = d3.scaleBand()
+                .range([height, 0])
+                .domain(data.map(d => d.column))
+                .padding(0.01);
+
+            const colorScale = d3.scaleSequential(d3.interpolateViridis)
+                .domain([0, d3.max(data, d => d3.max(d.jsd))]);
+
+            // Create a tooltip div
+            const tooltip = d3.select("body").append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0)
+                .style("position", "absolute")
+                .style("background-color", "white")
+                .style("border", "solid")
+                .style("border-width", "1px")
+                .style("border-radius", "5px")
+                .style("padding", "10px");
+
+            svg.selectAll()
+                .data(data)
+                .enter()
+                .append("g")
+                .selectAll()
+                .data(d => d.jsd.map((value, index) => ({column: d.column, partition: partitions[index], value})))
+                .enter()
+                .append("rect")
+                .attr("x", d => x(d.partition))
+                .attr("y", d => y(d.column))
+                .attr("width", x.bandwidth())
+                .attr("height", y.bandwidth())
+                .style("fill", d => colorScale(d.value))
+                .on("mouseover", function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(`Column: ${d.column}<br>Partition: ${d.partition}<br>JSD: ${d.value.toFixed(4)}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x))
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-.8em")
+                .attr("dy", ".15em")
+                .attr("transform", "rotate(-65)");
+
+            svg.append("g")
+                .call(d3.axisLeft(y));
+
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y",3 * -margin.top / 4)
+                .attr("text-anchor", "middle")
+                .style("font-size", "16px")
+                .text("Jensen-Shannon Divergence");
+                
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", -margin.top / 4)
+                .attr("text-anchor", "middle")
+                .style("font-size", "16px")
+                .text("" + fileName);
+                
+            document.getElementById('downloadSvg').onclick = function() {
+                const svgElement = document.querySelector("#heatmapContainer svg");
+                const svgData = new XMLSerializer().serializeToString(svgElement);
+                const svgBlob = new Blob([svgData], {type:"image/svg+xml;charset=utf-8"});
+                const svgUrl = URL.createObjectURL(svgBlob);
+                const downloadLink = document.createElement("a");
+                downloadLink.href = svgUrl;
+                downloadLink.download = "heatmap.svg";
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+                URL.revokeObjectURL(svgUrl);
+            };
+                
+        }
+        
+    </script>
+</body>
+</html>
