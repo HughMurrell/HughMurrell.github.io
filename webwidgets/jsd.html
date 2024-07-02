@@ -74,7 +74,7 @@
     <div id="alignment-tab" class="tab-content active">
         <input type="file" id="file-input" accept=".fasta,.fa,.txt">
         <input type="text" id="partition-input" placeholder="Please enter space separated identifiers for partitioning the alignment">
-        <input type="text" id="column-range-input" placeholder="Please enter space separated column ranges for subsequent analysis (eg: 45-57 68 91-106)">
+        <input type="text" id="column-range-input" placeholder="Please enter space separated column ranges using reference coordinates (eg: 45-57 68 91-106)">
         <button onclick="parseColumnRanges()">Parse Column Ranges</button>
         <div id="alignment-container">
             <div id="names-container"></div>
@@ -83,7 +83,7 @@
     </div>
 
     <div id="heatmap-tab" class="tab-content">
-        <button onclick="generateHeatmap()">Generate Heatmap</button>
+        <button onclick="generateHeatmap()">Generate JSD Heatmap</button>
         <button onclick="downloadSVG()">Download SVG</button>
         <div id="heatmap-container"></div>
     </div>
@@ -229,10 +229,12 @@
 
         function generateHeatmap() {
             const partitionInput = document.getElementById('partition-input').value;
-            partitions = partitionInput.trim().split(/\s+/); //.sort();
+            partitions = partitionInput.trim().split(/\s+/); // to sort use .sort();
 
+            const partitionCounts = countSequencesInPartitions();
+            
             const heatmapData = calculateJSD();
-            drawHeatmap(heatmapData);
+            drawHeatmap(heatmapData, partitionCounts);
         }
 
         function calculateJSD() {
@@ -270,37 +272,22 @@
             
             return refCount;
         }
-
+        
+        
         function calculateJSDForColumn(partition1, partition2, col) {
             const dist1 = calculateDistribution(partition1, col);
             const dist2 = calculateDistribution(partition2, col);
+            const allKeys = new Set([...Object.keys(dist1), ...Object.keys(dist2)]);
             const m = {};
 
-            for (const aa in dist1) {
-                m[aa] = (dist1[aa] + dist2[aa]) / 2;
+            for (const aa of allKeys) {
+                m[aa] = ((dist1[aa] || 0) + (dist2[aa] || 0)) / 2;
             }
 
-            const kl1 = calculateKLDivergence(dist1, m);
-            const kl2 = calculateKLDivergence(dist2, m);
+            const kl1 = calculateKLDivergence(dist1, m, allKeys);
+            const kl2 = calculateKLDivergence(dist2, m, allKeys);
 
             return (kl1 + kl2) / 2;
-        }
-        
-        function getReferenceIndex(alignmentIndex) {
-            let refIndex = -1;
-            let currentAlignmentIndex = 0;
-
-            for (let i = 0; i < referenceSequence.length; i++) {
-                if (currentAlignmentIndex === alignmentIndex) {
-                    refIndex = referenceSequence[i] !== '-' ? i : -1;
-                    break;
-                }
-                if (referenceSequence[i] !== '-') {
-                    currentAlignmentIndex++;
-                }
-            }
-
-            return refIndex;
         }
 
         function calculateDistribution(sequences, col) {
@@ -318,21 +305,55 @@
             return dist;
         }
 
-        function calculateKLDivergence(p, q) {
+        function calculateKLDivergence(p, q, allKeys) {
             let divergence = 0;
-            for (const aa in p) {
-                if (q[aa] > 0) {
-                    divergence += p[aa] * Math.log2(p[aa] / q[aa]);
+            for (const aa of allKeys) {
+                const pValue = p[aa] || 0;
+                const qValue = q[aa] || 0;
+                if (pValue > 0 && qValue > 0) {
+                    divergence += pValue * Math.log2(pValue / qValue);
                 }
             }
             return divergence;
         }
+        
+        
+        
+        
+        
+        
+        
+        function getReferenceIndex(alignmentIndex) {
+            let refIndex = -1;
+            let currentAlignmentIndex = 0;
 
-        function drawHeatmap(data) {
+            for (let i = 0; i < referenceSequence.length; i++) {
+                if (currentAlignmentIndex === alignmentIndex) {
+                    refIndex = referenceSequence[i] !== '-' ? i : -1;
+                    break;
+                }
+                if (referenceSequence[i] !== '-') {
+                    currentAlignmentIndex++;
+                }
+            }
+
+            return refIndex;
+        }
+        
+        function countSequencesInPartitions() {
+            const counts = {};
+            partitions.forEach(partition => {
+                counts[partition] = alignment.filter(seq => seq.name.includes(partition)).length;
+            });
+            return counts;
+        }
+
+
+        function drawHeatmap(data, partitionCounts) {
             const container = document.getElementById('heatmap-container');
             container.innerHTML = '';
 
-            const margin = { top: 80, right: 30, bottom: 80, left: 100 };
+            const margin = { top: 80, right: 30, bottom: 100, left: 100 };  // Increased bottom margin
             const width = 600 - margin.left - margin.right;
             const height = 1200 - margin.top - margin.bottom;
 
@@ -362,11 +383,11 @@
                 .enter()
                 .selectAll()
                 .data(d => partitions.map(partition => ({
-                           column: d.column,
-                           refCoord: d.refCoord,
-                           refChar: d.refChar,
-                           partition,
-                           value: d[partition]
+                    column: d.column,
+                    refCoord: d.refCoord,
+                    refChar: d.refChar,
+                    partition,
+                    value: d[partition]
                 })))
                 .enter()
                 .append('rect')
@@ -376,14 +397,15 @@
                 .attr('height', y.bandwidth())
                 .style('fill', d => color(d.value))
                 .append('title')
-                .text(d => `JSD: ${d.value.toFixed(8)}`);
-                       
+                .text(d => `JSD: ${d.value.toFixed(6)}`);
+
             svg.append('g')
                 .attr('transform', `translate(0,${height})`)
                 .call(d3.axisBottom(x))
                 .selectAll('text')
                 .attr('transform', 'rotate(-45)')
-                .style('text-anchor', 'end');
+                .style('text-anchor', 'end')
+                .text(d => `${d} (${partitionCounts[d]})`);  // Modified to include count
 
             svg.append('g')
                 .call(d3.axisLeft(y))
@@ -405,7 +427,7 @@
                 .style('font-size', '14px')
                 .text(fileName);
         }
-
+        
         function downloadSVG() {
             const svgElement = document.querySelector('#heatmap-container svg');
             const svgData = new XMLSerializer().serializeToString(svgElement);
