@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amino Acid Alignment Analyzer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .tab-buttons {
+            margin-bottom: 10px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+            border: none;
+            outline: none;
+        }
+        .tab-button.active {
+            background-color: #ddd;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: 20px 1fr;
+            grid-template-rows: 20px 1fr;
+            gap: 5px;
+            height: 400px;
+            margin: 20px 0;
+        }
+        .cell {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        #alignment-container {
+            display: flex;
+            width: 100%;
+            overflow: hidden;
+        }
+        #names-container, #sequences-container {
+            overflow-x: auto;
+            overflow-y: scroll;
+            height: 400px;
+        }
+        #names-container {
+            width: 20%;
+            margin-right: 2%;
+        }
+        #sequences-container {
+            width: 78%;
+        }
+        .name, .sequence {
+            white-space: nowrap;
+            font-family: monospace;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 5px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 5px 10px;
+            margin-bottom: 10px;
+        }
+        #heatmap-container {
+            margin-top: 20px;
+        }
+        #horizontalSlider {
+            width: 100%;
+        }
+        #verticalSliderContainer {
+            transform: rotate(-90deg);
+        }
+        #verticalSlider {
+            width: 100%;
+        }
+        #logo-container {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Longitudinal Divergence</h2>
+    <div class="tab-buttons">
+        <button class="tab-button active" onclick="showTab('alignment')">Alignment</button>
+        <button class="tab-button" onclick="showTab('heatmap')">Heatmap</button>
+        <button class="tab-button" onclick="showTab('logo')">Logo</button>
+    </div>
+
+    <div id="alignment-tab" class="tab-content active">
+        <input type="file" id="file-input" accept=".fasta,.fa,.txt">
+        <input type="text" id="partition-input" placeholder="Please enter space separated identifiers for partitioning the alignment">
+        <input type="text" id="column-range-input" placeholder="Please enter space separated column ranges using reference coordinates (eg: 45-57 68 91-106)">
+        <button onclick="parseColumnRanges()">Parse Column Ranges</button>
+        <div id="alignment-container">
+            <div id="names-container"></div>
+            <div id="sequences-container"></div>
+        </div>
+    </div>
+
+    <div id="heatmap-tab" class="tab-content">
+        <button onclick="generateHeatmap()">Generate JSD Heatmap</button>
+        <button onclick="downloadHeatmapSVG()">Download Heatmap SVG</button>
+        <div id="heatmap-container"></div>
+    </div>
+    
+    <div id="logo-tab" class="tab-content">
+        <button onclick="generateLogo()">Generate Escape Logo</button>
+        <button onclick="downloadLogoSVG()">Download Logo SVG</button>
+        <div class="slider-container">
+            <label for="horizontalExtent">Scale horizontal:</label>
+            <input type="range" id="horizontalExtent" min="0.1" max="2" step="0.1" value="1">
+            <span id="horizontalExtentValue">1</span>
+        </div>
+        <div class="slider-container">
+            <label for="verticalExtent">Scale vertical:</label>
+            <input type="range" id="verticalExtent" min="0.1" max="2" step="0.1" value="1">
+            <span id="verticalExtentValue">1</span>
+        </div>
+        <div id="logo-container"></div>
+ 
+        <textarea id="matrixInput" placeholder="Enter frequency matrix here..."  hidden></textarea>
+    </div>
+
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
+        let alignment = [];
+        let partitions = [];
+        let selectedColumns = [];
+        let fileName = "";
+        let referenceSequence = '';
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+            document.querySelector(`button[onclick="showTab('${tabName}')"]`).classList.add('active');
+        }
+
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            fileName = file.name.split('.').slice(0, -1).join('.');
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                alignment = parseFasta(content);
+                displayAlignment();
+            };
+            reader.readAsText(file);
+        });
+
+        function parseFasta(content) {
+            const lines = content.split('\n');
+            const sequences = [];
+            let currentSequence = '';
+            let currentName = '';
+
+            for (const line of lines) {
+                if (line.startsWith('>')) {
+                    if (currentName) {
+                        sequences.push({ name: currentName, sequence: currentSequence });
+                        currentSequence = '';
+                    }
+                    currentName = line.slice(1).trim();
+                } else {
+                    currentSequence += line.trim();
+                }
+            }
+
+            if (currentName) {
+                sequences.push({ name: currentName, sequence: currentSequence });
+            }
+
+            return sequences;
+        }
+
+        function displayAlignment() {
+            const namesContainer = document.getElementById('names-container');
+            const sequencesContainer = document.getElementById('sequences-container');
+            namesContainer.innerHTML = '';
+            sequencesContainer.innerHTML = '';
+
+            alignment.forEach(seq => {
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'name';
+                nameDiv.textContent = seq.name;
+                namesContainer.appendChild(nameDiv);
+
+                const sequenceDiv = document.createElement('div');
+                sequenceDiv.className = 'sequence';
+                sequenceDiv.textContent = seq.sequence;
+                sequencesContainer.appendChild(sequenceDiv);
+            });
+
+            namesContainer.addEventListener('scroll', function() {
+                sequencesContainer.scrollTop = this.scrollTop;
+            });
+
+            sequencesContainer.addEventListener('scroll', function() {
+                namesContainer.scrollTop = this.scrollTop;
+            });
+
+            highlightColumns();
+        }
+
+        function parseColumnRanges() {
+            const input = document.getElementById('column-range-input').value;
+            const ranges = input.trim().split(/\s+/);
+            selectedColumns = [];
+
+            referenceSequence = alignment[0].sequence;
+
+            ranges.forEach(range => {
+                const [start, end] = range.split('-').map(Number);
+                if (end) {
+                    let alignmentStart = getAlignmentCoordinate(start);
+                    let alignmentEnd = getAlignmentCoordinate(end);
+                    for (let i = alignmentStart; i <= alignmentEnd; i++) {
+                        selectedColumns.push(i - 1);
+                    }
+                } else {
+                    let alignmentCoord = getAlignmentCoordinate(start);
+                    selectedColumns.push(alignmentCoord - 1);
+                }
+            });
+
+            selectedColumns.sort((a, b) => a - b);
+            highlightColumns();
+        }
+
+        function getAlignmentCoordinate(refCoord) {
+            let refCount = 0;
+            let alignCount = 0;
+            
+            for (let i = 0; i < referenceSequence.length; i++) {
+                alignCount++;
+                if (referenceSequence[i] !== '-') {
+                    refCount++;
+                }
+                if (refCount === refCoord) {
+                    return alignCount;
+                }
+            }
+            
+            return -1; // Return -1 if the reference coordinate is out of bounds
+        }
+
+        function highlightColumns() {
+            const sequenceElements = document.querySelectorAll('.sequence');
+            sequenceElements.forEach(seqEl => {
+                const text = seqEl.textContent;
+                let highlightedText = '';
+                for (let i = 0; i < text.length; i++) {
+                    if (selectedColumns.includes(i)) {
+                        highlightedText += `<span style="background-color: yellow;">${text[i]}</span>`;
+                    } else {
+                        highlightedText += text[i];
+                    }
+                }
+                seqEl.innerHTML = highlightedText;
+            });
+        }
+
+        function generateHeatmap() {
+            const partitionInput = document.getElementById('partition-input').value;
+            partitions = partitionInput.trim().split(/\s+/); // to sort use .sort();
+
+            const partitionCounts = countSequencesInPartitions();
+            
+            const heatmapData = calculateJSD();
+            drawHeatmap(heatmapData, partitionCounts);
+        }
+
+        function calculateJSD() {
+            const heatmapData = [];
+
+            selectedColumns.forEach((col) => {
+                const refCoord = getReferenceCoordinate(col + 1);
+                const refChar = referenceSequence[col];
+                const row = {
+                    column: col + 1,
+                    refCoord: refCoord,
+                    refChar: refChar
+                };
+                partitions.forEach((partition) => {
+                    const partitionSequences = alignment.filter(seq => seq.name.includes(partition));
+                    const firstPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[0]));
+                    
+                    const jsd = calculateJSDForColumn(partitionSequences, firstPartitionSequences, col);
+                    row[partition] = jsd;
+                });
+                heatmapData.push(row);
+            });
+
+            return heatmapData;
+        }
+
+        function getReferenceCoordinate(alignCoord) {
+            let refCount = 0;
+            
+            for (let i = 0; i < alignCoord; i++) {
+                if (referenceSequence[i] !== '-') {
+                    refCount++;
+                }
+            }
+            
+            return refCount;
+        }
+        
+        
+        function calculateJSDForColumn(partition1, partition2, col) {
+            const dist1 = calculateDistribution(partition1, col);
+            const dist2 = calculateDistribution(partition2, col);
+            const allKeys = new Set([...Object.keys(dist1), ...Object.keys(dist2)]);
+            const m = {};
+
+            for (const aa of allKeys) {
+                m[aa] = ((dist1[aa] || 0) + (dist2[aa] || 0)) / 2;
+            }
+
+            const kl1 = calculateKLDivergence(dist1, m, allKeys);
+            const kl2 = calculateKLDivergence(dist2, m, allKeys);
+
+            return (kl1 + kl2) / 2;
+        }
+
+        function calculateDistribution(sequences, col) {
+            const dist = {};
+            sequences.forEach(seq => {
+                const aa = seq.sequence[col];
+                dist[aa] = (dist[aa] || 0) + 1;
+            });
+
+            const total = sequences.length;
+            for (const aa in dist) {
+                dist[aa] /= total;
+            }
+
+            return dist;
+        }
+
+        function calculateKLDivergence(p, q, allKeys) {
+            let divergence = 0;
+            for (const aa of allKeys) {
+                const pValue = p[aa] || 0;
+                const qValue = q[aa] || 0;
+                if (pValue > 0 && qValue > 0) {
+                    divergence += pValue * Math.log2(pValue / qValue);
+                }
+            }
+            return divergence;
+        }
+        
+        function getReferenceIndex(alignmentIndex) {
+            let refIndex = -1;
+            let currentAlignmentIndex = 0;
+
+            for (let i = 0; i < referenceSequence.length; i++) {
+                if (currentAlignmentIndex === alignmentIndex) {
+                    refIndex = referenceSequence[i] !== '-' ? i : -1;
+                    break;
+                }
+                if (referenceSequence[i] !== '-') {
+                    currentAlignmentIndex++;
+                }
+            }
+
+            return refIndex;
+        }
+        
+        function countSequencesInPartitions() {
+            const counts = {};
+            partitions.forEach(partition => {
+                counts[partition] = alignment.filter(seq => seq.name.includes(partition)).length;
+            });
+            return counts;
+        }
+
+
+        function drawHeatmap(data, partitionCounts) {
+            const container = document.getElementById('heatmap-container');
+            container.innerHTML = '';
+
+            const margin = { top: 80, right: 30, bottom: 100, left: 100 };  // Increased bottom margin
+            const width = 600 - margin.left - margin.right;
+            const height = 1200 - margin.top - margin.bottom;
+
+            const svg = d3.select(container)
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom)
+                .append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleBand()
+                .range([0, width])
+                .domain(partitions)
+                .padding(0.01);
+
+            const y = d3.scaleBand()
+                .range([height, 0])
+                .domain(data.map(d => `${d.column}_${d.refCoord}_${d.refChar}`))
+                .padding(0.01);
+
+            const color = d3.scaleSequential()
+                .interpolator(d3.interpolateViridis)
+                .domain([0, d3.max(data, d => d3.max(partitions, p => d[p]))]);
+
+            svg.selectAll()
+                .data(data)
+                .enter()
+                .selectAll()
+                .data(d => partitions.map(partition => ({
+                    column: d.column,
+                    refCoord: d.refCoord,
+                    refChar: d.refChar,
+                    partition,
+                    value: d[partition]
+                })))
+                .enter()
+                .append('rect')
+                .attr('x', d => x(d.partition))
+                .attr('y', d => y(`${d.column}_${d.refCoord}_${d.refChar}`))
+                .attr('width', x.bandwidth())
+                .attr('height', y.bandwidth())
+                .style('fill', d => color(d.value))
+                .append('title')
+                .text(d => `JSD: ${d.value.toFixed(6)}`);
+
+            svg.append('g')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(x))
+                .selectAll('text')
+                .attr('transform', 'rotate(-45)')
+                .style('text-anchor', 'end')
+                .text(d => `${d} (${partitionCounts[d]})`);  // Modified to include count
+
+            svg.append('g')
+                .call(d3.axisLeft(y))
+                .selectAll('text')
+                .attr('font-family', 'monospace');
+
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', -margin.top / 2)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '16px')
+                .style('font-weight', 'bold')
+                .text('Jensen-Shannon Divergence');
+
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', -margin.top / 4)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '14px')
+                .text(fileName);
+        }
+        
+        function downloadHeatmapSVG() {
+            const svgElement = document.querySelector('#heatmap-container svg');
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'heatmap.svg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // now for the escape logo
+        const colors = {
+            'A': '#90A0CF', 'B': '#80CF98', 'C': '#CF90B0', 'D': '#CFCF70', 'E': '#CF90CF',
+            'F': '#80C0C0', 'G': '#CFA060', 'H': '#C05070', 'I': '#C5AE83', 'J': '#00A7CF',
+            'K': '#B54C4C', 'L': '#56B592', 'M': '#8AB52A', 'N': '#BE72BE', 'O': '#00B6A1',
+            'P': '#00CF6F', 'Q': '#349B61', 'R': '#0000BB', 'S': '#A59F5B', 'T': '#009400',
+            'U': '#B00000', 'V': '#B0B000', 'W': '#B000B0', 'X': '#00B0B0', 'Y': '#E8B613',
+            'Z': '#C23232'
+        };
+        
+        const holeColors = {
+            'A': '#FFFFFF', 'B': '#FFFFFF', 'C': '#FFFFFF', 'D': '#FFFFFF', 'E': '#FFFFFF',
+            'F': '#FFFFFF', 'G': '#FFFFFF', 'H': '#FFFFFF', 'I': '#FFFFFF', 'J': '#FFFFFF',
+            'K': '#FFFFFF', 'L': '#FFFFFF', 'M': '#FFFFFF', 'N': '#FFFFFF', 'O': '#FFFFFF',
+            'P': '#FFFFFF', 'Q': '#349B61', 'R': '#FFFFFF', 'S': '#FFFFFF', 'T': '#FFFFFF',
+            'U': '#FFFFFF', 'V': '#FFFFFF', 'W': '#FFFFFF', 'X': '#FFFFFF', 'Y': '#FFFFFF',
+            'Z': '#FFFFFF'
+        };
+
+        const letterPaths = {
+            'A': `M 0 100 L 33 0 L 66 0 L 100 100 L 75 100 L 66 75 L 33 75 L 25 100 L 0 100`,
+            'B': `M 0 0 L 80 0 C 105 0 105 50 80 50 C 105 50 105 100 80 100 L 00 100 L 0 0`,
+            'C': `M 100 28 C 100 -13 0 -13 0 50 C 0 113 100 113 100 72 L 75 72 C 75 90 30 90 30 50 C 30 10 75 10 75 28 L 100 28`,
+            'D': `M 0 0 L 60 0 C 110 0 110 100 60 100 L 0 100 L 0 0`,
+            'E': `M 0 0 L 100 0 L 100 20 L 20 20 L 20 40 L 90 40 L 90 60 L 20 60 L 20 80 L 100 80 L 100 100 L 0 100 L 0 0`,
+            'F': `M 0 0 L 100 0 L 100 20 L 20 20 L 20 40 L 80 40 L 80 60 L 20 60 L 20 100 L 0 100 L 0 0`,
+            'G': `M 100 28 C 100 -13 0 -13 0 50 C 0 113 100 113 100 72 L 100 48 L 55 48 L 55 72 L 75 72  C 75 90 30 90 30 50 C 30 10 75 5 75 28 L 100 28`,
+            'H': `M 0 0 L 20 0 L 20 40 L 80 40 L 80 0 L 100 0 L 100 100 L 80 100 L 80 60 L 20 60 L 20 100 L 0 100 L 0 0`,
+            'I': `M 40 0 L 60 0 L 60 100 L 40 100 L 40 0`,
+            'J': `M 0 60 C 0 111 100 111 100 60 L 100 0 L 75 0 L 75 60 C 80 90 20 90 25 60`,
+            'K': `M 0 0 L 20 0 L 20 40 L 75 0 L 100 0 L 50 50 L 100 100 L 75 100 L 30 65 L 20 75 L 20 100 L 0 100 L 0 0`,
+            'L': `M 0 0 L 0 100 L 100 100 L 100 80 L 20 80 L 20 0 L 0 0`,
+            'M': `M 0 0 L 20 0 L 50 35 L 80 0 L 100 0 L 100 100 L 80 100 L 80 30 L 50 65 L 20 30 L 20 100 L 0 100 L 0 0`,
+            'N': `M 0 100 L 0 0 L 20 0 L 80 75 L 80 0 L 100 0 L 100 100 L 80 100 L 20 25 L 20 100 L 0 100`,
+            'P': `M 0 0 L 80 0 C 105 0 105 50 80 50 L 20 50 L 20 100 L 0 100 L 0 0`,
+            'Q': `M 50 0 C 75 0 100 25 100 50 C 100 75 75 100 50 100 C 25 100 0 75 0 50 C 0 25 25 0 50 0 L 50 20 C 30 20 20 30 20 50 C 20 70 30 80 50 80 C 70 80 80 60 80 50 C 80 40 60 20 50 20 L 50 0`,
+            'R': `M 0 0 L 80 0 C 105 0 105 50 80 50 C 100 50 100 70 100 70 L 100 100 L 80 100 L 80 80 C 80 80 80 55 50 55 L 20 55 L 20 100 L 0 100 L 0 0`,
+            'S': 'M 100 25 C 100 10 90 0 50 0 C 10 0 0 10 0 25 C 0 35 20 55 50 55 C 70 55 80 65 80 75 C 80 80 60 90 50 90 C 30 90 20 85 20 75 L 0 75 C 0 90 10 100 50 100 C 90 100 100 90 100 75 C 100 65 100 45 50 45 C 30 45 20 35 20 25 C 20 15 20 10 50 10 C 60 10 80 15 80 25 L 100 25',
+            'T': 'M 0 0 L 0 20 L 35 20 L 35 100 L 65 100 L 65 20 L 100 20 L 100 0 L 0 0',
+            'U': 'M 0 0 L 0 60 C 0 111 100 111 100 60 L 100 0 L 75 0 L 75 60 C 80 90 20 90 25 60 L 25 0 L 0 0',
+            'V': 'M 0 0 L 20 0 L 50 80 L 80 0 L 100 0 L 60 100 L 40 100 L 0 0',
+            'W': 'M 0 0 L 20 0 L 30 70 L 50 30 L 70 70 L 80 0 L 100 0 L 90 100 L 70 100 L 50 65 L 30 100 L 10 100 L 0 0',
+            'X': 'M 0 0 L 20 0 L 50 40 L 80 0 L 100 0 L 70 50 L 100 100 L 80 100 L 50 60 L 20 100 L 0 100 L 30 50 L 0 0',
+            'Y': 'M 0 0 L 20 0 L 50 45 L 80 0 L 100 0 L 60 60 L 60 100 L 40 100 L 40 60 L 0 0',
+            'Z': 'M 0 0 L 100 0 L 100 20 L 35 80 L 100 80 L 100 100 L 0 100 L 0 80 L 65 20 L 0 20 L 0 0'
+        };
+        
+        const letterHoles = {
+            'A': `M 41 55 L 50 25 L 58 55 L 41 55`,
+            'B': `M 20 15 L 70 15 C 80 15 80 35 70 35 L 20 35 L 20 15 M 20 65 L 70 65 C 80 65 80 85 70 85 L 20 85 L 20 65 L 20 15`,
+            'D': `M 20 15 L 40 15 C 85 15 85 85 40 85 L 20 85 L 20 15`,
+            'P': `M 20 15 L 70 15 C 80 15 80 35 70 35 L 20 35 L 20 15`,
+            'Q': `M 85 100 L 55 70 L 70 55 L 100 85 L 85 100`,
+            'R': `M 20 10 L 70 10 C 80 10 80 35 70 40 L 20 40 L 20 15`
+        }
+
+        function drawAminoAcidLogo(container, data, founderMatrix, frequencyMatrix, verticalExtent, horizontalExtent) {
+            // Clear previous content
+            d3.select(container).selectAll("*").remove();
+
+            const width = 800 * horizontalExtent;
+            const height = 600 * verticalExtent;
+            const margin = { top: 80, right: 30, bottom: 100, left: 100 };
+            // const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+            const logoWidth = width - margin.left - margin.right;
+            const logoHeight = height / 2 - margin.top - margin.bottom;
+
+            const svg = d3.select(container)
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            const logo = svg.append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+                
+            const xBar =d3.scaleBand()
+                .range([0, logoWidth])
+                .domain(d3.range(frequencyMatrix.length))
+                .padding(0.01);
+                
+            const x = d3.scaleBand()
+                    .range([0, logoWidth])
+                    .domain(data.map(d => `${d.column}_${d.refCoord}_${d.refChar}  `))
+                    .padding(0.01);
+                    
+            logo.append('g')
+                .attr('transform', `translate(0,${(3/2)*logoHeight})`)
+                .call(d3.axisBottom(x))
+                .selectAll('text')
+                .attr('transform', 'rotate(-45)')
+                .style('text-anchor', 'end')
+                .text(d => `${d}`);
+
+            const xScale = d3.scaleBand()
+                .range([0, logoWidth])
+                .domain(d3.range(frequencyMatrix.length))
+                .padding(0.01);
+
+            const yScale = d3.scaleLinear()
+                .range([logoHeight, 0])
+                .domain([0, 1]);
+
+            frequencyMatrix.forEach((position, index) => {
+                let y = logoHeight;
+                const sortedAAs = Object.entries(position).sort((a, b) => b[1] - a[1]);
+
+                sortedAAs.forEach(([aa, frequency]) => {
+                    const height = logoHeight * frequency;
+                    const width = xScale.bandwidth();
+
+                    const letterGroup = logo.append("g")
+                        .attr("transform", `translate(${xScale(index)}, ${y - height}) scale(${width / 100}, ${height / 100})`);
+
+                    letterGroup.append("path")
+                        .attr("d", letterPaths[aa])
+                        .attr("fill", colors[aa]);
+                        
+                    letterGroup.append("path")
+                        .attr("d", letterHoles[aa])
+                        .attr("fill", holeColors[aa]);
+
+                    y -= height;
+                });
+            });
+            
+            founderMatrix.forEach((position, index) => {
+                let y = (3/2) * logoHeight;
+                const sortedAAs = Object.entries(position).sort((a, b) => b[1] - a[1]);
+
+                sortedAAs.forEach(([aa, frequency]) => {
+                    const height = logoHeight * frequency;
+                    const width = xScale.bandwidth();
+
+                    const letterGroup = logo.append("g")
+                        .attr("transform", `translate(${xScale(index)}, ${y - height/2}) scale(${width / 100}, ${height / 200})`);
+
+                    letterGroup.append("path")
+                        .attr("d", letterPaths[aa])
+                        .attr("fill", colors[aa]);
+                        
+                    letterGroup.append("path")
+                        .attr("d", letterHoles[aa])
+                        .attr("fill", holeColors[aa]);
+
+                    y -= height/2;
+                });
+            });
+
+            // Add three x-axis with position numbers on bottom axis
+            
+            const xTop = d3.axisBottom(xBar)
+                .tickValues([]);
+            
+            logo.append("g")
+                .attr("transform", `translate(0, 0)`)
+                .call(xTop);
+            
+            const xSep = d3.axisBottom(xBar)
+                .tickValues([]);
+            
+            logo.append("g")
+                .attr("transform", `translate(0, ${logoHeight})`)
+                .call(xSep);
+            
+            // const xAxis = d3.axisBottom(x)
+                // .tickFormat(d => d + 1);
+
+            // logo.append("g")
+            //     .attr("transform", `translate(0, ${(3/2)*logoHeight})`)
+            //     .call(xAxis);
+                
+            logo.append('text')
+                .attr('x', 0)
+                .attr('y', - 2 * margin.top / 3)
+                .attr('text-anchor', 'start')
+                .style('font-size', '24px')
+                .text(fileName);
+                    
+            logo.append('text')
+                    .attr('x', 0)
+                    .attr('y', - 1 * margin.top / 4)
+                    .attr('text-anchor', 'start')
+                    .style('font-size', '20px')
+                    .text("founder at: " + partitions[0] + "    escape at: " + partitions[partitions.length-1]);
+        }
+
+        function generateLogo() {
+            const container = document.getElementById('logo-container');
+            const matrixInput = document.getElementById('matrixInput');
+            const verticalExtent = parseFloat(document.getElementById('verticalExtent').value);
+            const horizontalExtent = parseFloat(document.getElementById('horizontalExtent').value);
+            
+            // try {
+                const frequencyMatrix = JSON.parse(matrixInput.value);
+                escFreqData = calculateEscapeFrequencies();
+                escFreqMatrix = [];
+                founderMatrix = [];
+                escFreqData.forEach((col) => {
+                    escFreqMatrix.push(col.esf);
+                    founderMatrix.push(col.ff);
+                });
+                drawAminoAcidLogo(container, escFreqData, founderMatrix, escFreqMatrix, verticalExtent, horizontalExtent);
+            // } catch (error) {
+            //     alert('Invalid input. Please enter a valid JSON array of frequency objects.');
+            // }
+        }
+
+        // Example matrix
+        const exampleMatrix = [
+            {'S': 0.5, 'G': 0.3, 'D': 0.2},
+            {'E': 0.4, 'A': 0.3, 'G': 0.2, 'Y': 0.1},
+            {'D': 0.6, 'I': 0.2, 'A': 0.1, 'G': 0.1},
+            {'A': 0.8, 'G': 0.1, 'C': 0.1},
+            {'G': 0.7, 'R': 0.2, 'Y': 0.1},
+            {'R': 0.4, 'Y': 0.3, 'L': 0.2, 'C': 0.1},
+            {'L': 0.5, 'G': 0.3, 'T': 0.2},
+            {'C': 0.4, 'I': 0.3, 'T': 0.2, 'V': 0.1},
+            {'T': 0.6, 'R': 0.2, 'E': 0.2},
+            {'I': 0.5, 'V': 0.3, 'S': 0.2},
+            {'V': 0.4, 'R': 0.3, 'S': 0.2, 'L': 0.1},
+            {'S': 0.7, 'R': 0.2, 'L': 0.1},
+            {'R': 0.8, 'K': 0.1, 'L': 0.1},
+            {'L': 0.5, 'I': 0.3, 'G': 0.2},
+            {'G': 0.9, 'A': 0.1},
+            {'L': 0.4, 'I': 0.3, 'V': 0.2, 'G': 0.1},
+            {'R': 0.6, 'K': 0.2, 'E': 0.2},
+            {'E': 0.5, 'K': 0.3, 'G': 0.2},
+            {'K': 0.7, 'R': 0.2, 'G': 0.1},
+            {'G': 0.8, 'A': 0.1, 'S': 0.1},
+            {'I': 0.5, 'L': 0.3, 'Q': 0.2}
+        ];
+
+        function calculateEscapeFrequencies() {
+            const escapeFrequencyData = [];
+
+            selectedColumns.forEach((col) => {
+                const refCoord = getReferenceCoordinate(col + 1);
+                const refChar = referenceSequence[col];
+                const firstPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[0]));
+                const lastPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[partitions.length-1]));
+                bgf = calculateDistribution(firstPartitionSequences, col);
+                esf = calculateDistribution(lastPartitionSequences, col);
+                // remove the maximal bgf from esf
+                sortedBgf = Object.entries(bgf).sort((a, b) => b[1] - a[1]);
+                keyCount=0;
+                ff={};
+                Object.keys(bgf).forEach((key) => {
+                  if ( keyCount == 0 ) {
+                      esf[key]=0.0;
+                      ff[key]=1.0
+                  };
+                  keyCount=keyCount+1;
+                });
+                const row = {
+                    column: col + 1,
+                    refCoord: refCoord,
+                    refChar: refChar,
+                    esf: esf,
+                    ff: ff
+                };
+                escapeFrequencyData.push(row);
+            });
+
+            return escapeFrequencyData;
+        }
+        
+        document.getElementById('matrixInput').value = JSON.stringify(exampleMatrix, null, 2);
+
+        // Add event listeners for sliders
+        document.getElementById('verticalExtent').addEventListener('input', function() {
+            document.getElementById('verticalExtentValue').textContent = this.value;
+            generateLogo();
+        });
+
+        document.getElementById('horizontalExtent').addEventListener('input', function() {
+            document.getElementById('horizontalExtentValue').textContent = this.value;
+            generateLogo();
+        });
+        
+        function downloadLogoSVG() {
+            const svgElement = document.querySelector('#logo-container svg');
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'escape_logo.svg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+    </script>
+</body>
+</html>
