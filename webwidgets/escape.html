@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amino Acid Alignment Analyzer</title>
+    <title>Longitudinal Divergence</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -488,7 +488,7 @@
             'K': '#B54C4C', 'L': '#56B592', 'M': '#8AB52A', 'N': '#BE72BE', 'O': '#00B6A1',
             'P': '#00CF6F', 'Q': '#349B61', 'R': '#0000BB', 'S': '#A59F5B', 'T': '#009400',
             'U': '#B00000', 'V': '#B0B000', 'W': '#B000B0', 'X': '#00B0B0', 'Y': '#E8B613',
-            'Z': '#C23232'
+            'Z': '#C23232', '-': '#00FFFF'
         };
         
         const holeColors = {
@@ -497,7 +497,7 @@
             'K': '#FFFFFF', 'L': '#FFFFFF', 'M': '#FFFFFF', 'N': '#FFFFFF', 'O': '#FFFFFF',
             'P': '#FFFFFF', 'Q': '#349B61', 'R': '#FFFFFF', 'S': '#FFFFFF', 'T': '#FFFFFF',
             'U': '#FFFFFF', 'V': '#FFFFFF', 'W': '#FFFFFF', 'X': '#FFFFFF', 'Y': '#FFFFFF',
-            'Z': '#FFFFFF'
+            'Z': '#FFFFFF', '-': '#FFFFFF'
         };
 
         const letterPaths = {
@@ -525,7 +525,8 @@
             'W': 'M 0 0 L 20 0 L 30 70 L 50 30 L 70 70 L 80 0 L 100 0 L 90 100 L 70 100 L 50 65 L 30 100 L 10 100 L 0 0',
             'X': 'M 0 0 L 20 0 L 50 40 L 80 0 L 100 0 L 70 50 L 100 100 L 80 100 L 50 60 L 20 100 L 0 100 L 30 50 L 0 0',
             'Y': 'M 0 0 L 20 0 L 50 45 L 80 0 L 100 0 L 60 60 L 60 100 L 40 100 L 40 60 L 0 0',
-            'Z': 'M 0 0 L 100 0 L 100 20 L 35 80 L 100 80 L 100 100 L 0 100 L 0 80 L 65 20 L 0 20 L 0 0'
+            'Z': 'M 0 0 L 100 0 L 100 20 L 35 80 L 100 80 L 100 100 L 0 100 L 0 80 L 65 20 L 0 20 L 0 0',
+            '-': 'M 50 100 L 100 0 L 0 0 L 50 100'
         };
         
         const letterHoles = {
@@ -534,7 +535,8 @@
             'D': `M 20 15 L 40 15 C 85 15 85 85 40 85 L 20 85 L 20 15`,
             'P': `M 20 15 L 70 15 C 80 15 80 35 70 35 L 20 35 L 20 15`,
             'Q': `M 85 100 L 55 70 L 70 55 L 100 85 L 85 100`,
-            'R': `M 20 10 L 70 10 C 80 10 80 35 70 40 L 20 40 L 20 15`
+            'R': `M 20 10 L 70 10 C 80 10 80 35 70 40 L 20 40 L 20 15`,
+            '-': 'M 50 72 L 80 20 L 20 20 L 50 72'
         }
 
         function drawAminoAcidLogo(container, data, founderMatrix, frequencyMatrix, verticalExtent, horizontalExtent) {
