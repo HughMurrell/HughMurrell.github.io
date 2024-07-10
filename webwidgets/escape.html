@@ -86,6 +86,9 @@
         #verticalSlider {
             width: 100%;
         }
+        #partionSelector {
+            width: 25%;
+        }
         #logo-container {
             margin-top: 20px;
         }
@@ -100,7 +103,7 @@
     </div>
 
     <div id="alignment-tab" class="tab-content active">
-        <input type="file" id="file-input" accept=".fasta,.fa,.txt">
+        <input type="file" id="file-input" accept=".fasta,.fa,.txt"><br><br>
         <input type="text" id="partition-input" placeholder="Please enter space separated identifiers for partitioning the alignment">
         <input type="text" id="column-range-input" placeholder="Please enter space separated column ranges using reference coordinates (eg: 45-57 68 91-106)">
         <button onclick="parseColumnRanges()">Parse Column Ranges</button>
@@ -117,6 +120,12 @@
     </div>
     
     <div id="logo-tab" class="tab-content">
+         <div class="dropdown-container">
+             Select a partition for the escape logo:
+            <select id="stringDropdown">
+                <!-- Options will be added here dynamically -->
+            </select>
+        </div><br>
         <button onclick="generateLogo()">Generate Escape Logo</button>
         <button onclick="downloadLogoSVG()">Download Logo SVG</button>
         <div class="slider-container">
@@ -216,6 +225,9 @@
         }
 
         function parseColumnRanges() {
+            const partitionInput = document.getElementById('partition-input').value;
+            partitions = partitionInput.trim().split(/\s+/); // to sort use .sort();
+            populateDropdown();
             const input = document.getElementById('column-range-input').value;
             const ranges = input.trim().split(/\s+/);
             selectedColumns = [];
@@ -482,13 +494,34 @@
         }
         
         // now for the escape logo
+        // Function to populate the dropdown
+        function populateDropdown() {
+            document.getElementById('stringDropdown').innerText = null;
+            const dropdown = document.getElementById("stringDropdown");
+            partitions.slice().reverse().forEach((item, index) => {
+                const option = document.createElement("option");
+                option.value = item;
+                option.text = item;
+                dropdown.appendChild(option);
+            });
+            selectedPartition=partitions[partitions.length-1];
+        }
+        
+        // Function to handle selection change
+        var selectedPartition=partitions[partitions.length-1];
+        function handleSelection() {
+            const dropdown = document.getElementById("stringDropdown");
+            const selectedString = document.getElementById("selectedString");
+            selectedPartition = dropdown.value;
+        }
+        
         const colors = {
             'A': '#90A0CF', 'B': '#80CF98', 'C': '#CF90B0', 'D': '#CFCF70', 'E': '#CF90CF',
             'F': '#80C0C0', 'G': '#CFA060', 'H': '#C05070', 'I': '#C5AE83', 'J': '#00A7CF',
             'K': '#B54C4C', 'L': '#56B592', 'M': '#8AB52A', 'N': '#BE72BE', 'O': '#00B6A1',
             'P': '#00CF6F', 'Q': '#349B61', 'R': '#0000BB', 'S': '#A59F5B', 'T': '#009400',
             'U': '#B00000', 'V': '#B0B000', 'W': '#B000B0', 'X': '#00B0B0', 'Y': '#E8B613',
-            'Z': '#C23232', '-': '#00FFFF'
+            'Z': '#C23232', '-': '#CFC9BB'
         };
         
         const holeColors = {
@@ -666,7 +699,8 @@
                     .attr('y', - 1 * margin.top / 4)
                     .attr('text-anchor', 'start')
                     .style('font-size', '20px')
-                    .text("founder at: " + partitions[0] + "    escape at: " + partitions[partitions.length-1]);
+                    .text("founder at: " + partitions[0] + "    escape at: " + selectedPartition);
+                    // .text("founder at: " + partitions[0] + "    escape at: " + partitions[partitions.length-1]);
         }
 
         function generateLogo() {
@@ -722,7 +756,8 @@
                 const refCoord = getReferenceCoordinate(col + 1);
                 const refChar = referenceSequence[col];
                 const firstPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[0]));
-                const lastPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[partitions.length-1]));
+                // const lastPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[partitions.length-1]));
+                const lastPartitionSequences = alignment.filter(seq => seq.name.includes(selectedPartition));
                 bgf = calculateDistribution(firstPartitionSequences, col);
                 esf = calculateDistribution(lastPartitionSequences, col);
                 // remove the maximal bgf from esf
@@ -750,6 +785,9 @@
         }
         
         document.getElementById('matrixInput').value = JSON.stringify(exampleMatrix, null, 2);
+        
+        // Add event listener for selection change
+        document.getElementById("stringDropdown").addEventListener("change", handleSelection);
 
         // Add event listeners for sliders
         document.getElementById('verticalExtent').addEventListener('input', function() {
