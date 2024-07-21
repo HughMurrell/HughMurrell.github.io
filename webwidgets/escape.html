@@ -44,6 +44,18 @@
             padding: 10px;
             border: 1px solid #ddd;
         }
+        .hidden {
+            display: none;
+        }
+        .column {
+          float: left;
+          width: 30%;
+        }
+        .row:after {
+          content: "";
+          display: table;
+          clear: both;
+        }
         #alignment-container {
             display: flex;
             width: 100%;
@@ -60,6 +72,9 @@
         }
         #sequences-container {
             width: 78%;
+        }
+        #warnings {
+            color: red;
         }
         .name, .sequence {
             white-space: nowrap;
@@ -99,14 +114,58 @@
     <div class="tab-buttons">
         <button class="tab-button active" onclick="showTab('alignment')">Alignment</button>
         <button class="tab-button" onclick="showTab('heatmap')">Heatmap</button>
-        <button class="tab-button" onclick="showTab('logo')">Logo</button>
+        <button class="tab-button" onclick="showTab('escapelogo')">Escape Logo</button>
+        <button class="tab-button" onclick="showTab('sitelogo')">Site Logo</button>
     </div>
 
     <div id="alignment-tab" class="tab-content active">
-        <input type="file" id="file-input" accept=".fasta,.fa,.txt"><br><br>
-        <input type="text" id="partition-input" placeholder="Please enter space separated identifiers for partitioning the alignment">
-        <input type="text" id="column-range-input" placeholder="Please enter space separated column ranges using reference coordinates (eg: 45-57 68 91-106)">
-        <button onclick="parseColumnRanges()">Parse Column Ranges</button>
+        <h3>Load Alignment and Specify Partitions</h3>
+        <div class="row">
+          <div class="column">
+              <p>Upload a fasta file containing your AA alignment:</p>
+              <input type="file" id="file-input" accept=".fasta,.fa,.txt">
+          </div>
+          <div class="column"
+              <br>
+              <p>Upload a CSV file with sample info<br>(or skip this section):</p>
+              <input type="file" id="sampleFile" accept=".csv">
+            
+              <div id="columnSelection" class="hidden">
+                <h4>Select Columns</h4>
+                <label for="keyColumn">Select Sample ID Column:</label><br>
+                <select id="keyColumn"></select>
+                <br><br>
+                <label for="valueColumn">Select Time Since Infection Column:</label><br>
+                <select id="valueColumn"></select>
+                <br><br>
+                <button id="processButton">Process column selection</button>
+                <div id="results" class="hidden">
+                    <div id="warnings"></div>
+                </div>
+              </div>
+          </div>
+          <div class="column"
+              <br>
+              <p>Upload a CSV file with epitope co-ords<br>(or skip this section):</p>
+              <input type="file" id="epitopeFile" accept=".csv">
+              <div id="epitopeSelection" class="hidden">
+                    <h4>Select Epitope</h4>
+                    <label for="keyEpitope">Select Epitope:</label>
+                    <select id="keyEpitope"></select>
+                    <br><br>
+                    <button id="processEpitopeButton">Process epitope selection</button>
+             </div>
+          </div>
+        </div>
+        <br>
+        
+        
+
+        <input type="text" id="partitionInput" placeholder="Please enter space separated identifiers for partitioning the alignment">
+        <input type="text" id="timeInput" placeholder="Please enter space separated timing info, one for each partition">
+        <input type="text" id="columnRangeInput" placeholder="Please enter space separated column ranges using reference coordinates (eg: 45-57 68 91-106)">
+        <button onclick="parseColumnRanges()">Parse Partitions and Column Ranges</button>
+        <button id="glycanToggleButton">Glycan Toggle: OFF</button>
         <div id="alignment-container">
             <div id="names-container"></div>
             <div id="sequences-container"></div>
@@ -119,7 +178,7 @@
         <div id="heatmap-container"></div>
     </div>
     
-    <div id="logo-tab" class="tab-content">
+    <div id="escapelogo-tab" class="tab-content">
          <div class="dropdown-container">
              Select a partition for the escape logo:
             <select id="stringDropdown">
@@ -140,16 +199,46 @@
         </div>
         <div id="logo-container"></div>
  
-        <textarea id="matrixInput" placeholder="Enter frequency matrix here..."  hidden></textarea>
+        
+    </div>
+    
+    <div id="sitelogo-tab" class="tab-content">
+        <div class="number-input">
+            Select a site using reference coordinates:
+            <input type="number" id="integerRefInput" min="1" max="5000" value="1">
+             or alignment coordinates:
+            <input type="number" id="integerAlignInput" min="1" max="5000" value="1">
+        </div>
+        <p hidden>Reference Coord chosen: <span id="selectedRefInteger">1</span>
+         Alignment Coord chosen: <span id="selectedAlignInteger">1</span></p>
+        <button onclick="generateSiteLogo()" hidden>Generate Site Logo</button>
+        <button onclick="downloadSiteLogoSVG()">Download Site Logo SVG</button>
+        <div class="slider-container">
+            <label for="horizontalExtentSiteLogo">Scale horizontal:</label>
+            <input type="range" id="horizontalExtentSiteLogo" min="0.1" max="2" step="0.1" value="1">
+            <span id="horizontalExtentSiteLogoValue">1</span>
+        </div>
+        <div class="slider-container">
+            <label for="verticalExtentSiteLogo">Scale vertical:</label>
+            <input type="range" id="verticalExtentSiteLogo" min="0.1" max="2" step="0.1" value="1">
+            <span id="verticalExtentSiteLogoValue">1</span>
+        </div><br><br>
+        <div id="site-logo-container"></div><br>
+        
+        
+        
     </div>
 
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script>
         let alignment = [];
         let partitions = [];
+        let partitionCounts = {};
         let selectedColumns = [];
         let fileName = "";
         let referenceSequence = '';
+        let tsiAnnotations = {};
+        let glycanToggled = false;
 
         function showTab(tabName) {
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
@@ -163,9 +252,13 @@
             fileName = file.name.split('.').slice(0, -1).join('.');
             const reader = new FileReader();
             reader.onload = function(e) {
+                // document.getElementById('csvSection').classList.remove('hidden');
                 const content = e.target.result;
                 alignment = parseFasta(content);
                 displayAlignment();
+                parseColumnRanges();
+                replaceButtonText("glycanToggleButton", "Glycan Toggle: OFF");
+                glycanToggled = false;
             };
             reader.readAsText(file);
         });
@@ -192,6 +285,7 @@
                 sequences.push({ name: currentName, sequence: currentSequence });
             }
 
+            referenceSequence = sequences[0].sequence
             return sequences;
         }
 
@@ -223,16 +317,220 @@
 
             highlightColumns();
         }
+        
+        // functionality for glycan translating N to O and back
+        
+        const glycanToggleButton = document.getElementById('glycanToggleButton');
+        
+        function replaceButtonText(buttonId, text)
+        {
+          if (document.getElementById)
+          {
+            var button=document.getElementById(buttonId);
+            if (button)
+            {
+              if (button.childNodes[0])
+              {
+                button.childNodes[0].nodeValue=text;
+              }
+              else if (button.value)
+              {
+                button.value=text;
+              }
+              else //if (button.innerHTML)
+              {
+                button.innerHTML=text;
+              }
+            }
+          }
+        }
+        
+        glycanToggleButton.addEventListener('click', () => {
+            glycanToggled = !glycanToggled;
+            toggleNtoO();
+            displayAlignment();
+            if (glycanToggled) {
+                replaceButtonText("glycanToggleButton", "Glycan Toggle: ON ");
+            } else {
+                replaceButtonText("glycanToggleButton", "Glycan Toggle: OFF");
+            }
+        });
+        
+        function toggleNtoO() {
+            alignment = alignment.map(rec => {
+                nam=rec.name;
+                seq=rec.sequence;
+                let newSeq = '';
+                for (let i = 0; i < seq.length; i++) {
+                    if (seq[i] === 'N' && glycanToggled) {
+                        let nextNonGap = findNextNonGap(seq, i + 1);
+                        let nextNextNonGap = findNextNonGap(seq, nextNonGap + 1);
+                        
+                        if (nextNonGap !== -1 && nextNextNonGap !== -1 &&
+                            seq[nextNonGap] !== 'P' &&
+                            (seq[nextNextNonGap] === 'S' || seq[nextNextNonGap] === 'T')) {
+                            newSeq += 'O';
+                        } else {
+                            newSeq += 'N';
+                        }
+                    } else if (seq[i] === 'O' && !glycanToggled) {
+                        newSeq += 'N';
+                    } else {
+                        newSeq += seq[i];
+                    }
+                }
+                return { name: nam, sequence: newSeq };
+            });
+            referenceSequence = alignment[0].sequence
+        }
+
+        function findNextNonGap(seq, startIndex) {
+            for (let i = startIndex; i < seq.length; i++) {
+                if (seq[i] !== '-') {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        
+        // functionality for processing names and times from csv file
+        
+        document.getElementById('sampleFile').addEventListener('change', handleSampleFile);
+        document.getElementById('epitopeFile').addEventListener('change', handleEpitopeFile);
+        document.getElementById('processButton').addEventListener('click', processData);
+        document.getElementById('processEpitopeButton').addEventListener('click', processEpitopeData);
+        
+        function handleSampleFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                csvData = parseCSV(e.target.result);
+                columnNames = csvData[0];
+                populateDropdowns();
+                document.getElementById('columnSelection').classList.remove('hidden');
+            };
+
+            reader.readAsText(file);
+        }
+        
+        function handleEpitopeFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                epitopeData = parseCSV(e.target.result);
+                epitopeNames = epitopeData.map(rec => rec[0]);
+                populateEpitopeDropdowns();
+                document.getElementById('epitopeSelection').classList.remove('hidden');
+            };
+
+            reader.readAsText(file);
+        }
+
+        function parseCSV(content) {
+            const lines = content.trim().split('\n');
+            return lines.map(line => line.split(',').map(item => item.trim()));
+        }
+
+        function populateDropdowns() {
+            const keySelect = document.getElementById('keyColumn');
+            const valueSelect = document.getElementById('valueColumn');
+
+            columnNames.forEach((name, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = name;
+                keySelect.appendChild(option.cloneNode(true));
+                valueSelect.appendChild(option);
+            });
+        }
+        
+        function populateEpitopeDropdowns() {
+            const epitopeSelect = document.getElementById('keyEpitope');
+
+            epitopeNames.forEach((name, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = name;
+                epitopeSelect.appendChild(option.cloneNode(true));
+            });
+        }
+        
+        function processEpitopeData() {
+            const keyEpitopeIndex = parseInt(document.getElementById('keyEpitope').value);
+            epitopeString = epitopeData[1,keyEpitopeIndex];
+            document.getElementById('columnRangeInput').value = epitopeString[1];
+            parseColumnRanges();
+        }
+
+        function processData() {
+            const keyColumnIndex = parseInt(document.getElementById('keyColumn').value);
+            const valueColumnIndex = parseInt(document.getElementById('valueColumn').value);
+            tsiAnnote=valueColumnIndex;
+            
+            const dictionary = {};
+            const warningDiv = document.getElementById('warnings');
+            warningDiv.innerHTML = '';
+            let hasWarnings = false;
+
+            for (let i = 1; i < csvData.length; i++) {
+                const key = csvData[i][keyColumnIndex];
+                const value = parseInt(csvData[i][valueColumnIndex]);
+
+                if (key in dictionary) {
+                    warningDiv.innerHTML += `Warning: Duplicate key "${key}" found on line ${i + 1}. Using the last occurrence.<br>`;
+                    hasWarnings = true;
+                }
+
+                if (isNaN(value)) {
+                    warningDiv.innerHTML += `Warning: Invalid integer value "${csvData[i][valueColumnIndex]}" for key "${key}" on line ${i + 1}. Skipping this entry.<br>`;
+                    hasWarnings = true;
+                } else {
+                    dictionary[key] = value;
+                }
+            }
+
+            if (!hasWarnings) {
+                warningDiv.innerHTML = 'CSV file processed successfully.';
+            }
+
+            const matchingKeys = Object.keys(dictionary).filter(key =>
+                alignment.some(seq => seq.name.includes(key))
+            ).sort();
+
+            document.getElementById('partitionInput').value = matchingKeys.join(' ');
+            document.getElementById('timeInput').value = matchingKeys.map(key => dictionary[key]).join(' ');
+
+            document.getElementById('results').classList.remove('hidden');
+            parseColumnRanges();
+        }
+
 
         function parseColumnRanges() {
-            const partitionInput = document.getElementById('partition-input').value;
+            // first do the partitions
+            const partitionInput = document.getElementById('partitionInput').value;
+            const timeInput = document.getElementById('timeInput').value;
             partitions = partitionInput.trim().split(/\s+/); // to sort use .sort();
+            tsiAnnotationList = timeInput.trim().split(/\s+/);
             populateDropdown();
-            const input = document.getElementById('column-range-input').value;
+            partitionCounts = {};
+            partitions.forEach((partition, index) => {
+                partitionCounts[partition] = alignment.filter(seq => seq.name.includes(partition)).length;
+                if (index<tsiAnnotationList.length) {
+                    tsiAnnotations[partition] = tsiAnnotationList[index];
+                } else {
+                    tsiAnnotations[partition] = "?";
+                }
+            });
+            
+            // now the column ranges
+            const input = document.getElementById('columnRangeInput').value;
             const ranges = input.trim().split(/\s+/);
             selectedColumns = [];
 
-            referenceSequence = alignment[0].sequence;
+            // referenceSequence = alignment[0].sequence;
 
             ranges.forEach(range => {
                 const [start, end] = range.split('-').map(Number);
@@ -286,13 +584,11 @@
         }
 
         function generateHeatmap() {
-            const partitionInput = document.getElementById('partition-input').value;
+            const partitionInput = document.getElementById('partitionInput').value;
             partitions = partitionInput.trim().split(/\s+/); // to sort use .sort();
 
-            const partitionCounts = countSequencesInPartitions();
-            
             const heatmapData = calculateJSD();
-            drawHeatmap(heatmapData, partitionCounts);
+            drawHeatmap(heatmapData); //, partitionCounts);
         }
 
         function calculateJSD() {
@@ -375,37 +671,11 @@
             return divergence;
         }
         
-        function getReferenceIndex(alignmentIndex) {
-            let refIndex = -1;
-            let currentAlignmentIndex = 0;
-
-            for (let i = 0; i < referenceSequence.length; i++) {
-                if (currentAlignmentIndex === alignmentIndex) {
-                    refIndex = referenceSequence[i] !== '-' ? i : -1;
-                    break;
-                }
-                if (referenceSequence[i] !== '-') {
-                    currentAlignmentIndex++;
-                }
-            }
-
-            return refIndex;
-        }
-        
-        function countSequencesInPartitions() {
-            const counts = {};
-            partitions.forEach(partition => {
-                counts[partition] = alignment.filter(seq => seq.name.includes(partition)).length;
-            });
-            return counts;
-        }
-
-
-        function drawHeatmap(data, partitionCounts) {
+        function drawHeatmap(data) { //}, partitionCounts) {
             const container = document.getElementById('heatmap-container');
             container.innerHTML = '';
 
-            const margin = { top: 80, right: 30, bottom: 100, left: 100 };  // Increased bottom margin
+            const margin = { top: 80, right: 30, bottom: 120, left: 100 };  // Increased bottom margin
             const width = 600 - margin.left - margin.right;
             const height = 1200 - margin.top - margin.bottom;
 
@@ -457,7 +727,7 @@
                 .selectAll('text')
                 .attr('transform', 'rotate(-45)')
                 .style('text-anchor', 'end')
-                .text(d => `${d} (${partitionCounts[d]})`);  // Modified to include count
+                .text(d => `${d}_#${partitionCounts[d]}_@${tsiAnnotations[d]} `);  // Modified to include seq count and tsi
 
             svg.append('g')
                 .call(d3.axisLeft(y))
@@ -497,14 +767,15 @@
         // Function to populate the dropdown
         function populateDropdown() {
             document.getElementById('stringDropdown').innerText = null;
-            const dropdown = document.getElementById("stringDropdown");
-            partitions.slice().reverse().forEach((item, index) => {
+            const partdropdown = document.getElementById("stringDropdown");
+            // partitions.slice().reverse().forEach((item, index) => {
+            partitions.slice().forEach((item, index) => {
                 const option = document.createElement("option");
                 option.value = item;
                 option.text = item;
-                dropdown.appendChild(option);
+                partdropdown.appendChild(option);
             });
-            selectedPartition=partitions[partitions.length-1];
+            selectedPartition=partitions[0]; // partitions[partitions.length-1];
         }
         
         // Function to handle selection change
@@ -513,6 +784,7 @@
             const dropdown = document.getElementById("stringDropdown");
             const selectedString = document.getElementById("selectedString");
             selectedPartition = dropdown.value;
+            generateLogo();
         }
         
         const colors = {
@@ -542,12 +814,13 @@
             'F': `M 0 0 L 100 0 L 100 20 L 20 20 L 20 40 L 80 40 L 80 60 L 20 60 L 20 100 L 0 100 L 0 0`,
             'G': `M 100 28 C 100 -13 0 -13 0 50 C 0 113 100 113 100 72 L 100 48 L 55 48 L 55 72 L 75 72  C 75 90 30 90 30 50 C 30 10 75 5 75 28 L 100 28`,
             'H': `M 0 0 L 20 0 L 20 40 L 80 40 L 80 0 L 100 0 L 100 100 L 80 100 L 80 60 L 20 60 L 20 100 L 0 100 L 0 0`,
-            'I': `M 40 0 L 60 0 L 60 100 L 40 100 L 40 0`,
+            'I': `M 40 20 L 0 20 L 0 0 L 100 0 L 100 20 L 60 20 L 60 80 L 100 80 L 100 100 L 0 100 L 0 80 L 40 80 L 40 20`,
             'J': `M 0 60 C 0 111 100 111 100 60 L 100 0 L 75 0 L 75 60 C 80 90 20 90 25 60`,
             'K': `M 0 0 L 20 0 L 20 40 L 75 0 L 100 0 L 50 50 L 100 100 L 75 100 L 30 65 L 20 75 L 20 100 L 0 100 L 0 0`,
             'L': `M 0 0 L 0 100 L 100 100 L 100 80 L 20 80 L 20 0 L 0 0`,
             'M': `M 0 0 L 20 0 L 50 35 L 80 0 L 100 0 L 100 100 L 80 100 L 80 30 L 50 65 L 20 30 L 20 100 L 0 100 L 0 0`,
             'N': `M 0 100 L 0 0 L 20 0 L 80 75 L 80 0 L 100 0 L 100 100 L 80 100 L 20 25 L 20 100 L 0 100`,
+            'O': `M 50 0 C 75 0 100 25 100 50 C 100 75 75 100 50 100 C 25 100 0 75 0 50 C 0 25 25 0 50 0 L 50 20 C 30 20 20 30 20 50 C 20 70 30 80 50 80 C 70 80 80 60 80 50 C 80 40 60 20 50 20 L 50 0`,
             'P': `M 0 0 L 80 0 C 105 0 105 50 80 50 L 20 50 L 20 100 L 0 100 L 0 0`,
             'Q': `M 50 0 C 75 0 100 25 100 50 C 100 75 75 100 50 100 C 25 100 0 75 0 50 C 0 25 25 0 50 0 L 50 20 C 30 20 20 30 20 50 C 20 70 30 80 50 80 C 70 80 80 60 80 50 C 80 40 60 20 50 20 L 50 0`,
             'R': `M 0 0 L 80 0 C 105 0 105 50 80 50 C 100 50 100 70 100 70 L 100 100 L 80 100 L 80 80 C 80 80 80 55 50 55 L 20 55 L 20 100 L 0 100 L 0 0`,
@@ -595,7 +868,7 @@
                 .range([0, logoWidth])
                 .domain(d3.range(frequencyMatrix.length))
                 .padding(0.01);
-                
+             
             const x = d3.scaleBand()
                     .range([0, logoWidth])
                     .domain(data.map(d => `${d.column}_${d.refCoord}_${d.refChar}  `))
@@ -705,23 +978,17 @@
 
         function generateLogo() {
             const container = document.getElementById('logo-container');
-            const matrixInput = document.getElementById('matrixInput');
             const verticalExtent = parseFloat(document.getElementById('verticalExtent').value);
             const horizontalExtent = parseFloat(document.getElementById('horizontalExtent').value);
             
-            // try {
-                const frequencyMatrix = JSON.parse(matrixInput.value);
-                escFreqData = calculateEscapeFrequencies();
-                escFreqMatrix = [];
-                founderMatrix = [];
-                escFreqData.forEach((col) => {
-                    escFreqMatrix.push(col.esf);
-                    founderMatrix.push(col.ff);
-                });
-                drawAminoAcidLogo(container, escFreqData, founderMatrix, escFreqMatrix, verticalExtent, horizontalExtent);
-            // } catch (error) {
-            //     alert('Invalid input. Please enter a valid JSON array of frequency objects.');
-            // }
+            escFreqData = calculateEscapeFrequencies();
+            escFreqMatrix = [];
+            founderMatrix = [];
+            escFreqData.forEach((col) => {
+                escFreqMatrix.push(col.esf);
+                founderMatrix.push(col.ff);
+            });
+            drawAminoAcidLogo(container, escFreqData, founderMatrix, escFreqMatrix, verticalExtent, horizontalExtent);
         }
 
         // Example matrix
@@ -784,8 +1051,6 @@
             return escapeFrequencyData;
         }
         
-        document.getElementById('matrixInput').value = JSON.stringify(exampleMatrix, null, 2);
-        
         // Add event listener for selection change
         document.getElementById("stringDropdown").addEventListener("change", handleSelection);
 
@@ -812,7 +1077,254 @@
             link.click();
             document.body.removeChild(link);
         }
+        
+        const minRefSiteValue = 1;
+        const maxRefSiteValue = 5000;
+        const minAlignSiteValue = 1;
+        const maxAlignSiteValue = 5000;
+
+        const inputRefSite = document.getElementById('integerRefInput');
+        const selectedRefIntegerSpan = document.getElementById('selectedRefInteger');
+        const inputAlignSite = document.getElementById('integerAlignInput');
+        const selectedAlignIntegerSpan = document.getElementById('selectedAlignInteger');
+
+        inputRefSite.addEventListener('change', () => {
+            let value = parseInt(inputRefSite.value);
+            
+            // Ensure the input value is within the allowed range
+            value = Math.max(minRefSiteValue, Math.min(value, maxRefSiteValue));
+            
+            inputRefSite.value = value;
+            selectedRefIntegerSpan.textContent = value;
+            
+            alignValue=getAlignmentCoordinate(value)
+            inputAlignSite.value=alignValue
+            selectedAlignIntegerSpan.textContent = alignValue;
+            
+            generateSiteLogo();
+        });
+        
+        inputAlignSite.addEventListener('change', () => {
+            let value = parseInt(inputAlignSite.value);
+            
+            // Ensure the input value is within the allowed range
+            value = Math.max(minAlignSiteValue, Math.min(value, maxAlignSiteValue));
+            
+            inputAlignSite.value = value;
+            selectedAlignIntegerSpan.textContent = value;
+            
+            refValue=getReferenceCoordinate(value)
+            inputRefSite.value=refValue
+            selectedRefIntegerSpan.textContent = refValue;
+            
+            generateSiteLogo();
+        });
+        
+        function generateSiteLogo() {
+            const container = document.getElementById('site-logo-container');
+            const verticalExtent = parseFloat(document.getElementById('verticalExtentSiteLogo').value);
+            const horizontalExtent = parseFloat(document.getElementById('horizontalExtentSiteLogo').value);
+            
+            escFreqData = calculateSiteFrequencies();
+            escFreqMatrix = [];
+            founderMatrix = [];
+            escFreqData.forEach((col) => {
+                escFreqMatrix.push(col.esf);
+                founderMatrix.push(col.ff);
+            });
+              
+            drawAminoAcidSiteLogo(container, escFreqData, founderMatrix, escFreqMatrix, verticalExtent, horizontalExtent);
+        }
+        
+        function drawAminoAcidSiteLogo(container, data, founderMatrix, frequencyMatrix, verticalExtent, horizontalExtent) {
+            // Clear previous content
+            d3.select(container).selectAll("*").remove();
+
+            const width = 800 * horizontalExtent;
+            const height = 300 * verticalExtent;
+            const margin = { top: 80, right: 30, bottom: 120, left: 100 };
+            // const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+            const logoWidth = width - margin.left - margin.right;
+            const logoHeight = height - margin.top - margin.bottom;
+            
+            const cons_aa = Object.keys(founderMatrix[0])[0];
+
+            const svg = d3.select(container)
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+            const logo = svg.append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+                
+            const xBar =d3.scaleBand()
+                .range([0, logoWidth])
+                .domain(d3.range(frequencyMatrix.length))
+                .padding(0.01);
+             
+            const x = d3.scaleBand()
+                    .range([0, logoWidth])
+                    .domain(data.map(d => `${d.part}`))
+                    .padding(0.01);
+                    
+            logo.append('g')
+                .attr('transform', `translate(0,${logoHeight})`)
+                .call(d3.axisBottom(x))
+                .selectAll('text')
+                .attr('transform', 'rotate(-45)')
+                .style('text-anchor', 'end')
+                .text(d => `${d}_#${partitionCounts[d]}_@${tsiAnnotations[d]} `);
+
+            const xScale = d3.scaleBand()
+                .range([0, logoWidth])
+                .domain(d3.range(frequencyMatrix.length))
+                .padding(0.01);
+
+            const yScale = d3.scaleLinear()
+                .range([logoHeight, 0])
+                .domain([0, 1]);
+
+            frequencyMatrix.forEach((position, index) => {
+                let y = logoHeight;
+                
+                const sortedAAs = Object.entries(position).sort((a, b) => a[1] - b[1]);
+                
+                reSortedAAs=[];
+                var extra=[]
+                sortedAAs.forEach(([aa, frequency]) => {
+                    if (aa != cons_aa) {
+                        reSortedAAs.push([aa, frequency])
+                    } else {
+                        extra=[aa,frequency]
+                    }
+                });
+                if (extra.length>0){
+                    reSortedAAs.push(extra)
+                }
+
+                reSortedAAs.forEach(([aa, frequency]) => {
+                    const height = logoHeight * frequency;
+                    const width = xScale.bandwidth();
+
+                    const letterGroup = logo.append("g")
+                        .attr("transform", `translate(${xScale(index)}, ${y - height}) scale(${width / 100}, ${height / 100})`);
+
+                    var alpha = ((aa == cons_aa) ? '0.2' : '1')
+                    letterGroup.append("path")
+                        .attr("d", letterPaths[aa])
+                        .attr("fill", colors[aa])
+                        .attr("fill-opacity", alpha);
+                        
+                    letterGroup.append("path")
+                        .attr("d", letterHoles[aa])
+                        .attr("fill", holeColors[aa]);
+
+                    y -= height;
+                });
+            });
+
+            // Add three x-axis with position numbers on bottom axis
+            
+            const xTop = d3.axisBottom(xBar)
+                .tickValues([]);
+            
+            logo.append("g")
+                .attr("transform", `translate(0, 0)`)
+                .call(xTop);
+            
+            const xSep = d3.axisBottom(xBar)
+                .tickValues([]);
+            
+            logo.append("g")
+                .attr("transform", `translate(0, ${logoHeight})`)
+                .call(xSep);
+            
+             logo.append('text')
+                .attr('x', 0)
+                .attr('y', - 2 * margin.top / 3)
+                .attr('text-anchor', 'start')
+                .style('font-size', '24px')
+                .text(fileName);
+                    
+            logo.append('text')
+                    .attr('x', 0)
+                    .attr('y', - 1 * margin.top / 4)
+                    .attr('text-anchor', 'start')
+                    .style('font-size', '20px')
+                    .text("reference coord: " + inputRefSite.value +
+                          "   alignment coord: " + inputAlignSite.value );
+        }
+
+        
+        function calculateSiteFrequencies() {
+            const escapeFrequencyData = [];
+
+            var col=parseInt(inputAlignSite.value)-1;
+            partitions.forEach((part) => {
+                const refCoord = getReferenceCoordinate(col+1);
+                const refChar = referenceSequence[col];
+                const firstPartitionSequences = alignment.filter(seq => seq.name.includes(partitions[0]));
+                const lastPartitionSequences = alignment.filter(seq => seq.name.includes(part));
+                bgf = calculateDistribution(firstPartitionSequences, col);
+                esf = calculateDistribution(lastPartitionSequences, col);
+                // remove the maximal bgf from esf
+                sortedBgf = Object.entries(bgf).sort((a, b) => b[1] - a[1]);
+                cons_keys = Object.keys(bgf);
+                cons_key = cons_keys[0];
+                sortedEsf = Object.entries(esf).sort((a, b) => ((a[0] == cons_key) ? 1 : b[1] - a[1]));
+                keyCount=0;
+                ff={};
+                Object.keys(bgf).forEach((key) => {
+                  if ( keyCount == 0 ) {
+                      ff[key]=1.0
+                  };
+                  keyCount=keyCount+1;
+                });
+                const row = {
+                    column: col + 1,
+                    refCoord: refCoord,
+                    refChar: refChar,
+                    part: part,
+                    esf: esf,
+                    ff: ff
+                };
+                escapeFrequencyData.push(row);
+            });
+
+            return escapeFrequencyData;
+        }
+        
+        function downloadSiteLogoSVG() {
+            const svgElement = document.querySelector('#site-logo-container svg');
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'site_logo.svg';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Add event listeners for sliders
+        document.getElementById('verticalExtentSiteLogo').addEventListener('input', function() {
+            document.getElementById('verticalExtentSiteLogoValue').textContent = this.value;
+            generateSiteLogo();
+        });
+
+        document.getElementById('horizontalExtentSiteLogo').addEventListener('input', function() {
+            document.getElementById('horizontalExtentSiteLogoValue').textContent = this.value;
+            generateSiteLogo();
+        });
+        
+
 
     </script>
 </body>
 </html>
+
+
+
+
+
