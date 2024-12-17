@@ -1,0 +1,219 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+<title>Tal's Games</title>
+<link rel="stylesheet" href="css/prettify.css" />
+<link rel="stylesheet" href="css/layout.css" />
+<script src="js/dist.js" type="text/javascript" ></script>
+<script src="js/prettify.js" type="text/javascript" ></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+    .game-info {
+        margin: 20px 0;
+    }
+    .controls {
+        margin: 20px 0;
+    }
+    button {
+        padding: 5px 10px;
+        margin: 0 5px;
+    }
+</style>
+</head>
+<body class="merida zeit">
+<h2 id="gameTitle">Famous Games</h2>
+<div class="controls">
+    <input type="file" id="pgnFile" accept=".zip,.pgn">
+    <button onclick="loadPGNFile()">Load PGN File</button>
+    <button onclick="previousGame()" id="prevBtn" disabled>Previous Game</button>
+    <button onclick="nextGame()" id="nextBtn" disabled>Next Game</button>
+</div>
+<div class="game-info">
+    <div id="event"></div>
+    <div id="players"></div>
+    <div id="date"></div>
+</div>
+<div id="b1" style="width: 360px"></div>
+
+<script>
+let games = [];
+let currentGameIndex = 0;
+let pgnv;
+
+// Initialize with empty board and info
+function initializeEmpty() {
+    document.getElementById('event').innerHTML = '';
+    document.getElementById('players').innerHTML = '';
+    document.getElementById('date').innerHTML = '';
+    document.getElementById('b1').innerHTML = '';
+}
+
+function parsePGN(pgnText) {
+    // Split into games using a regex that looks for a blank line followed by [Event
+    const games = pgnText.split(/\n\s*\n\[Event/);
+    
+    // Fix the first game (doesn't need adjustment) and the rest (need to add [Event back)
+    const processedGames = games.map((game, index) => {
+        return index === 0 ? game : '[Event' + game;
+    });
+
+    // Track min and max years
+    let minYear = 9999;
+    let maxYear = 0;
+
+    const parsedGames = processedGames.map((gameText) => {
+        const headers = {};
+        let moves = '';
+        let inMoves = false;
+        
+        gameText.split('\n').forEach(line => {
+            line = line.trim();
+            if (line.startsWith('[')) {
+                const match = line.match(/\[(\w+)\s+"(.+)"\]/);
+                if (match) {
+                    headers[match[1]] = match[2];
+                    // Check for date and update min/max years
+                    if (match[1] === 'Date') {
+                        const yearMatch = match[2].match(/(\d{4})/);
+                        if (yearMatch) {
+                            const year = parseInt(yearMatch[1]);
+                            minYear = Math.min(minYear, year);
+                            maxYear = Math.max(maxYear, year);
+                        }
+                    }
+                }
+            } else if (line) {
+                if (line.match(/^\d+\./) || inMoves) {
+                    inMoves = true;
+                    moves += ' ' + line;
+                }
+            }
+        });
+        
+        return { headers, moves: moves.trim() };
+    });
+
+    return {
+        games: parsedGames,
+        yearRange: minYear !== 9999 ? { min: minYear, max: maxYear } : null
+    };
+}
+
+function displayGame(gameIndex) {
+    const game = games[gameIndex];
+    if (!game) {
+        console.log('No game found at index:', gameIndex); // Debug info
+        return;
+    }
+
+    // console.log('Displaying game:', gameIndex, game); // Debug info
+
+    // Update game info
+    document.getElementById('event').innerHTML = `Event: ${game.headers.Event} (${game.headers.Date})`;
+    document.getElementById('players').innerHTML = 
+        `White: ${game.headers.White} vs Black: ${game.headers.Black}`;
+    document.getElementById('date').innerHTML = `Result: ${game.headers.Result}`;
+
+    // Update chess board
+    document.getElementById('b1').innerHTML = '';
+    pgnv = PGNV.pgnView('b1', {pgn: game.moves.toString()});
+}
+
+function loadPGNFile() {
+    const fileInput = document.getElementById('pgnFile');
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    // Get player name from file (remove .zip or .pgn extension)
+    const playerName = file.name.replace(/\.(zip|pgn)$/, '');
+
+    if (file.name.endsWith('.zip')) {
+        // Handle zip file
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const zip = new JSZip();
+                const zipContent = await zip.loadAsync(e.target.result);
+                
+                // Find the first .pgn file in the zip
+                const pgnFile = Object.values(zipContent.files).find(file => 
+                    file.name.toLowerCase().endsWith('.pgn')
+                );
+                
+                if (!pgnFile) {
+                    alert('No PGN file found in the zip archive');
+                    return;
+                }
+
+                // Extract and process the PGN file
+                const pgnContent = await pgnFile.async('string');
+                processGames(pgnContent, playerName);
+            } catch (error) {
+                alert('Error processing zip file: ' + error.message);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } else if (file.name.endsWith('.pgn')) {
+        // Handle direct PGN file
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            processGames(e.target.result, playerName);
+        };
+        reader.readAsText(file);
+    } else {
+        alert('Please select a .zip or .pgn file');
+    }
+}
+
+function processGames(pgnContent, playerName) {
+    const parseResult = parsePGN(pgnContent);
+    games = parseResult.games;
+    
+    if (games.length > 0) {
+        currentGameIndex = 0;
+        
+        // Update the title to include the player name and year range
+        let title = `Famous Games by ${playerName}`;
+        if (parseResult.yearRange) {
+            title += ` (games from ${parseResult.yearRange.min} to ${parseResult.yearRange.max})`;
+        }
+        document.getElementById('gameTitle').innerHTML = title;
+        
+        displayGame(currentGameIndex);
+        
+        // Set button states
+        document.getElementById('prevBtn').disabled = true;
+        document.getElementById('nextBtn').disabled = (games.length <= 1);
+    }
+}
+
+function previousGame() {
+    if (currentGameIndex > 0) {
+        currentGameIndex--;
+        updateNavigationButtons();
+        displayGame(currentGameIndex);
+    }
+}
+
+function nextGame() {
+    if (currentGameIndex < games.length - 1) {
+        currentGameIndex++;
+        updateNavigationButtons();
+        displayGame(currentGameIndex);
+        // console.log(`Moving to game ${currentGameIndex} of ${games.length - 1}`); // Debug info
+    }
+}
+
+function updateNavigationButtons() {
+    document.getElementById('prevBtn').disabled = (currentGameIndex <= 0);
+    document.getElementById('nextBtn').disabled = (currentGameIndex >= games.length - 1);
+    // console.log("Current game:", currentGameIndex, "Total games:", games.length); // Debug info
+}
+
+// Call initializeEmpty when the page loads
+window.onload = initializeEmpty;
+</script>
+<script>prettyPrint();</script>
+</body>
+</html>
