@@ -19,15 +19,42 @@
         padding: 5px 10px;
         margin: 0 5px;
     }
+    .game-slider-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 20px 0;
+        width: 50%;
+    }
+    
+    #gameSlider {
+        flex-grow: 1;
+        margin: 0 10px;
+    }
+    
+    #gameNumber {
+        min-width: 60px;
+    }
+    
+    button {
+        padding: 5px 10px;
+        margin: 0 5px;
+    }
 </style>
 </head>
 <body class="merida zeit">
 <h2 id="gameTitle">Famous Games</h2>
 <div class="controls">
-    <input type="file" id="pgnFile" accept=".zip,.pgn">
-    <button onclick="loadPGNFile()">Load PGN File</button>
-    <button onclick="previousGame()" id="prevBtn" disabled>Previous Game</button>
-    <button onclick="nextGame()" id="nextBtn" disabled>Next Game</button>
+    <select id="playerSelect">
+        <option value="">Select a player...</option>
+    </select>
+    <button onclick="loadPlayerGames()" id="loadBtn">Load Games</button>
+    <div class="game-slider-container">
+        <button onclick="previousGame()" id="prevBtn" disabled>-</button>
+        <input type="range" id="gameSlider" value="0" min="0" max="0" disabled>
+        <button onclick="nextGame()" id="nextBtn" disabled>+</button>
+        <span id="gameNumber"></span>
+    </div>
 </div>
 <div class="game-info">
     <div id="event"></div>
@@ -47,6 +74,16 @@ function initializeEmpty() {
     document.getElementById('players').innerHTML = '';
     document.getElementById('date').innerHTML = '';
     document.getElementById('b1').innerHTML = '';
+    document.getElementById('gameNumber').textContent = '';
+    
+    const slider = document.getElementById('gameSlider');
+    slider.value = 0;
+    slider.min = 0;
+    slider.max = 0;
+    slider.disabled = true;
+    
+    // Initialize empty board
+    pgnv = PGNV.pgnView('b1', {pgn: ''});
 }
 
 function parsePGN(pgnText) {
@@ -102,67 +139,63 @@ function parsePGN(pgnText) {
 
 function displayGame(gameIndex) {
     const game = games[gameIndex];
-    if (!game) {
-        console.log('No game found at index:', gameIndex); // Debug info
-        return;
-    }
+    if (!game) return;
 
-    // console.log('Displaying game:', gameIndex, game); // Debug info
-
-    // Update game info
-    document.getElementById('event').innerHTML = `Event: ${game.headers.Event} (${game.headers.Date})`;
+    // Update game info - extract just the year from the date
+    document.getElementById('event').innerHTML = `Event: ${game.headers.Event}`;
     document.getElementById('players').innerHTML = 
-        `White: ${game.headers.White} vs Black: ${game.headers.Black}`;
-    document.getElementById('date').innerHTML = `Result: ${game.headers.Result}`;
+        `White: ${game.headers.White} vs Black: ${game.headers.Black} (${game.headers.Result})`;
+    
+    // Extract year from date (assuming format YYYY.MM.DD or YYYY.??.??)
+    const yearMatch = game.headers.Date ? game.headers.Date.match(/^(\d{4})/) : null;
+    const year = yearMatch ? yearMatch[1] : '';
+    document.getElementById('date').innerHTML = year ? `Year: ${year}` : '';
 
     // Update chess board
     document.getElementById('b1').innerHTML = '';
     pgnv = PGNV.pgnView('b1', {pgn: game.moves.toString()});
 }
 
-function loadPGNFile() {
-    const fileInput = document.getElementById('pgnFile');
-    const file = fileInput.files[0];
-    if (!file) return;
+async function loadPlayerGames() {
+    const playerSelect = document.getElementById('playerSelect');
+    const playerName = playerSelect.value;
+    
+    if (!playerName) {
+        alert('Please select a player');
+        return;
+    }
 
-    // Get player name from file (remove .zip or .pgn extension)
-    const playerName = file.name.replace(/\.(zip|pgn)$/, '');
+    try {
+        // Construct the GitHub raw content URL
+        const zipUrl = `https://raw.githubusercontent.com/HughMurrell/HughMurrell.github.io/master/webwidgets/games/players/${playerName}.zip`;
+        
+        // Fetch the zip file
+        const response = await fetch(zipUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const zipData = await response.arrayBuffer();
+        
+        // Process the zip file
+        const zip = new JSZip();
+        const zipContent = await zip.loadAsync(zipData);
+        
+        // Find the first .pgn file in the zip
+        const pgnFile = Object.values(zipContent.files).find(file => 
+            file.name.toLowerCase().endsWith('.pgn')
+        );
+        
+        if (!pgnFile) {
+            alert('No PGN file found in the zip archive');
+            return;
+        }
 
-    if (file.name.endsWith('.zip')) {
-        // Handle zip file
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            try {
-                const zip = new JSZip();
-                const zipContent = await zip.loadAsync(e.target.result);
-                
-                // Find the first .pgn file in the zip
-                const pgnFile = Object.values(zipContent.files).find(file => 
-                    file.name.toLowerCase().endsWith('.pgn')
-                );
-                
-                if (!pgnFile) {
-                    alert('No PGN file found in the zip archive');
-                    return;
-                }
-
-                // Extract and process the PGN file
-                const pgnContent = await pgnFile.async('string');
-                processGames(pgnContent, playerName);
-            } catch (error) {
-                alert('Error processing zip file: ' + error.message);
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    } else if (file.name.endsWith('.pgn')) {
-        // Handle direct PGN file
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            processGames(e.target.result, playerName);
-        };
-        reader.readAsText(file);
-    } else {
-        alert('Please select a .zip or .pgn file');
+        // Extract and process the PGN file
+        const pgnContent = await pgnFile.async('string');
+        processGames(pgnContent, playerName);
+        
+    } catch (error) {
+        alert('Error loading games: ' + error.message);
+        console.error('Error:', error);
     }
 }
 
@@ -173,46 +206,99 @@ function processGames(pgnContent, playerName) {
     if (games.length > 0) {
         currentGameIndex = 0;
         
-        // Update the title to include the player name and year range
+        // Update the title to include the player name, game count and year range
         let title = `Famous Games by ${playerName}`;
         if (parseResult.yearRange) {
-            title += ` (games from ${parseResult.yearRange.min} to ${parseResult.yearRange.max})`;
+            title += ` (${games.length} games from ${parseResult.yearRange.min} to ${parseResult.yearRange.max})`;
         }
         document.getElementById('gameTitle').innerHTML = title;
         
-        displayGame(currentGameIndex);
+        // Configure slider
+        const slider = document.getElementById('gameSlider');
+        slider.min = 0;
+        slider.max = games.length - 1;
+        slider.value = 0;
+        slider.disabled = false;
         
-        // Set button states
-        document.getElementById('prevBtn').disabled = true;
-        document.getElementById('nextBtn').disabled = (games.length <= 1);
+        updateGameDisplay(0);
+        updateNavigationButtons();
     }
 }
 
-function previousGame() {
-    if (currentGameIndex > 0) {
-        currentGameIndex--;
-        updateNavigationButtons();
-        displayGame(currentGameIndex);
-    }
-}
-
-function nextGame() {
-    if (currentGameIndex < games.length - 1) {
-        currentGameIndex++;
-        updateNavigationButtons();
-        displayGame(currentGameIndex);
-        // console.log(`Moving to game ${currentGameIndex} of ${games.length - 1}`); // Debug info
-    }
+function updateGameDisplay(index) {
+    currentGameIndex = index;
+    displayGame(currentGameIndex);
+    document.getElementById('gameNumber').textContent = 
+        `Game ${currentGameIndex + 1} of ${games.length}`;
+    document.getElementById('gameSlider').value = currentGameIndex;
 }
 
 function updateNavigationButtons() {
     document.getElementById('prevBtn').disabled = (currentGameIndex <= 0);
     document.getElementById('nextBtn').disabled = (currentGameIndex >= games.length - 1);
-    // console.log("Current game:", currentGameIndex, "Total games:", games.length); // Debug info
+}
+
+function previousGame() {
+    if (currentGameIndex > 0) {
+        updateGameDisplay(currentGameIndex - 1);
+        updateNavigationButtons();
+    }
+}
+
+function nextGame() {
+    if (currentGameIndex < games.length - 1) {
+        updateGameDisplay(currentGameIndex + 1);
+        updateNavigationButtons();
+    }
+}
+
+// Add event listener for slider
+document.addEventListener('DOMContentLoaded', function() {
+    const slider = document.getElementById('gameSlider');
+    slider.addEventListener('input', function() {
+        updateGameDisplay(parseInt(this.value));
+        updateNavigationButtons();
+    });
+});
+
+async function loadPlayerList() {
+    try {
+        // GitHub API URL for the directory contents
+        const apiUrl = 'https://api.github.com/repos/HughMurrell/HughMurrell.github.io/contents/webwidgets/games/players';
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) throw new Error('Failed to fetch player list');
+        
+        const files = await response.json();
+        
+        // Get the select element
+        const playerSelect = document.getElementById('playerSelect');
+        
+        // Clear existing options except the first one
+        while (playerSelect.options.length > 1) {
+            playerSelect.remove(1);
+        }
+        
+        // Add new options for each zip file
+        files.forEach(file => {
+            if (file.name.endsWith('.zip')) {
+                const playerName = file.name.replace('.zip', '');
+                const option = new Option(playerName, playerName);
+                playerSelect.add(option);
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error loading player list:', error);
+        alert('Error loading player list. Please try again later.');
+    }
 }
 
 // Call initializeEmpty when the page loads
-window.onload = initializeEmpty;
+window.onload = function() {
+    initializeEmpty();
+    loadPlayerList();
+};
 </script>
 <script>prettyPrint();</script>
 </body>
