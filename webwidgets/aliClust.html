@@ -1,0 +1,4843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AliView: View and Cluster Alignments in the browser</title>
+    <!-- Included the NW Alignment Library -->
+    <script src="https://murrellgroup.github.io/WebWidgets/nw.js"></script>
+    <!-- Included the Phylogenetic Tools Library -->
+    <script src="https://murrellgroup.github.io/WebWidgets/phylotools.js"></script>
+    <!-- Included the Frame Cleaning Library -->
+    <script src="https://murrellgroup.github.io/WebWidgets/frameclean.js"></script>
+    <!-- Included Aioli for bioWASM -->
+    <script src="https://biowasm.com/cdn/v3/aioli.js"></script>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --panel-bg: #ffffff;
+            --border-color: #d1d5db;
+            --primary: #2563eb;
+            --header-height: 90px;
+            --ruler-height: 60px; 
+            --names-width: 200px;
+            --tree-width: 0px; 
+        }
+
+        * { box-sizing: border-box; }
+
+        body, html {
+            margin: 0; padding: 0;
+            height: 100%; width: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            overflow: hidden;
+            user-select: none;
+            overscroll-behavior-x: none;
+        }
+
+        #app {
+            display: flex; flex-direction: column;
+            height: 100vh; width: 100vw;
+        }
+
+        #controls {
+            height: var(--header-height);
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex; align-items: center;
+            padding: 0 20px; gap: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            flex-shrink: 0; z-index: 20;
+            overflow-x: auto;
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 4px; }
+        label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #6b7280; }
+        button, select, input[type="file"] {
+            padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px;
+            background: white; font-size: 13px; cursor: pointer;
+            white-space: nowrap;
+        }
+        button:hover { background-color: #f3f4f6; }
+        button.active { background-color: var(--primary); color: white; border-color: var(--primary); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-icon { padding: 6px 8px; font-weight: bold; }
+
+        #viewer-grid {
+            flex: 1; display: grid;
+            grid-template-columns: var(--tree-width) 5px var(--names-width) 5px minmax(0, 1fr);
+            grid-template-rows: var(--ruler-height) minmax(0, 1fr);
+            grid-template-areas: 
+                "corner-tree resizer-tree corner-names resizer-names ruler" 
+                "tree        resizer-tree names        resizer-names seq";
+            overflow: hidden; position: relative;
+            background: #fff;
+        }
+
+        #area-corner-tree { grid-area: corner-tree; background: #f3f4f6; border-bottom: 1px solid var(--border-color); }
+        #area-corner-names { grid-area: corner-names; background: #f3f4f6; border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+
+        #area-ruler {
+            grid-area: ruler; background: #f3f4f6;
+            border-bottom: 1px solid var(--border-color);
+            position: relative; overflow: hidden; cursor: s-resize;
+        }
+
+        #area-tree {
+            grid-area: tree; background: #fff;
+            position: relative; overflow: hidden;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        #resizer-tree {
+            grid-area: resizer-tree; background: #f3f4f6;
+            border-right: 1px solid var(--border-color);
+            cursor: col-resize; z-index: 15;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #resizer-tree:hover { background: #d1d5db; }
+        #resizer-tree::after { content: ''; width: 1px; height: 20px; background: #9ca3af; }
+
+        #resizer-names {
+            grid-area: resizer-names; background: #f3f4f6;
+            border-right: 1px solid var(--border-color);
+            cursor: col-resize; z-index: 15;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #resizer-names:hover { background: #d1d5db; }
+        #resizer-names::after { content: ''; width: 1px; height: 20px; background: #9ca3af; }
+
+        #area-names {
+            grid-area: names; background: #fff;
+            border-right: 1px solid var(--border-color);
+            position: relative; overflow: hidden; z-index: 5;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+        }
+
+        #area-seq {
+            grid-area: seq; overflow: auto; position: relative;
+            background: #fff; outline: none; cursor: text;
+        }
+        #area-seq.grabbing { cursor: grabbing; }
+
+        canvas { display: block; }
+        #cvs-seq { position: sticky; top: 0; left: 0; }
+        #scroll-sizer { position: absolute; top: 0; left: 0; width: 1px; height: 1px; z-index: -1; }
+
+        #overlay, #help-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.75);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        #overlay.active, #help-overlay.active { opacity: 1; pointer-events: all; }
+        
+        #help-overlay { background: rgba(0,0,0,0.5); }
+        .help-box {
+            background: white; width: 600px; max-width: 90%; 
+            padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .help-box h2 { margin: 0 0 10px 0; font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .help-row { display: flex; justify-content: space-between; font-size: 13px; color: #374151; padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
+        .help-key { font-weight: bold; color: #111; }
+        .close-help { align-self: flex-end; margin-top: 10px; }
+
+        .spinner {
+            width: 30px; height: 30px;
+            border: 3px solid #e5e7eb; border-top: 3px solid var(--primary);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .hint-text {
+            font-size: 11px; color: #4b5563; margin-left: auto; text-align: right;
+            line-height: 1.3; background: #f3f4f6; padding: 5px 10px; border-radius: 4px; border: 1px solid #e5e7eb;
+        }
+        .tag { display: inline-block; padding: 1px 4px; background: #e5e7eb; border-radius: 3px; font-weight: 600; font-size: 10px; }
+
+        #ctx-menu {
+            position: fixed; 
+            background: white; 
+            border: 1px solid #d1d5db; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+            border-radius: 4px; 
+            padding: 4px 0;
+            z-index: 10000;
+            display: none;
+            min-width: 150px;
+        }
+        #ctx-menu .item {
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: default;
+            color: #374151;
+            white-space: nowrap;
+        }
+        #ctx-menu .item:hover { background-color: transparent; }
+        #ctx-menu .item:first-child {
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 4px;
+            padding-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <div id="controls">
+        <div class="control-group">
+            <label>Sequences</label>
+            <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt">
+        </div>
+        <div class="control-group">
+            <label>Sort</label>
+            <div style="display:flex; gap:5px; align-items:center;">
+                <button id="btn-sort-sequences" title="Sort sequences by name (REF and SUBTYPE remain first)">Sort</button>
+                <button id="btn-group-sequences" title="Group sequences by name field">Group</button>
+                <button id="btn-subtype" title="Add founder sequence from selected group">Add Founder</button>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Phylogeny</label>
+            <div style="display:flex; gap:5px; align-items:center;">
+                <button id="btn-infer-tree" title="Infer NJ tree from sequences">Infer</button>
+                <input type="file" id="inp-tree">
+                <button id="btn-reroot-tree" title="Reroot tree on subtype sequence">Reroot</button>
+                <button id="btn-ladderize-tree" title="Ladderize tree and reorder sequences">Ladderize</button>
+                <button id="btn-histogram" title="Show histogram of root-to-leaf distances" disabled>Histogram</button>
+                <button id="btn-mds" title="Show MDS plot of pairwise leaf distances" disabled>MDS</button>
+                <button id="btn-export-tree" title="Export current tree as Newick">Export</button>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>Reset</label>
+            <div style="display:flex; gap:5px;">
+                <button id="btn-clear-aln" title="Remove all sequences">Clear Alignment</button>
+                <button id="btn-clear-tree" title="Remove current tree">Clear Tree</button>
+            </div>
+        </div>
+        <div style="width:1px; height:30px; background:#e5e7eb; margin:0 10px;"></div>
+        <div class="control-group">
+            <label>History</label>
+            <button id="btn-undo" title="Ctrl+Z">⟲ Undo</button>
+        </div>
+        
+        <!-- Export Controls -->
+        <div style="width:1px; height:30px; background:#e5e7eb; margin:0 10px;"></div>
+        <div class="control-group">
+            <label>Export</label>
+            <div style="display:flex; gap:5px;">
+                <button id="btn-download" title="Download Current View">Download</button>
+                <button id="btn-copy" title="Copy to Clipboard">Copy</button>
+            </div>
+        </div>
+
+        <div style="width:1px; height:30px; background:#e5e7eb; margin:0 10px;"></div>
+        <div class="control-group">
+            <label>View Mode</label>
+            <div style="display:flex;">
+                <button id="btn-nt" class="active" style="border-top-right-radius:0; border-bottom-right-radius:0;">NT</button>
+                <button id="btn-aa" style="border-top-left-radius:0; border-bottom-left-radius:0; border-left:none;">AA</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Highlighter</label>
+            <select id="sel-highlight" style="min-width: 120px;">
+                <option value="" selected>Off</option>
+                <option value="founder">Founder</option>
+                <option value="subtype">SubType</option>
+                <option value="reference">Reference</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Epitopes</label>
+            <div style="display:flex; gap:5px; align-items:center;">
+                <input type="file" id="inp-epitopes" accept=".csv" style="display: none;">
+                <button id="btn-load-epitopes" title="Load epitope descriptions from CSV file">Load Epitopes</button>
+                <button id="btn-select-epitope" title="Select an epitope to restrict display">Select Epitope</button>
+            </div>
+        </div>
+        
+
+        <div style="width:1px; height:30px; background:#e5e7eb; margin:0 10px;"></div>
+
+        <div class="control-group" id="grp-frame" style="opacity:0.4; pointer-events:none;">
+            <label>Frame</label>
+            <select id="sel-frame">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Info</label>
+            <button id="btn-help" class="btn-icon">?</button>
+        </div>
+    </div>
+
+    <div id="viewer-grid">
+        <div id="area-corner-tree"></div>
+        <div id="resizer-tree"></div>
+        <div id="area-corner-names"></div>
+        <div id="resizer-names"></div>
+        
+        <div id="area-tree"><canvas id="cvs-tree"></canvas></div>
+        <div id="area-ruler"><canvas id="cvs-ruler"></canvas></div>
+        <div id="area-names"><canvas id="cvs-names"></canvas></div>
+        <div id="area-seq" tabindex="0"><div id="scroll-sizer"></div><canvas id="cvs-seq"></canvas></div>
+    </div>
+</div>
+
+<div id="overlay">
+    <div class="spinner"></div>
+    <div id="overlay-msg" style="margin-top:10px; font-weight:500;">Processing...</div>
+    <div id="overlay-sub" style="margin-top:5px; font-size:12px; color:#666;"></div>
+</div>
+
+
+<div id="ladderize-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Ladderize Tree</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Sorting Method</label>
+            <select id="sel-ladderize-mode" style="width: 100%;">
+                <option value="weight">By Weight (number of leaves)</option>
+                <option value="depth" selected>By Depth (branch lengths)</option>
+            </select>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('ladderize-overlay').style.display='none'">Cancel</button>
+            <button id="btn-run-ladderize" class="active">Ladderize</button>
+        </div>
+    </div>
+</div>
+
+<div id="reroot-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Reroot Tree</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Root On</label>
+            <select id="sel-reroot-target" style="width: 100%;">
+                <option value="subtype">[SUBTYPE]</option>
+                <option value="founder">[Founder]</option>
+            </select>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('reroot-overlay').style.display='none'">Cancel</button>
+            <button id="btn-run-reroot" class="active">Reroot</button>
+        </div>
+    </div>
+</div>
+
+<div id="infer-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Infer Phylogeny</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Method</label>
+            <select id="sel-infer-method" style="width: 100%;">
+                <option value="nj">Neighbor-Joining (Internal)</option>
+                <option value="fasttree" selected>FastTree (bioWASM)</option>
+            </select>
+        </div>
+        
+        <div id="fasttree-options" style="display: none; flex-direction: column; gap: 10px; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+            <div class="help-row">
+                <span style="font-size: 13px; color: #374151;">Model (NT):</span>
+                <select id="sel-ft-nt-model">
+                    <option value="-gtr">-gtr (GTR+CAT)</option>
+                    <option value="">Default (Jukes-Cantor)</option>
+                </select>
+            </div>
+            <div class="help-row">
+                <span style="font-size: 13px; color: #374151;">Model (AA):</span>
+                <select id="sel-ft-aa-model">
+                    <option value="-lg">-lg (Le-Gascuel)</option>
+                    <option value="-wag">-wag (Whelan-And-Goldman)</option>
+                    <option value="">Default (JTT)</option>
+                </select>
+            </div>
+            <div class="help-row">
+                <span style="font-size: 13px; color: #374151;">Speed:</span>
+                <select id="sel-ft-speed">
+                    <option value="">Default</option>
+                    <option value="-fastest">-fastest</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('infer-overlay').style.display='none'">Cancel</button>
+            <button id="btn-run-infer" class="active">Run Inference</button>
+        </div>
+    </div>
+</div>
+
+<div id="histogram-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 600px; max-width: 90vw;">
+        <h2>Root-to-Leaf Distance Histogram</h2>
+        <div style="margin: 20px 0;">
+            <canvas id="histogram-canvas" width="560" height="400" style="width: 100%; max-width: 560px; height: auto; border: 1px solid #e5e7eb; background: white;"></canvas>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('histogram-overlay').style.display='none'">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="mds-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 700px; max-width: 90vw;">
+        <h2>MDS Plot of Pairwise Leaf Distances</h2>
+        <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 15px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="font-size: 12px; color: #374151;">DBSCAN Parameters:</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Radius (eps):</label>
+                    <input type="range" id="mds-eps-slider" min="0.01" max="1" step="0.01" value="0.1" style="flex: 1;">
+                    <span id="mds-eps-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">0.1</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Min Neighbors:</label>
+                    <input type="range" id="mds-minpts-slider" min="1" max="10" step="1" value="2" style="flex: 1;">
+                    <span id="mds-minpts-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">2</span>
+                </div>
+            </div>
+            <canvas id="mds-canvas" width="660" height="500" style="width: 100%; max-width: 660px; height: auto; border: 1px solid #e5e7eb; background: white;"></canvas>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button id="mds-apply-btn" class="active">Apply</button>
+            <button onclick="document.getElementById('mds-overlay').style.display='none'">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="group-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Group Sequences</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Delimiter Character</label>
+            <input type="text" id="inp-group-delimiter" value="_" maxlength="1" style="width: 100%; padding: 5px; font-size: 13px;">
+        </div>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 10px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Field Number (1-indexed, after splitting by delimiter)</label>
+            <input type="number" id="inp-group-field" value="3" min="1" style="width: 100%; padding: 5px; font-size: 13px;">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('group-overlay').style.display='none'">Cancel</button>
+            <button id="btn-run-group" class="active">Group</button>
+        </div>
+    </div>
+</div>
+
+<div id="color-legend" style="position: fixed; top: 100px; right: 20px; background: white; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 5000; display: none; max-width: 250px; font-size: 12px;">
+    <div id="legend-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; cursor: move; user-select: none;">
+        <h3 style="margin: 0; font-size: 14px; color: #374151;">Color Legend</h3>
+        <button onclick="document.getElementById('color-legend').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280;">×</button>
+    </div>
+    <div id="legend-groups" style="margin-bottom: 15px;">
+        <div style="font-weight: 600; color: #374151; margin-bottom: 8px;">Groups:</div>
+        <div id="legend-groups-content"></div>
+    </div>
+    <div id="legend-clusters">
+        <div style="font-weight: 600; color: #374151; margin-bottom: 8px;">Clusters:</div>
+        <div id="legend-clusters-content"></div>
+    </div>
+</div>
+
+<div id="subtype-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Add Founder Sequence</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Select Group</label>
+            <select id="sel-subtype-group" style="width: 100%;">
+                <option value="">-- Select a group --</option>
+            </select>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('subtype-overlay').style.display='none'">Cancel</button>
+            <button id="btn-apply-subtype" class="active">Add Founder</button>
+        </div>
+    </div>
+</div>
+
+<div id="help-overlay">
+    <div class="help-box">
+        <h2>FastAlign Help</h2>
+        <div class="help-row"><span class="help-key">Choose File</span> <span>Load an Alignment with Ref as first seq and SubType as second seq.</span></div>
+        <div class="help-row"><span class="help-key">Group</span> <span>Group sequences using field in Seq names</span></div>
+        <div class="help-row"><span class="help-key">Add Founder</span> <span>Set a Founder sequence as consensus of a group</span></div>
+        <div class="help-row"><span class="help-key">Infer</span> <span>Infer a phylogeny using FastTree of Neighbor Joining</span></div>
+        <div class="help-row"><span class="help-key">Set Reference</span> <span>Right-click a sequence name.</span></div>
+        <div class="help-row"><span class="help-key">Move Block</span> <span>Drag selection horizontally to shift sequences.</span></div>
+        <div class="help-row"><span class="help-key">IUPAC</span> <span>Full IUPAC ambiguity codes supported in Nucleotide view.</span></div>
+        <div class="help-row"><span class="help-key">Export</span> <span>Download or Copy current view (NT or AA) as FASTA.</span></div>
+        <button class="close-help" onclick="document.getElementById('help-overlay').classList.remove('active')">Close</button>
+    </div>
+</div>
+
+<div id="ctx-menu">
+    <div class="item" id="ctx-info-group">Group: Not assigned</div>
+    <div class="item" id="ctx-info-cluster">Cluster: Not assigned</div>
+</div>
+
+<script>
+// --- ALIGNMENT ALGORITHM ---
+// Now imported from external library via script tag
+
+// --- Config ---
+const CONFIG = {
+    font: "14px 'Courier New', monospace",
+    labelFont: "12px system-ui, sans-serif",
+    charWidth: 12,
+    rowHeight: 24,
+    highlightMatchColor: '#ffffff',
+    highlightGapColor: '#d1d5db',
+    rulerTickStep: 10,
+    maxHistory: 30,
+    colors: {
+        // Includes IUPAC colors
+        NT: { 
+            'A': '#81d4fa', 'G': '#fff176', 'C': '#a5d6a7', 'T': '#ff8a80', 'U': '#ff8a80', 
+            'R': '#e6ee9c', 'Y': '#80cbc4', 'M': '#a5d6a7', 'K': '#ef9a9a', 'S': '#c5e1a5', 
+            'W': '#ce93d8', 'H': '#81d4fa', 'B': '#ef9a9a', 'V': '#fff59d', 'D': '#ffcc80', 
+            'N': '#eeeeee',
+            '-': '#ffffff', 'default': '#f5f5f5' 
+        },
+        AA: { 'A': '#80a0f0', 'R': '#f01505', 'N': '#00ff00', 'D': '#c048c0', 'C': '#f08080', 'Q': '#00ff00', 'E': '#c048c0', 'G': '#f09048', 'H': '#15a4a4', 'I': '#80a0f0', 'L': '#80a0f0', 'K': '#f01505', 'M': '#80a0f0', 'F': '#80a0f0', 'P': '#ffff00', 'S': '#00ff00', 'T': '#00ff00', 'W': '#80a0f0', 'Y': '#15a4a4', 'V': '#80a0f0', '*': '#999999', '-': '#ffffff', 'default': '#ffffff' }
+    }
+};
+
+// Color palettes for groups and clusters
+const GROUP_COLORS = [
+    '#3b82f6', // Blue
+    '#10b981', // Green
+    '#f59e0b', // Amber
+    '#8b5cf6', // Purple
+    '#ec4899', // Pink
+    '#06b6d4', // Cyan
+    '#84cc16', // Lime
+    '#f97316', // Orange
+    '#6366f1', // Indigo
+    '#14b8a6', // Teal
+    '#ef4444', // Red
+    '#fbbf24', // Yellow
+    '#a855f7', // Violet
+    '#22c55e', // Emerald
+    '#06b6d4', // Sky
+];
+
+const GROUP_LIGHT_BG = [
+    '#dbeafe', // Light blue
+    '#d1fae5', // Light green
+    '#fef3c7', // Light amber
+    '#ede9fe', // Light purple
+    '#fce7f3', // Light pink
+    '#cffafe', // Light cyan
+    '#ecfccb', // Light lime
+    '#fed7aa', // Light orange
+    '#e0e7ff', // Light indigo
+    '#ccfbf1', // Light teal
+    '#fee2e2', // Light red
+    '#fef3c7', // Light yellow
+    '#f3e8ff', // Light violet
+    '#d1fae5', // Light emerald
+    '#cffafe', // Light sky
+];
+
+const CLUSTER_COLORS = [
+    '#e11d48', // Rose
+    '#059669', // Emerald
+    '#dc2626', // Red
+    '#7c3aed', // Violet
+    '#ea580c', // Orange
+    '#0284c7', // Sky
+    '#16a34a', // Green
+    '#ca8a04', // Yellow
+    '#be185d', // Pink
+    '#0891b2', // Cyan
+];
+
+const CLUSTER_LIGHT_BG = [
+    '#ffe4e6', // Light rose
+    '#d1fae5', // Light emerald
+    '#fee2e2', // Light red
+    '#ede9fe', // Light violet
+    '#fed7aa', // Light orange
+    '#e0f2fe', // Light sky
+    '#dcfce7', // Light green
+    '#fef3c7', // Light yellow
+    '#fce7f3', // Light pink
+    '#cffafe', // Light cyan
+];
+
+const CODON_TABLE = {
+    'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M', 'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T',
+    'AAC':'N', 'AAT':'N', 'AAA':'K', 'AAG':'K', 'AGC':'S', 'AGT':'S', 'AGA':'R', 'AGG':'R',
+    'CTA':'L', 'CTC':'L', 'CTG':'L', 'CTT':'L', 'CCA':'P', 'CCC':'P', 'CCG':'P', 'CCT':'P',
+    'CAC':'H', 'CAT':'H', 'CAA':'Q', 'CAG':'Q', 'CGA':'R', 'CGC':'R', 'CGG':'R', 'CGT':'R',
+    'GTA':'V', 'GTC':'V', 'GTG':'V', 'GTT':'V', 'GCA':'A', 'GCC':'A', 'GCG':'A', 'GCT':'A',
+    'GAC':'D', 'GAT':'D', 'GAA':'E', 'GAG':'E', 'GGA':'G', 'GGC':'G', 'GGG':'G', 'GGT':'G',
+    'TCA':'S', 'TCC':'S', 'TCG':'S', 'TCT':'S', 'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
+    'TAC':'Y', 'TAT':'Y', 'TAA':'*', 'TAG':'*', 'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
+};
+
+// --- State ---
+const state = {
+    rawSequences: [],
+    viewSequences: [],
+    history: [],
+    dragSaved: false,
+    mode: 'NT',
+    highlightMatches: '', // 'founder', 'subtype', 'reference', or '' (off)
+    frame: 1,
+    maxLength: 0,
+    selection: null,
+    selectionAnchor: null, 
+    tree: null, 
+    treeWidth: 0, 
+    namesWidth: 200,
+    refIndex: 0, 
+    subtypeIndex: 1, // Second sequence (index 1) is the subtype
+    refMap: [], 
+    epitopes: [], // Array of {name: string, regions: [{start: number, end: number}]}
+    selectedEpitope: null, // Selected epitope name or null
+    epitopeColumns: null, // Set of allowed alignment column indices for selected epitope 
+    mouse: { isDown: false, target: null, startR: 0, startC: 0, lastHoverC: 0 },
+    ctxTargetRow: null,
+    pastedNameCounter: 1,
+    aioliCLI: null,
+    isAASequence: false, // Flag to track if sequences are already amino acids (not DNA to be translated)
+    leafClusters: null, // Map from leaf name to cluster ID (from MDS clustering)
+    sequenceGroups: null, // Map from sequence name to group ID (from grouping by name field)
+    groupDelimiter: null, // Delimiter used for grouping
+    groupFieldNum: null, // Field number (1-based) used for grouping
+    groupNames: null, // Map from group ID to group value (for legend)
+    originalSubtype: null // Store original subtype sequence for reverting
+};
+
+// --- DOM ---
+const dom = {
+    file: document.getElementById('inp-file'),
+    fileTree: document.getElementById('inp-tree'),
+    btnInferTree: document.getElementById('btn-infer-tree'),
+    btnExportTree: document.getElementById('btn-export-tree'),
+    btnLadderizeTree: document.getElementById('btn-ladderize-tree'),
+    btnRerootTree: document.getElementById('btn-reroot-tree'),
+    btnHistogram: document.getElementById('btn-histogram'),
+    btnMds: document.getElementById('btn-mds'),
+    btnSortSequences: document.getElementById('btn-sort-sequences'),
+    btnGroupSequences: document.getElementById('btn-group-sequences'),
+    btnSubtype: document.getElementById('btn-subtype'),
+    btnClearAlignment: document.getElementById('btn-clear-aln'),
+    btnClearTree: document.getElementById('btn-clear-tree'),
+    btnUndo: document.getElementById('btn-undo'),
+    btnNt: document.getElementById('btn-nt'),
+    btnAa: document.getElementById('btn-aa'),
+    selHighlight: document.getElementById('sel-highlight'),
+    btnDownload: document.getElementById('btn-download'),
+    btnCopy: document.getElementById('btn-copy'),
+    btnHelp: document.getElementById('btn-help'),
+    inpEpitopes: document.getElementById('inp-epitopes'),
+    btnLoadEpitopes: document.getElementById('btn-load-epitopes'),
+    btnSelectEpitope: document.getElementById('btn-select-epitope'),
+    selFrame: document.getElementById('sel-frame'),
+    grpFrame: document.getElementById('grp-frame'),
+    overlay: document.getElementById('overlay'),
+    overlayMsg: document.getElementById('overlay-msg'),
+    overlaySub: document.getElementById('overlay-sub'),
+    helpOverlay: document.getElementById('help-overlay'),
+    ctxMenu: document.getElementById('ctx-menu'),
+    ctxInfoGroup: document.getElementById('ctx-info-group'),
+    ctxInfoCluster: document.getElementById('ctx-info-cluster'),
+    
+    areaSeq: document.getElementById('area-seq'),
+    areaNames: document.getElementById('area-names'),
+    areaRuler: document.getElementById('area-ruler'),
+    areaTree: document.getElementById('area-tree'),
+    resizerTree: document.getElementById('resizer-tree'),
+    resizerNames: document.getElementById('resizer-names'),
+    
+    cvsSeq: document.getElementById('cvs-seq'),
+    cvsNames: document.getElementById('cvs-names'),
+    cvsRuler: document.getElementById('cvs-ruler'),
+    cvsTree: document.getElementById('cvs-tree'),
+    sizer: document.getElementById('scroll-sizer')
+};
+
+const ctxSeq = dom.cvsSeq.getContext('2d', { alpha: false });
+const ctxNames = dom.cvsNames.getContext('2d');
+const ctxRuler = dom.cvsRuler.getContext('2d');
+const ctxTree = dom.cvsTree.getContext('2d');
+
+// Helper function to draw a diamond shape
+function drawDiamond(ctx, x, y, size) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - size);      // Top
+    ctx.lineTo(x + size, y);     // Right
+    ctx.lineTo(x, y + size);     // Bottom
+    ctx.lineTo(x - size, y);     // Left
+    ctx.closePath();
+    ctx.fill();
+}
+
+// --- Init ---
+async function init() {
+    // Initialize Aioli with FastTree only
+    try {
+        console.log("Loading FastTree from bioWASM...");
+        state.aioliCLI = await new Aioli(["fasttree/2.1.11"]);
+        console.log("FastTree successfully loaded");
+    } catch (err) {
+        console.error("Failed to initialize FastTree:", err);
+        state.aioliCLI = null;
+    }
+
+    dom.file.addEventListener('change', e => loadFile(e.target.files[0]));
+    dom.fileTree.addEventListener('change', e => loadTreeFile(e.target.files[0]));
+    if (dom.btnSortSequences) {
+        dom.btnSortSequences.addEventListener('click', sortSequencesByName);
+    }
+    if (dom.btnGroupSequences) {
+        dom.btnGroupSequences.addEventListener('click', showGroupModal);
+    }
+    if (dom.btnSubtype) {
+        dom.btnSubtype.addEventListener('click', showSubtypeModal);
+    }
+    document.getElementById('btn-apply-subtype').addEventListener('click', applySubtypeFounder);
+    const btnRunGroup = document.getElementById('btn-run-group');
+    if (btnRunGroup) {
+        btnRunGroup.addEventListener('click', runGroupTask);
+    }
+    if (dom.btnLoadEpitopes) {
+        dom.btnLoadEpitopes.addEventListener('click', () => dom.inpEpitopes.click());
+    }
+    if (dom.inpEpitopes) {
+        dom.inpEpitopes.addEventListener('change', e => loadEpitopes(e.target.files[0]));
+    }
+    if (dom.btnSelectEpitope) {
+        dom.btnSelectEpitope.addEventListener('click', showEpitopeSelector);
+    }
+    dom.btnInferTree.addEventListener('click', showInferModal);
+    dom.btnExportTree.addEventListener('click', exportTree);
+    dom.btnLadderizeTree.addEventListener('click', showLadderizeModal);
+    if (dom.btnRerootTree) {
+        dom.btnRerootTree.addEventListener('click', showRerootModal);
+    }
+    
+    const btnRunReroot = document.getElementById('btn-run-reroot');
+    if (btnRunReroot) {
+        btnRunReroot.addEventListener('click', runRerootTask);
+    }
+    if (dom.btnHistogram) {
+        dom.btnHistogram.addEventListener('click', showHistogramModal);
+    }
+    if (dom.btnMds) {
+        dom.btnMds.addEventListener('click', showMdsModal);
+    }
+    document.getElementById('btn-run-ladderize').addEventListener('click', runLadderizeTask);
+    dom.btnClearAlignment.addEventListener('click', clearAlignment);
+    dom.btnClearTree.addEventListener('click', clearTreeOnly);
+    dom.btnUndo.addEventListener('click', undo);
+    dom.btnNt.addEventListener('click', () => setMode('NT'));
+    dom.btnAa.addEventListener('click', () => setMode('AA'));
+    dom.selHighlight.addEventListener('change', () => {
+        state.highlightMatches = dom.selHighlight.value;
+        render();
+    });
+    dom.selFrame.addEventListener('change', () => { state.frame = +dom.selFrame.value; recalc(); });
+    
+    
+    document.getElementById('sel-infer-method').addEventListener('change', (e) => {
+        document.getElementById('fasttree-options').style.display = (e.target.value === 'fasttree') ? 'flex' : 'none';
+    });
+    document.getElementById('btn-run-infer').addEventListener('click', runInferTask);
+
+    dom.btnDownload.addEventListener('click', () => exportAlignment('download'));
+    dom.btnCopy.addEventListener('click', handleCopyButton);
+    dom.btnHelp.addEventListener('click', () => dom.helpOverlay.classList.add('active'));
+
+    dom.areaSeq.addEventListener('scroll', () => requestAnimationFrame(render));
+    window.addEventListener('resize', onResize);
+    
+    dom.areaSeq.addEventListener('mousedown', (e) => onMouseDown(e, 'SEQ'));
+    dom.areaNames.addEventListener('mousedown', (e) => { 
+        if(e.button === 2) return; 
+        e.preventDefault(); onMouseDown(e, 'NAMES'); 
+    });
+    dom.areaRuler.addEventListener('mousedown', (e) => { e.preventDefault(); onMouseDown(e, 'RULER'); });
+    
+    dom.areaNames.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const { r } = getCoords(e, 'NAMES');
+        if(r >= 0 && r < state.viewSequences.length) {
+            state.ctxTargetRow = r;
+            const seqName = state.viewSequences[r].name;
+            
+            // Get group info
+            let groupText = 'Not assigned';
+            if (state.sequenceGroups && state.groupNames) {
+                const groupId = state.sequenceGroups.get(seqName);
+                if (groupId !== undefined && state.groupNames.has(groupId)) {
+                    const groupValue = state.groupNames.get(groupId);
+                    groupText = groupValue || `Group ${groupId}`;
+                }
+            }
+            dom.ctxInfoGroup.textContent = `Group: ${groupText}`;
+            
+            // Get cluster info
+            let clusterText = 'Not assigned';
+            if (state.leafClusters) {
+                const clusterId = state.leafClusters.get(seqName);
+                if (clusterId !== undefined) {
+                    if (clusterId === -1) {
+                        clusterText = 'Noise';
+                    } else {
+                        clusterText = `Cluster ${clusterId}`;
+                    }
+                }
+            }
+            dom.ctxInfoCluster.textContent = `Cluster: ${clusterText}`;
+            
+            dom.ctxMenu.style.display = 'block';
+            dom.ctxMenu.style.left = e.clientX + 'px';
+            dom.ctxMenu.style.top = e.clientY + 'px';
+        }
+    });
+
+    window.addEventListener('mousedown', (e) => {
+        if(!dom.ctxMenu.contains(e.target)) dom.ctxMenu.style.display = 'none';
+    });
+
+    dom.resizerTree.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        state.mouse.isDown = true;
+        state.mouse.target = 'RESIZE_TREE';
+    });
+
+    dom.resizerNames.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        state.mouse.isDown = true;
+        state.mouse.target = 'RESIZE_NAMES';
+        state.mouse.startX = e.clientX;
+        state.mouse.startNamesWidth = state.namesWidth;
+    });
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    
+    dom.areaSeq.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', (e) => {
+        if((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault();
+            undo();
+        }
+    });
+    window.addEventListener('copy', onCopyEvent);
+    window.addEventListener('paste', onPasteEvent);
+
+    // Initialize names width
+    setNamesWidth(state.namesWidth);
+    
+    // Initialize highlighter select to match state
+    if (dom.selHighlight) {
+        dom.selHighlight.value = state.highlightMatches || '';
+    }
+
+    onResize();
+    
+    // Check for URL parameters and load if present
+    loadFromURLParams();
+}
+
+// --- Export Logic ---
+function exportAlignment(target) {
+    if (!state.viewSequences.length) return;
+    
+    const rows = state.viewSequences.map((_, idx) => idx);
+    const content = buildFastaContent(rows, 0, null);
+    if(!content) return;
+
+    if (target === 'clipboard') {
+        if(navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(content).catch(err => {
+                console.error("Copy failed:", err);
+                alert("Copy failed: " + err.message);
+            });
+        } else {
+            alert("Clipboard API not available.");
+        }
+    } else {
+        const blob = new Blob([content], {type: "text/plain"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `alignment_${state.mode}.fasta`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+}
+
+function getSelectionBounds() {
+    if(!state.selection || !state.viewSequences.length) return null;
+    const totalRows = state.viewSequences.length;
+    const rowStart = Math.max(0, Math.min(state.selection.r1, totalRows - 1));
+    const rowEnd = Math.max(0, Math.min(state.selection.r2, totalRows - 1));
+    if(rowEnd < rowStart) return null;
+    const rows = [];
+    for(let r=rowStart; r<=rowEnd; r++) rows.push(r);
+    if(!rows.length) return null;
+    const isFullRow = state.selection.c2 >= 99999999;
+    const colStart = isFullRow ? 0 : Math.max(0, state.selection.c1);
+    const colEnd = isFullRow ? null : Math.max(colStart, state.selection.c2);
+    return { rows, colStart, colEnd };
+}
+
+function buildFastaContent(rows, colStart = 0, colEnd = null) {
+    if(!rows || !rows.length) return "";
+    const lines = [];
+    rows.forEach(r => {
+        const entry = state.viewSequences[r];
+        if(!entry) return;
+        const seq = entry.seq;
+        const start = Math.min(colStart, seq.length);
+        const end = (colEnd === null || colEnd === undefined) ? seq.length : Math.min(seq.length, colEnd + 1);
+        const fragment = seq.slice(start, end).join('');
+        lines.push(`>${entry.name}`);
+        lines.push(fragment);
+    });
+    return lines.join('\n') + (lines.length ? '\n' : '');
+}
+
+function getClipboardContent(preferSelection = true) {
+    if(!state.viewSequences.length) return "";
+    let bounds = preferSelection ? getSelectionBounds() : null;
+    if(!bounds) {
+        const rows = state.viewSequences.map((_, idx) => idx);
+        bounds = { rows, colStart: 0, colEnd: null };
+    }
+    return buildFastaContent(bounds.rows, bounds.colStart, bounds.colEnd);
+}
+
+function shouldHandleClipboardEvent() {
+    return document.activeElement === dom.areaSeq;
+}
+
+function handleCopyButton() {
+    const content = getClipboardContent(true);
+    if(!content) return;
+    if(!navigator.clipboard || !navigator.clipboard.writeText) {
+        alert("Clipboard API not available.");
+        return;
+    }
+    const originalText = dom.btnCopy.textContent;
+    navigator.clipboard.writeText(content).then(() => {
+        dom.btnCopy.textContent = "Copied!";
+        setTimeout(() => dom.btnCopy.textContent = originalText, 1500);
+    }).catch(err => {
+        console.error("Copy failed:", err);
+        dom.btnCopy.textContent = originalText;
+        alert("Copy failed: " + err.message);
+    });
+}
+
+function onCopyEvent(e) {
+    if(!shouldHandleClipboardEvent()) return;
+    const content = getClipboardContent(true);
+    if(!content) return;
+    if(e.clipboardData) {
+        e.clipboardData.setData('text/plain', content);
+        e.preventDefault();
+    }
+}
+
+function onPasteEvent(e) {
+    if(!shouldHandleClipboardEvent()) return;
+    const data = e.clipboardData || window.clipboardData;
+    if(!data) return;
+    const text = data.getData('text/plain');
+    if(!text) return;
+    e.preventDefault();
+    handleClipboardPaste(text);
+}
+
+function handleClipboardPaste(text) {
+    if(!text) return;
+    const trimmed = text.trim();
+    if(!trimmed) return;
+
+    const fastaEntries = parseClipboardFasta(trimmed);
+    if(fastaEntries.length) {
+        appendSequencesFromClipboard(fastaEntries);
+        return;
+    }
+
+    const lines = trimmed.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if(lines.length === 1) {
+        const seqStr = lines[0].replace(/\s+/g, '').toUpperCase().replace(/[^A-Z-]/g, '');
+        if(seqStr.length) {
+            appendSequencesFromClipboard([{ name: null, seq: seqStr.split('') }]);
+            return;
+        }
+    }
+
+    alert("Could not parse pasted content. Provide FASTA or a single sequence line.");
+}
+
+function parseClipboardFasta(text) {
+    const lines = text.split(/\r?\n/);
+    const seqs = [];
+    let currentName = null;
+    let buffer = [];
+    let sawHeader = false;
+
+    for(let rawLine of lines) {
+        const line = rawLine.trim();
+        if(!line) continue;
+        if(line.startsWith('>')) {
+            sawHeader = true;
+            if(currentName !== null) {
+                const seqStr = buffer.join('');
+                if(seqStr.length) seqs.push({ name: currentName, seq: seqStr.split('') });
+            }
+            currentName = line.substring(1).trim() || null;
+            buffer = [];
+        } else if(currentName !== null) {
+            buffer.push(line.toUpperCase().replace(/[^A-Z-]/g, ''));
+        }
+    }
+
+    if(currentName !== null) {
+        const seqStr = buffer.join('');
+        if(seqStr.length) seqs.push({ name: currentName, seq: seqStr.split('') });
+    }
+
+    if(!sawHeader) return [];
+    return seqs;
+}
+
+function appendSequencesFromClipboard(entries) {
+    const payload = entries.filter(e => e.seq && e.seq.length);
+    if(!payload.length) return;
+    saveState();
+    const existingNames = new Set(state.rawSequences.map(s => s.name));
+    payload.forEach(entry => {
+        let name = entry.name && entry.name.trim().length ? entry.name.trim() : '';
+        if(!name) name = generatePastedName();
+        while(existingNames.has(name)) {
+            name = generatePastedName();
+        }
+        existingNames.add(name);
+        state.rawSequences.push({ name, seq: entry.seq.slice() });
+    });
+    state.selection = null;
+    recalc();
+}
+
+function generatePastedName() {
+    return `Pasted_${state.pastedNameCounter++}`;
+}
+
+
+function clearAlignment() {
+    if(!state.rawSequences.length) return;
+    if(!confirm("Clear all sequences and the current tree?")) return;
+    saveState();
+    state.rawSequences = [];
+    state.viewSequences = [];
+    state.selection = null;
+    state.tree = null;
+    state.refIndex = 0;
+    state.maxLength = 0;
+    state.refMap = [];
+    state.pastedNameCounter = 1;
+    state.sequenceGroups = null;
+    state.groupDelimiter = null;
+    state.groupFieldNum = null;
+    state.groupNames = null;
+    state.leafClusters = null;
+    dom.sizer.style.width = '1px';
+    dom.sizer.style.height = '1px';
+    setTreeWidth(0);
+    updateColorLegend();
+    recalc();
+    render();
+}
+
+function clearTreeOnly() {
+    state.tree = null;
+    state.leafClusters = null; // Clear clusters when tree is cleared
+    setTreeWidth(0);
+    if (dom.btnHistogram) {
+        dom.btnHistogram.disabled = true;
+    }
+    if (dom.btnMds) {
+        dom.btnMds.disabled = true;
+    }
+    updateColorLegend();
+    render();
+}
+
+// --- History ---
+function saveState() {
+    const snapshot = {
+        seqs: JSON.parse(JSON.stringify(state.rawSequences)),
+        sel: state.selection ? { ...state.selection } : null,
+        refIdx: state.refIndex
+    };
+    state.history.push(snapshot);
+    if(state.history.length > CONFIG.maxHistory) state.history.shift();
+}
+
+function undo() {
+    if(state.history.length === 0) return;
+    const prev = state.history.pop();
+    state.rawSequences = prev.seqs;
+    state.selection = prev.sel;
+    if(prev.refIdx < state.rawSequences.length) state.refIndex = prev.refIdx;
+    else state.refIndex = 0;
+    
+    recalc();
+}
+
+// --- Loading ---
+function loadFile(file) {
+    if(!file) return;
+    showOverlay(true);
+    const reader = new FileReader();
+    const name = file.name.toLowerCase();
+    const isFastq = name.endsWith('.fastq') || name.endsWith('.fq');
+
+    reader.onload = e => {
+        if(isFastq) parseFastq(e.target.result);
+        else parseFasta(e.target.result);
+    };
+    reader.readAsText(file);
+}
+
+function loadTreeFile(file) {
+    if(!file) return;
+    showOverlay(true);
+    const reader = new FileReader();
+    reader.onload = e => parseTree(e.target.result, false, false); // Don't reroot when loading from file
+    reader.readAsText(file);
+}
+
+// --- Sort Sequences by Name ---
+function sortSequencesByName() {
+    if (state.rawSequences.length === 0) {
+        alert("No sequences to sort.");
+        return;
+    }
+    
+    saveState();
+    
+    // Get REF and SUBTYPE sequences (they stay in positions 0 and 1)
+    const refSeq = state.rawSequences[state.refIndex];
+    const subtypeSeq = state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length 
+        ? state.rawSequences[state.subtypeIndex] 
+        : null;
+    
+    // Get all other sequences (excluding REF and SUBTYPE)
+    const otherSeqs = [];
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (i !== state.refIndex && i !== state.subtypeIndex) {
+            otherSeqs.push({
+                index: i,
+                seq: state.rawSequences[i]
+            });
+        }
+    }
+    
+    // Sort other sequences by name
+    otherSeqs.sort((a, b) => {
+        const nameA = a.seq.name || '';
+        const nameB = b.seq.name || '';
+        return nameA.localeCompare(nameB);
+    });
+    
+    // Rebuild sequence list: REF at 0, SUBTYPE at 1, then sorted others
+    const newSequences = [refSeq];
+    if (subtypeSeq && subtypeSeq !== refSeq) {
+        newSequences.push(subtypeSeq);
+    }
+    otherSeqs.forEach(item => {
+        if (item.seq !== refSeq && item.seq !== subtypeSeq) {
+            newSequences.push(item.seq);
+        }
+    });
+    
+    state.rawSequences = newSequences;
+    
+    // Update indices
+    state.refIndex = 0;
+    if (subtypeSeq && subtypeSeq !== refSeq) {
+        state.subtypeIndex = 1;
+    } else {
+        // If subtype was the same as ref, find it in the new list
+        const subtypeName = subtypeSeq ? subtypeSeq.name : null;
+        if (subtypeName) {
+            const newSubtypeIdx = state.rawSequences.findIndex(s => s.name === subtypeName);
+            state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : 1;
+        } else {
+            state.subtypeIndex = newSequences.length > 1 ? 1 : 0;
+        }
+    }
+    
+    // Recalculate view sequences
+    state.viewSequences = [...state.rawSequences];
+    
+    // Recalculate names width
+    calculateNamesWidth();
+    
+    // Re-render
+    recalc();
+}
+
+// --- Group Sequences by Name Field ---
+function showGroupModal() {
+    if (state.rawSequences.length === 0) {
+        alert("No sequences to group.");
+        return;
+    }
+    document.getElementById('group-overlay').style.display = 'flex';
+}
+
+function runGroupTask() {
+    const delimiter = document.getElementById('inp-group-delimiter').value || '_';
+    const fieldNumOneBased = parseInt(document.getElementById('inp-group-field').value) || 3;
+    
+    if (delimiter.length === 0) {
+        alert("Please specify a delimiter character.");
+        return;
+    }
+    
+    if (fieldNumOneBased < 1) {
+        alert("Field number must be at least 1.");
+        return;
+    }
+    
+    // Convert 1-based field number to 0-based array index
+    const fieldNum = fieldNumOneBased - 1;
+    
+    document.getElementById('group-overlay').style.display = 'none';
+    
+    // Save state for undo
+    saveState();
+    
+    // Remove tree if it exists
+    state.tree = null;
+    setTreeWidth(0);
+    if (dom.btnHistogram) {
+        dom.btnHistogram.disabled = true;
+    }
+    if (dom.btnMds) {
+        dom.btnMds.disabled = true;
+    }
+    
+    // Group sequences by the specified field
+    const nameToGroup = new Map();
+    const groupToColor = new Map();
+    
+    let groupId = 0;
+    const groupNames = new Map(); // Map from group value to group ID
+    const groupIdToValue = new Map(); // Map from group ID to group value (for legend)
+    
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        // Exclude REF and SUBTYPE
+        if (i === state.refIndex || i === state.subtypeIndex) {
+            continue;
+        }
+        
+        const seq = state.rawSequences[i];
+        const name = seq.name || '';
+        
+        // Split by delimiter
+        const fields = name.split(delimiter);
+        
+        if (fields.length > fieldNum) {
+            const groupValue = fields[fieldNum];
+            
+            // Get or create group ID for this group value
+            if (!groupNames.has(groupValue)) {
+                groupNames.set(groupValue, groupId);
+                groupToColor.set(groupId, GROUP_COLORS[groupId % GROUP_COLORS.length]);
+                groupIdToValue.set(groupId, groupValue);
+                groupId++;
+            }
+            
+            const gId = groupNames.get(groupValue);
+            nameToGroup.set(name, gId);
+        }
+    }
+    
+    // Store grouping in state
+    state.sequenceGroups = nameToGroup;
+    state.groupDelimiter = delimiter;
+    state.groupFieldNum = fieldNumOneBased; // Store 1-based field number
+    state.groupNames = groupIdToValue; // Store group ID to value mapping for legend
+    
+    // Update legend
+    updateColorLegend();
+    
+    // Re-render
+    recalc();
+}
+
+// --- Add Founder Sequence ---
+function showSubtypeModal() {
+    if (!state.sequenceGroups || state.groupNames.size === 0) {
+        alert("Please group sequences first before adding a founder sequence.");
+        return;
+    }
+    
+    // Populate group selector
+    const select = document.getElementById('sel-subtype-group');
+    select.innerHTML = '<option value="">-- Select a group --</option>';
+    
+    // Sort groups alphabetically by value
+    const groupEntries = Array.from(state.groupNames.entries()).sort((a, b) => {
+        const valA = a[1] || '';
+        const valB = b[1] || '';
+        return valA.localeCompare(valB);
+    });
+    
+    groupEntries.forEach(([groupId, groupValue]) => {
+        const option = document.createElement('option');
+        option.value = groupId.toString();
+        option.textContent = groupValue || `Group ${groupId}`;
+        select.appendChild(option);
+    });
+    
+    document.getElementById('subtype-overlay').style.display = 'flex';
+}
+
+function calculateFounder(sequences) {
+    if (sequences.length === 0) return null;
+    
+    const founder = [];
+    const maxLength = Math.max(...sequences.map(s => s.length));
+    
+    for (let pos = 0; pos < maxLength; pos++) {
+        const counts = {};
+        let total = 0;
+        
+        sequences.forEach(seq => {
+            if (pos < seq.length) {
+                const char = seq[pos].toUpperCase();
+                if (char !== '-') {
+                    counts[char] = (counts[char] || 0) + 1;
+                    total++;
+                }
+            }
+        });
+        
+        if (total === 0) {
+            founder.push('-');
+        } else {
+            // Find the most common character
+            let maxCount = 0;
+            let founderChar = '-';
+            
+            for (const [char, count] of Object.entries(counts)) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    founderChar = char;
+                }
+            }
+            
+            // If there's a tie, prefer non-gap characters
+            if (founderChar === '-' && Object.keys(counts).length > 0) {
+                founderChar = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+            }
+            
+            founder.push(founderChar);
+        }
+    }
+    
+    return founder;
+}
+
+function applySubtypeFounder() {
+    const select = document.getElementById('sel-subtype-group');
+    const selectedGroupId = parseInt(select.value);
+    
+    if (isNaN(selectedGroupId)) {
+        alert("Please select a group.");
+        return;
+    }
+    
+    // Get group value for naming
+    const groupValue = state.groupNames.get(selectedGroupId) || `group${selectedGroupId}`;
+    
+    // Find all sequences in the selected group
+    const groupSequences = [];
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (i === state.refIndex || i === state.subtypeIndex) continue; // Exclude REF and subtype
+        
+        const seq = state.rawSequences[i];
+        const groupId = state.sequenceGroups.get(seq.name);
+        
+        if (groupId === selectedGroupId) {
+            // Get the sequence array
+            const seqArr = state.isAASequence ? state.viewSequences[i].seq : state.rawSequences[i].seq;
+            groupSequences.push(seqArr);
+        }
+    }
+    
+    if (groupSequences.length === 0) {
+        alert("No sequences found in the selected group.");
+        return;
+    }
+    
+    // Calculate founder
+    const founder = calculateFounder(groupSequences);
+    
+    if (!founder) {
+        alert("Failed to calculate founder sequence.");
+        return;
+    }
+    
+    // Save state for undo
+    saveState();
+    
+    // Remove tree if present (user will need to infer again)
+    if (state.tree) {
+        state.tree = null;
+        setTreeWidth(0);
+        if (dom.btnHistogram) {
+            dom.btnHistogram.disabled = true;
+        }
+        if (dom.btnMds) {
+            dom.btnMds.disabled = true;
+        }
+        state.leafClusters = null; // Clear clusters
+        updateColorLegend();
+    }
+    
+    // Create new founder sequence
+    const founderSeq = {
+        name: `consensus_of_${groupValue}`,
+        seq: [...founder]
+    };
+    
+    // Insert after subtype (at index subtypeIndex + 1)
+    const insertIndex = state.subtypeIndex + 1;
+    state.rawSequences.splice(insertIndex, 0, founderSeq);
+    
+    // Update view sequences
+    state.viewSequences = [...state.rawSequences];
+    
+    // Recalculate names width
+    calculateNamesWidth();
+    
+    // Close modal
+    document.getElementById('subtype-overlay').style.display = 'none';
+    
+    // Re-render
+    recalc();
+}
+
+// --- Color Legend ---
+function updateColorLegend() {
+    const legend = document.getElementById('color-legend');
+    const groupsContent = document.getElementById('legend-groups-content');
+    const clustersContent = document.getElementById('legend-clusters-content');
+    const groupsSection = document.getElementById('legend-groups');
+    const clustersSection = document.getElementById('legend-clusters');
+    
+    if (!legend || !groupsContent || !clustersContent) return;
+    
+    // Clear existing content
+    groupsContent.innerHTML = '';
+    clustersContent.innerHTML = '';
+    
+    let hasGroups = false;
+    let hasClusters = false;
+    
+    // Update groups legend
+    if (state.sequenceGroups && state.groupNames) {
+        hasGroups = true;
+        // Sort by group value alphabetically (not by group ID)
+        const groupEntries = Array.from(state.groupNames.entries()).sort((a, b) => {
+            const valA = a[1] || '';
+            const valB = b[1] || '';
+            return valA.localeCompare(valB);
+        });
+        
+        groupEntries.forEach(([groupId, groupValue]) => {
+            const color = GROUP_COLORS[groupId % GROUP_COLORS.length];
+            const item = document.createElement('div');
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '8px';
+            item.style.marginBottom = '4px';
+            
+            const colorBox = document.createElement('div');
+            colorBox.style.width = '16px';
+            colorBox.style.height = '16px';
+            colorBox.style.backgroundColor = color;
+            colorBox.style.border = '1px solid #d1d5db';
+            colorBox.style.borderRadius = '3px';
+            
+            const label = document.createElement('span');
+            label.textContent = groupValue || `Group ${groupId}`;
+            label.style.color = '#374151';
+            
+            item.appendChild(colorBox);
+            item.appendChild(label);
+            groupsContent.appendChild(item);
+        });
+    }
+    
+    // Update clusters legend
+    if (state.leafClusters) {
+        const clusterIds = new Set();
+        state.leafClusters.forEach(clusterId => {
+            if (clusterId !== -1) {
+                clusterIds.add(clusterId);
+            }
+        });
+        
+        if (clusterIds.size > 0) {
+            hasClusters = true;
+            const sortedClusterIds = Array.from(clusterIds).sort((a, b) => a - b);
+            
+            sortedClusterIds.forEach(clusterId => {
+                const color = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.gap = '8px';
+                item.style.marginBottom = '4px';
+                
+                const colorBox = document.createElement('div');
+                colorBox.style.width = '16px';
+                colorBox.style.height = '16px';
+                colorBox.style.backgroundColor = color;
+                colorBox.style.border = '1px solid #d1d5db';
+                colorBox.style.borderRadius = '3px';
+                
+                const label = document.createElement('span');
+                label.textContent = `Cluster ${clusterId}`;
+                label.style.color = '#374151';
+                
+                item.appendChild(colorBox);
+                item.appendChild(label);
+                clustersContent.appendChild(item);
+            });
+            
+            // Add noise entry if present
+            const hasNoise = Array.from(state.leafClusters.values()).includes(-1);
+            if (hasNoise) {
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.gap = '8px';
+                item.style.marginBottom = '4px';
+                
+                const colorBox = document.createElement('div');
+                colorBox.style.width = '16px';
+                colorBox.style.height = '16px';
+                colorBox.style.backgroundColor = '#9ca3af';
+                colorBox.style.border = '1px solid #d1d5db';
+                colorBox.style.borderRadius = '3px';
+                
+                const label = document.createElement('span');
+                label.textContent = 'Noise';
+                label.style.color = '#374151';
+                
+                item.appendChild(colorBox);
+                item.appendChild(label);
+                clustersContent.appendChild(item);
+            }
+        }
+    }
+    
+    // Show/hide sections and legend
+    groupsSection.style.display = hasGroups ? 'block' : 'none';
+    clustersSection.style.display = hasClusters ? 'block' : 'none';
+    legend.style.display = (hasGroups || hasClusters) ? 'block' : 'none';
+}
+
+// --- URL Parameter Loading ---
+function loadFromURLParams() {
+    const params = new URLSearchParams(window.location.search);
+    const alignmentURL = params.get('alignment');
+    const treeURL = params.get('tree');
+    
+    if (alignmentURL) {
+        showOverlay(true);
+        dom.overlayMsg.textContent = "Loading alignment...";
+        
+        fetch(alignmentURL)
+            .then(response => {
+                if (!response.ok) throw new Error(`Failed to fetch alignment: ${response.status}`);
+                return response.text();
+            })
+            .then(text => {
+                const name = alignmentURL.toLowerCase();
+                const isFastq = name.endsWith('.fastq') || name.endsWith('.fq');
+                if (isFastq) parseFastq(text);
+                else parseFasta(text);
+                
+                // After alignment loads, try to load tree if specified
+                if (treeURL) {
+                    loadTreeFromURL(treeURL);
+                }
+            })
+            .catch(err => {
+                console.error("Error loading alignment:", err);
+                alert("Failed to load alignment from URL: " + err.message);
+                showOverlay(false);
+            });
+    }
+}
+
+function loadTreeFromURL(url) {
+    dom.overlayMsg.textContent = "Loading tree...";
+    
+    fetch(url)
+        .then(response => {
+            if (!response.ok) throw new Error(`Failed to fetch tree: ${response.status}`);
+            return response.text();
+        })
+        .then(text => {
+            parseTree(text, false, false); // Don't reroot when loading from file
+        })
+        .catch(err => {
+            console.error("Error loading tree:", err);
+            alert("Failed to load tree from URL: " + err.message);
+            showOverlay(false);
+        });
+}
+
+// --- Infer Tree Logic ---
+function showInferModal() {
+    if (!state.rawSequences || state.rawSequences.length < 2) {
+        alert("Need at least 2 sequences to infer a tree.");
+        return;
+    }
+    document.getElementById('infer-overlay').style.display = 'flex';
+}
+
+function runInferTask() {
+    const method = document.getElementById('sel-infer-method').value;
+    document.getElementById('infer-overlay').style.display = 'none';
+
+    if (method === 'nj') {
+        inferTreeNJ();
+    } else {
+        runFastTreeTask();
+    }
+}
+
+function inferTreeNJ() {
+    const startTime = performance.now();
+    showOverlay(true);
+    dom.overlayMsg.textContent = "Inferring phylogeny...";
+    dom.overlaySub.textContent = "Calculating distances and building NJ tree";
+    
+    setTimeout(() => {
+        try {
+            // Exclude reference sequence from tree inference
+            const refName = state.rawSequences[state.refIndex]?.name;
+            const nonRefSequences = state.rawSequences.filter((s, idx) => idx !== state.refIndex);
+            
+            if (nonRefSequences.length < 2) {
+                alert("Need at least 2 non-reference sequences to infer a tree.");
+                showOverlay(false);
+                return;
+            }
+            
+            // Extract sequences (strip gaps for distance calculation)
+            const labels = nonRefSequences.map(s => s.name);
+            const seqs = nonRefSequences.map(s => s.seq.join(''));
+            
+            // Use PhyloTools to generate the Newick tree
+            const newick = PhyloTools.generatePhylogeny(seqs, labels);
+            
+            // Parse the generated tree (don't auto-reroot)
+            parseTree(newick, false, false);
+            
+            const endTime = performance.now();
+            const executionTime = ((endTime - startTime) / 1000).toFixed(2);
+            console.log(`NJ Tree Inference completed in ${executionTime} seconds`);
+        } catch (err) {
+            console.error("Error inferring tree:", err);
+            alert("Failed to infer tree: " + err.message);
+            showOverlay(false);
+        }
+    }, 50);
+}
+
+async function runFastTreeTask() {
+    const startTime = performance.now();
+    
+    if (!state.aioliCLI) {
+        alert("FastTree (bioWASM) is not yet initialized. Please wait or refresh.");
+        return;
+    }
+
+    showOverlay(true);
+    dom.overlayMsg.textContent = "Inferring phylogeny with FastTree...";
+    dom.overlaySub.textContent = "via bioWASM";
+
+    try {
+        // Exclude reference sequence from tree inference
+        const nonRefSequences = state.rawSequences.filter((s, idx) => idx !== state.refIndex);
+        
+        if (nonRefSequences.length < 2) {
+            alert("Need at least 2 non-reference sequences to infer a tree.");
+            showOverlay(false);
+            return;
+        }
+        
+        // Use indices as temporary names to avoid truncation/special character issues
+        // Map original indices to new indices (excluding ref)
+        const indexMap = new Map();
+        let newIdx = 0;
+        state.rawSequences.forEach((s, origIdx) => {
+            if (origIdx !== state.refIndex) {
+                indexMap.set(newIdx, origIdx);
+                newIdx++;
+            }
+        });
+        
+        const fastaInput = nonRefSequences.map((s, idx) => {
+            return `>${idx}\n${s.seq.join('')}`;
+        }).join('\n');
+        
+        await state.aioliCLI.mount({
+            name: "input_tree.fa",
+            data: fastaInput
+        });
+
+        const isAA = (state.mode === 'AA');
+        
+        // Build flags array to ensure proper spacing
+        const flagArray = [];
+        
+        // Suppress support values to avoid confusion with sequence indices
+        flagArray.push("-nosupport");
+        
+        if (!isAA) {
+            flagArray.push("-nt");
+        }
+        
+        const aaModel = document.getElementById('sel-ft-aa-model').value;
+        const ntModel = document.getElementById('sel-ft-nt-model').value;
+        const speed = document.getElementById('sel-ft-speed').value;
+        
+        // Only add model flags if they have values and are not empty strings
+        if (isAA && aaModel && aaModel.trim() !== '') {
+            flagArray.push(aaModel.trim());
+        } else if (!isAA && ntModel && ntModel.trim() !== '') {
+            flagArray.push(ntModel.trim());
+        }
+        
+        // Only add speed flag if it has a value and is not empty string
+        if (speed && speed.trim() !== '') {
+            flagArray.push(speed.trim());
+        }
+        
+        const trimmedFlags = flagArray.join(" ");
+
+        const command = `fasttree ${trimmedFlags} input_tree.fa`;
+        
+        // Log FastTree parameters
+        console.log("=== FastTree Parameters ===");
+        console.log(`Sequences: ${nonRefSequences.length} (reference sequence excluded)`);
+        console.log(`Mode: ${isAA ? 'AA' : 'NT'}`);
+        console.log(`AA Model: ${aaModel || 'Default (JTT)'}`);
+        console.log(`NT Model: ${ntModel || 'Default (Jukes-Cantor)'}`);
+        console.log(`Speed: ${speed || 'Default'}`);
+        console.log(`Flags: ${trimmedFlags || '(none)'}`);
+        console.log(`Full Command: ${command}`);
+        console.log(`Flag Array: [${flagArray.join(', ')}]`);
+        console.log("===========================");
+        
+        const output = await state.aioliCLI.exec(command);
+        
+        // FastTree outputs multiple lines - extract the Newick string (usually the last line with parentheses)
+        const lines = output.split(/\r?\n/);
+        let newick = null;
+        for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (line.includes('(') && line.includes(')')) {
+                newick = line;
+                break;
+            }
+        }
+        
+        // Check if FastTree showed help (indicates command error)
+        if (output.includes("FastTree accepts alignments") || output.includes("Common options")) {
+            console.error("ERROR: FastTree showed help message instead of running. Command may be invalid.");
+            console.error("This usually means FastTree didn't recognize the command syntax.");
+        }
+        
+        if (newick && newick.includes('(')) {
+            // Remove trailing semicolon if present
+            if (newick.endsWith(';')) {
+                newick = newick.slice(0, -1);
+            }
+            // Map back to original sequence names (excluding ref)
+            state.tempNameMap = nonRefSequences.map(s => s.name);
+            parseTree(newick, true, false); // isIndexed=true, shouldReroot=false
+            
+            const endTime = performance.now();
+            const executionTime = ((endTime - startTime) / 1000).toFixed(2);
+            console.log(`FastTree Inference completed in ${executionTime} seconds`);
+        } else {
+            throw new Error("Invalid Newick output from FastTree.");
+        }
+    } catch (err) {
+        console.error("FastTree error:", err);
+        alert("FastTree failed: " + err.message);
+        showOverlay(false);
+    }
+}
+
+// --- Export Tree as Newick ---
+function exportTree() {
+    if (!state.tree || !state.tree.root) {
+        alert("No tree to export. Load or infer a tree first.");
+        return;
+    }
+    
+    const newick = treeToNewick(state.tree.root) + ';';
+    
+    // Download as file
+    const blob = new Blob([newick], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tree.nwk";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// --- Convert tree structure back to Newick format ---
+function treeToNewick(node) {
+    if (!node.children || node.children.length === 0) {
+        // Leaf node
+        const name = node.name || '';
+        const len = (node.len !== undefined && node.len !== 0) ? `:${node.len.toFixed(5)}` : '';
+        return name + len;
+    } else {
+        // Internal node
+        const childStrs = node.children.map(c => treeToNewick(c));
+        const name = node.name || '';
+        const len = (node.len !== undefined && node.len !== 0) ? `:${node.len.toFixed(5)}` : '';
+        return `(${childStrs.join(',')})${name}${len}`;
+    }
+}
+
+function parseFastq(text) {
+    const lines = text.split(/\r?\n/);
+    const seqs = [];
+    for(let i=0; i<lines.length; i++) {
+        const line = lines[i].trim();
+        if(!line) continue;
+        if(line.startsWith('@')) {
+            const name = line.substring(1); 
+            if(i + 1 < lines.length) {
+                const seqStr = lines[i+1].trim().toUpperCase().replace(/[^A-Z-]/g, '');
+                seqs.push({ name: name, seq: seqStr.split('') });
+                i += 3; 
+            }
+        }
+    }
+    finalizeLoad(seqs);
+}
+
+function parseFasta(text) {
+    const lines = text.split(/\r?\n/);
+    const seqs = [];
+    let name = null, buf = [];
+    for(let line of lines) {
+        line = line.trim();
+        if(!line) continue;
+        if(line.startsWith('>')) {
+            if(name) seqs.push({name, seq: buf.join('').split('')});
+            name = line.substring(1).trim();
+            buf = [];
+        } else {
+            buf.push(line.toUpperCase().replace(/[^A-Z-]/g, ''));
+        }
+    }
+    if(name) seqs.push({name, seq: buf.join('').split('')});
+    finalizeLoad(seqs);
+}
+
+function detectSequenceType(seqs) {
+    if (!seqs || seqs.length === 0) return 'NT'; // Default to NT if no sequences
+    
+    // Get all unique characters from all sequences (excluding gaps)
+    const allChars = new Set();
+    seqs.forEach(s => {
+        if (s.seq) {
+            s.seq.forEach(char => {
+                if (char !== '-' && char !== 'N' && char !== 'X') {
+                    allChars.add(char.toUpperCase());
+                }
+            });
+        }
+    });
+    
+    // Amino acid specific characters (not in standard nucleotide alphabet)
+    // Standard nucleotides: A, C, G, T, U
+    // IUPAC nucleotides: R, Y, M, K, S, W, B, D, H, V, N
+    // Amino acids have: E, F, I, L, P, Q, W, Y (some overlap with IUPAC, but W and Y are in both)
+    // Clear AA-only: E, F, I, L, P, Q
+    const aaOnlyChars = new Set(['E', 'F', 'I', 'L', 'P', 'Q']);
+    
+    // Check if we have any AA-only characters
+    let hasAAOnly = false;
+    for (const char of allChars) {
+        if (aaOnlyChars.has(char)) {
+            hasAAOnly = true;
+            break;
+        }
+    }
+    
+    // Also check for common AA characters that might indicate AA alignment
+    // If we have many characters that are in AA color map but not typical nucleotides
+    const aaChars = new Set(['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V', '*']);
+    const ntChars = new Set(['A', 'C', 'G', 'T', 'U', 'R', 'Y', 'M', 'K', 'S', 'W', 'B', 'D', 'H', 'V', 'N']);
+    
+    let aaCharCount = 0;
+    let ntCharCount = 0;
+    for (const char of allChars) {
+        if (aaChars.has(char)) aaCharCount++;
+        if (ntChars.has(char)) ntCharCount++;
+    }
+    
+    // If we have AA-only characters, definitely AA
+    if (hasAAOnly) {
+        return 'AA';
+    }
+    
+    // If we have characters that are AA but not NT, likely AA
+    // But be conservative - if it could be NT, assume NT
+    // Only return AA if we're very confident
+    
+    // For now, if we have AA-only chars, return AA, otherwise NT
+    return hasAAOnly ? 'AA' : 'NT';
+}
+
+function finalizeLoad(seqs) {
+    state.rawSequences = seqs;
+    state.selection = null;
+    state.history = [];
+    state.tree = null;
+    state.refIndex = 0; 
+    state.subtypeIndex = (seqs.length > 1) ? 1 : 0; // Second sequence is subtype, or first if only one sequence
+    
+    // Store original subtype
+    if (state.subtypeIndex >= 0 && state.subtypeIndex < seqs.length) {
+        state.originalSubtype = JSON.parse(JSON.stringify(seqs[state.subtypeIndex]));
+    }
+    
+    state.pastedNameCounter = state.rawSequences.length + 1;
+    
+    // Detect sequence type and set mode accordingly
+    const detectedType = detectSequenceType(seqs);
+    if (detectedType === 'AA') {
+        // If AA detected, set to AA mode and disable NT button
+        state.isAASequence = true; // Mark that sequences are already AA
+        setMode('AA', true); // Pass flag to disable NT
+    } else {
+        // Default to NT mode
+        state.isAASequence = false; // Sequences are DNA
+        setMode('NT', false);
+    }
+    
+    // Calculate and set names panel width to accommodate all names
+    calculateNamesWidth();
+    
+    setTreeWidth(0);
+    recalc();
+    showOverlay(false);
+}
+
+// --- Tree Rerooting ---
+function showRerootModal() {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    
+    // Check if subtype exists
+    const hasSubtype = state.subtypeIndex < state.rawSequences.length;
+    
+    // Check if founder exists
+    let hasFounder = false;
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (state.rawSequences[i].name && state.rawSequences[i].name.startsWith('consensus_of_')) {
+            hasFounder = true;
+            break;
+        }
+    }
+    
+    const select = document.getElementById('sel-reroot-target');
+    select.innerHTML = '';
+    
+    // Add founder first (default selection)
+    if (hasFounder) {
+        const option = document.createElement('option');
+        option.value = 'founder';
+        option.textContent = '[Founder]';
+        option.selected = true; // Make founder the default
+        select.appendChild(option);
+    }
+    
+    // Add subtype second
+    if (hasSubtype) {
+        const option = document.createElement('option');
+        option.value = 'subtype';
+        option.textContent = '[SUBTYPE]';
+        select.appendChild(option);
+    }
+    
+    if (!hasSubtype && !hasFounder) {
+        alert("No subtype or founder sequence found. Please add a founder sequence or ensure the subtype is present.");
+        return;
+    }
+    
+    document.getElementById('reroot-overlay').style.display = 'flex';
+}
+
+function runRerootTask() {
+    const target = document.getElementById('sel-reroot-target').value;
+    document.getElementById('reroot-overlay').style.display = 'none';
+    
+    if (target === 'subtype') {
+        rerootTreeOnTarget('subtype');
+    } else if (target === 'founder') {
+        rerootTreeOnTarget('founder');
+    }
+}
+
+function rerootTreeOnTarget(targetType) {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    
+    let targetName;
+    let targetIndex;
+    
+    if (targetType === 'subtype') {
+        if (state.subtypeIndex >= state.rawSequences.length) {
+            alert("No subtype sequence found. Subtype should be the second sequence in the alignment.");
+            return;
+        }
+        targetIndex = state.subtypeIndex;
+        targetName = state.rawSequences[targetIndex].name;
+    } else if (targetType === 'founder') {
+        // Find founder sequence
+        targetIndex = -1;
+        for (let i = 0; i < state.rawSequences.length; i++) {
+            if (state.rawSequences[i].name && state.rawSequences[i].name.startsWith('consensus_of_')) {
+                targetIndex = i;
+                targetName = state.rawSequences[i].name;
+                break;
+            }
+        }
+        if (targetIndex === -1) {
+            alert("No founder sequence found.");
+            return;
+        }
+    } else {
+        alert("Invalid target type.");
+        return;
+    }
+    saveState();
+    
+    // Find the subtype node first - prefer leaf nodes (actual sequences) over internal nodes with same name
+    // Collect all nodes with matching name, then return the leaf one
+    function findAllNodes(node, name, depth = 0, results = []) {
+        if (node.name === name) {
+            const isLeaf = !node.children || node.children.length === 0;
+            results.push({ node, depth, isLeaf });
+        }
+        for (const child of node.children) {
+            findAllNodes(child, name, depth + 1, results);
+        }
+        return results;
+    }
+    
+    const allTargetNodes = findAllNodes(state.tree.root, targetName);
+    
+    // Prefer the leaf node (actual sequence)
+    const leafTarget = allTargetNodes.find(r => r.isLeaf);
+    const targetResult = leafTarget || allTargetNodes[0];
+    
+    if (!targetResult) {
+        const targetLabel = targetType === 'subtype' ? 'Subtype' : 'Founder';
+        alert(`${targetLabel} sequence "${targetName}" not found in tree.`);
+        return;
+    }
+    
+    const targetNode = targetResult.node;
+    const targetDepth = targetResult.depth;
+    const isLeaf = targetResult.isLeaf;
+    
+    if (!isLeaf) {
+        const targetLabel = targetType === 'subtype' ? 'Subtype' : 'Founder';
+        console.warn(`WARNING: ${targetLabel} "${targetName}" is an internal node, not a leaf! This may cause issues.`);
+        console.warn(`${targetLabel} node children: ${targetNode.children.map(c => `${c.name || '(unnamed)'}`).join(', ')}`);
+    }
+    
+    // Find the actual parent by traversing the tree structure (don't trust parent reference)
+    function findActualParent(node, target, currentParent = null, depth = 0) {
+        if (node === target) {
+            return { parent: currentParent, depth };
+        }
+        for (const child of node.children) {
+            const found = findActualParent(child, target, node, depth + 1);
+            if (found !== null) return found;
+        }
+        return null;
+    }
+    
+    const actualParentResult = findActualParent(state.tree.root, targetNode);
+    if (!actualParentResult) {
+        const targetLabel = targetType === 'subtype' ? 'Subtype' : 'Founder';
+        console.error(`ERROR: Could not find actual parent of ${targetLabel.toLowerCase()} by tree traversal!`);
+        alert(`Could not determine ${targetLabel.toLowerCase()}'s parent in tree structure.`);
+        return;
+    }
+    
+    const actualParent = actualParentResult.parent;
+    const parentDepth = actualParentResult.depth;
+    
+    if (actualParent) {
+        // Update parent reference to match actual structure
+        if (targetNode.parent !== actualParent) {
+            targetNode.parent = actualParent;
+        }
+    }
+    
+    // Check if target is actually in root's children
+    const targetInRoot = state.tree.root.children.some(c => c === targetNode);
+    
+    if (targetInRoot) {
+        // Target is a direct child of root - just adjust branch lengths, no rerooting needed
+        const targetBranchLength = targetNode.len || 0;
+        const otherChildren = state.tree.root.children.filter(c => c !== targetNode);
+        
+        if (otherChildren.length > 0 && targetBranchLength > 0) {
+            // Distribute 1% of target's branch length evenly among other children
+            const lengthToDistribute = targetBranchLength * 0.01;
+            const lengthPerChild = lengthToDistribute / otherChildren.length;
+            otherChildren.forEach(child => {
+                child.len = (child.len || 0) + lengthPerChild;
+            });
+        }
+        
+        // Set target's branch length to 0
+        targetNode.len = 0;
+        
+        // Recalculate tree layout
+        let totalLen = 0;
+        function checkLen(n) { totalLen += (n.len || 0); n.children.forEach(checkLen); }
+        checkLen(state.tree.root);
+        
+        const useCladogram = (totalLen === 0);
+        let maxDepth = 0;
+        
+        function layoutX(node, currentDepth) {
+            let dist = useCladogram ? (node === state.tree.root ? 0 : 1) : (node.len || 0);
+            node.xDepth = currentDepth + dist;
+            if(node.xDepth > maxDepth) maxDepth = node.xDepth;
+            node.children.forEach(c => layoutX(c, node.xDepth));
+        }
+        
+        layoutX(state.tree.root, 0);
+        state.tree.maxDepth = maxDepth;
+        state.tree.useCladogram = useCladogram;
+        
+        recalc();
+        return; // Exit early since we've handled this case
+    }
+    
+    // Reroot on the parent of the subtype node (avoid rerooting on a leaf)
+    if (!actualParent || actualParent === state.tree.root) {
+        // If actual parent is root, we can't reroot on it
+        // Just adjust branch lengths
+    }
+    
+    const parentNode = actualParent;
+    const parentName = parentNode.name || '(unnamed internal node)';
+    
+    let newRoot;
+    
+    // If parent is already the root, we can't reroot on it (would do nothing)
+    if (parentNode === state.tree.root) {
+        newRoot = state.tree.root;
+    } else {
+        // Reroot directly on the parent node object (not by name, since it may be unnamed)
+        try {
+            newRoot = rerootTree(state.tree.root, parentNode, targetType);
+            state.tree.root = newRoot;
+        } catch (error) {
+            console.error(`ERROR in rerootTree:`, error);
+            alert(`Error during rerooting: ${error.message}`);
+            return;
+        }
+    }
+    
+    // Recalculate tree layout
+    let totalLen = 0;
+    function checkLen(n) { totalLen += (n.len || 0); n.children.forEach(checkLen); }
+    checkLen(newRoot);
+    
+    const useCladogram = (totalLen === 0);
+    let maxDepth = 0;
+    
+    function layoutX(node, currentDepth) {
+        let dist = useCladogram ? (node === newRoot ? 0 : 1) : (node.len || 0);
+        node.xDepth = currentDepth + dist;
+        if(node.xDepth > maxDepth) maxDepth = node.xDepth;
+        node.children.forEach(c => layoutX(c, node.xDepth));
+    }
+    
+    layoutX(newRoot, 0);
+    state.tree.maxDepth = maxDepth;
+    state.tree.useCladogram = useCladogram;
+    
+    // Adjust branch lengths: find target and if it's a direct child of new root,
+    // set its branch length to 0 and distribute 1% of its length to other children
+    function findTargetNodeInTree(node) {
+        if (node.name === targetName && (!node.children || node.children.length === 0)) {
+            return node; // Found leaf node with target name
+        }
+        for (const child of node.children) {
+            const found = findTargetNodeInTree(child);
+            if (found) return found;
+        }
+        return null;
+    }
+    
+    const targetNodeAfterReroot = findTargetNodeInTree(newRoot);
+    if (targetNodeAfterReroot && targetNodeAfterReroot.parent === newRoot) {
+        const targetBranchLength = targetNodeAfterReroot.len || 0;
+        const otherChildren = newRoot.children.filter(c => c !== targetNodeAfterReroot);
+        
+        if (otherChildren.length > 0 && targetBranchLength > 0) {
+            // Distribute 1% of target's branch length evenly among other children
+            const lengthToDistribute = targetBranchLength * 0.01;
+            const lengthPerChild = lengthToDistribute / otherChildren.length;
+            otherChildren.forEach(child => {
+                child.len = (child.len || 0) + lengthPerChild;
+            });
+        }
+        
+        // Set target's branch length to 0
+        targetNodeAfterReroot.len = 0;
+        
+        // Recalculate layout again after branch length adjustment
+        totalLen = 0;
+        checkLen(newRoot);
+        const useCladogram2 = (totalLen === 0);
+        maxDepth = 0;
+        layoutX(newRoot, 0);
+        state.tree.maxDepth = maxDepth;
+        state.tree.useCladogram = useCladogram2;
+    }
+    
+    recalc();
+}
+
+function rerootTree(root, targetNode, targetType = 'subtype') {
+    // If targetNode is a string (name), find the node first
+    if (typeof targetNode === 'string') {
+        function findNode(node, name) {
+            if (node.name === name) {
+                return node;
+            }
+            for (const child of node.children) {
+                const found = findNode(child, name);
+                if (found) return found;
+            }
+            return null;
+        }
+        const foundNode = findNode(root, targetNode);
+        if (!foundNode) {
+            console.warn(`Node "${targetNode}" not found in tree. Tree not rerooted.`);
+            return root;
+        }
+        targetNode = foundNode;
+    }
+    
+    // If target is already the root, no need to reroot
+    if (targetNode === root) {
+        return root;
+    }
+    
+    // Ensure parent references are set correctly by traversing the tree
+    function setParentReferences(node, parent = null) {
+        node.parent = parent;
+        if (node.children) {
+            for (const child of node.children) {
+                setParentReferences(child, node);
+            }
+        }
+    }
+    setParentReferences(root, null);
+    
+    // Build path from target to root using tree traversal (more reliable than parent chain)
+    function findPathToRoot(target, rootNode) {
+        // First, find the path by traversing from root to target
+        function findPathFromRoot(node, targetNode, currentPath = []) {
+            if (node === targetNode) {
+                return [...currentPath, node];
+            }
+            if (node.children) {
+                for (const child of node.children) {
+                    const result = findPathFromRoot(child, targetNode, [...currentPath, node]);
+                    if (result) {
+                        return result;
+                    }
+                }
+            }
+            return null;
+        }
+        
+        const pathFromRoot = findPathFromRoot(rootNode, target);
+        if (!pathFromRoot) {
+            console.error(`ERROR: Could not find path from root to target node: ${target.name || '(unnamed)'}`);
+            return null;
+        }
+        
+        // Reverse the path to get path from target to root
+        return pathFromRoot.reverse();
+    }
+    
+    const path = findPathToRoot(targetNode, root);
+    if (!path) {
+        return root; // Can't reroot if path not found
+    }
+    
+    // Verify path is valid (target should be first, root should be last)
+    if (path[0] !== targetNode || path[path.length - 1] !== root) {
+        console.error(`ERROR: Invalid path structure! Path length: ${path.length}`);
+        return root;
+    }
+    
+    // Reverse the path to reroot, preserving branch lengths and all connections
+    // We need to reverse each edge in the path while preserving all other children
+    // Process from target (path[0]) to root (path[path.length-1])
+    for (let i = 0; i < path.length - 1; i++) {
+        const node = path[i];        // Current node in path
+        const parent = path[i + 1]; // Parent of current node
+        
+        // Store the branch length from node to parent
+        const branchLength = node.len || 0;
+        
+        // Remove node from parent's children array (if it's there)
+        if (parent.children) {
+            const parentChildIndex = parent.children.indexOf(node);
+            if (parentChildIndex !== -1) {
+                parent.children.splice(parentChildIndex, 1);
+            }
+        }
+        
+        // Initialize node.children if it doesn't exist (for leaf nodes)
+        if (!node.children) {
+            node.children = [];
+        }
+        
+        // Add parent to node's children (this reverses the edge)
+        // But only if parent is not already a child (avoid duplicates)
+        if (!node.children.includes(parent)) {
+            node.children.push(parent);
+        }
+        
+        // Update branch lengths
+        parent.len = branchLength; // The branch from node to parent becomes parent's length
+        if (i === 0) {
+            node.len = 0; // The new root has no branch length
+        }
+    }
+    
+    // Now update all parent references in one pass
+    // The new root (targetNode) has no parent
+    targetNode.parent = null;
+    
+    // For each node in the path (except the first which is the new root),
+    // set its parent to be the previous node in the path
+    for (let i = 1; i < path.length; i++) {
+        const node = path[i];
+        const newParent = path[i - 1];
+        node.parent = newParent;
+    }
+    
+    // Rebuild parent references for the entire tree to ensure consistency
+    function rebuildAllParentReferences(node, parent = null) {
+        node.parent = parent;
+        if (node.children) {
+            for (const child of node.children) {
+                rebuildAllParentReferences(child, node);
+            }
+        }
+    }
+    rebuildAllParentReferences(targetNode, null);
+    
+    // Verify tree structure after rerooting (simplified - just check parent-child consistency)
+    // Note: We don't check for cycles here as the tree structure should be valid after rerooting
+    // The depth limit is just a safety check
+    function verifyTreeStructure(node, depth = 0, issues = []) {
+        if (depth > 1000) {
+            // This is a very deep tree, but not necessarily an error
+            return issues;
+        }
+        
+        // Check parent-child consistency
+        if (node.children) {
+            for (const child of node.children) {
+                if (child.parent !== node) {
+                    issues.push(`Child "${child.name || '(unnamed)'}" parent mismatch at depth ${depth}`);
+                }
+                // Recursively verify child
+                verifyTreeStructure(child, depth + 1, issues);
+            }
+        }
+        
+        return issues;
+    }
+    
+    const structureIssues = verifyTreeStructure(targetNode);
+    if (structureIssues.length > 0) {
+        console.warn(`Tree structure issues after rerooting:`, structureIssues);
+        // Don't fail - just warn, as the tree might still be usable
+    }
+    
+    // Move root closer to subtype by adjusting branch lengths
+    // Find subtype node and if it's a direct child, set its branch length to 0
+    // and distribute its original length among other children
+    const subtypeName = state.rawSequences[state.subtypeIndex]?.name;
+    if (subtypeName) {
+        function findSubtypeInTree(node, name) {
+            if (node.name === name) {
+                return node;
+            }
+            for (const child of node.children) {
+                const found = findSubtypeInTree(child, name);
+                if (found) return found;
+            }
+            return null;
+        }
+        
+        const subtypeNode = findSubtypeInTree(targetNode, subtypeName);
+        if (subtypeNode && subtypeNode.parent === targetNode) {
+            // Subtype is a direct child of the new root
+            const subtypeBranchLength = subtypeNode.len || 0;
+            
+            // Get all other children of the root (excluding subtype)
+            const otherChildren = targetNode.children.filter(c => c !== subtypeNode);
+            
+            if (otherChildren.length > 0 && subtypeBranchLength > 0) {
+                // Distribute 1% of subtype's branch length evenly among other children
+                const lengthToDistribute = subtypeBranchLength * 0.01;
+                const lengthPerChild = lengthToDistribute / otherChildren.length;
+                
+                otherChildren.forEach(child => {
+                    const oldLength = child.len || 0;
+                    child.len = oldLength + lengthPerChild;
+                });
+            }
+            
+            // Set subtype's branch length to 0 (moves it closer to root)
+            subtypeNode.len = 0;
+        } else if (subtypeNode) {
+            // Subtype found but not a direct child of root - no adjustment needed
+        } else {
+            console.warn(`Subtype "${subtypeName}" not found in tree after rerooting`);
+        }
+    }
+    
+    // The target node is now the root
+    return targetNode;
+}
+
+// --- Newick Parser ---
+function parseTree(newick, isIndexed = false, shouldReroot = true) {
+    if(!state.rawSequences.length) {
+        alert("Please load sequences first.");
+        showOverlay(false);
+        return;
+    }
+    
+    saveState();
+
+    // FastTree output might contain multiple lines; the tree is usually the last line
+    let lines = newick.trim().split(/\r?\n/);
+    let s = lines[lines.length - 1].trim();
+    if(s.endsWith(';')) s = s.slice(0, -1);
+
+    // Remove Newick comments like [ ... ]
+    s = s.replace(/\[[^\]]*\]/g, '');
+
+    const tokens = s.split(/([(),:;])/).map(t => t.trim()).filter(t => t !== '');
+    
+    let stack = [];
+    let root = { children: [], name: null, len: 0 };
+    let current = root;
+
+    for(let i=0; i<tokens.length; i++) {
+        let t = tokens[i];
+        if(t === '(') {
+            let node = { children: [], name: null, len: 0, parent: current };
+            current.children.push(node);
+            stack.push(current);
+            current = node;
+        } else if (t === ',') {
+            if (stack.length > 0) {
+                current = stack[stack.length - 1];
+            } else {
+                current = root;
+            }
+            let node = { children: [], name: null, len: 0, parent: current };
+            current.children.push(node);
+            current = node;
+        } else if (t === ')') {
+            if (stack.length > 0) {
+                current = stack.pop();
+            } else {
+                current = root;
+            }
+        } else if (t === ':') {
+            i++;
+            let lenStr = tokens[i];
+            let val = parseFloat(lenStr);
+            if(current && !isNaN(val)) {
+                current.len = val;
+            } else if(current) {
+                // Invalid length value, default to 0
+                current.len = 0;
+            }
+        } else {
+            if (!current) continue;
+            let name = t.replace(/^['"]|['"]$/g, '');
+            const originalName = name;
+            const isInternalNode = current.children && current.children.length > 0;
+            
+            // Only apply name mapping for leaf nodes (actual sequences), not internal nodes
+            // Internal nodes may have support values (decimals like 0.796) which should not be mapped
+            if (isIndexed && state.tempNameMap && !isInternalNode) {
+                // Check if the name is a valid integer (not a decimal)
+                // FastTree outputs support values as decimals (e.g., 0.796) which should not be mapped
+                if (/^\d+$/.test(name)) {
+                const idx = parseInt(name);
+                if (!isNaN(idx) && idx >= 0 && idx < state.tempNameMap.length) {
+                    name = state.tempNameMap[idx];
+                    }
+                }
+            }
+            current.name = name;
+            
+            // Check if next token is a colon - if not, ensure branch length is 0
+            // (nodes are initialized with len: 0, but explicitly set it for clarity)
+            if (i + 1 < tokens.length && tokens[i + 1] !== ':') {
+                current.len = 0;
+            }
+        }
+    }
+    delete state.tempNameMap;
+
+    // If root has only one child and no name/length, that child is likely the real root
+    // BUT: Don't do this for FastTree if it would make leaves direct children of root
+    // (FastTree might have a different structure)
+    if (root.children.length === 1 && !root.name) {
+        const singleChild = root.children[0];
+        // Only collapse if the single child is not a leaf (has children)
+        // This prevents making leaf nodes direct children of root
+        if (singleChild.children && singleChild.children.length > 0) {
+            root = singleChild;
+            delete root.parent;
+            // Rebuild parent references after collapsing root
+            function rebuildParents(node, parent = null) {
+                node.parent = parent;
+                if (node.children) {
+                    for (const child of node.children) {
+                        rebuildParents(child, node);
+                    }
+                }
+            }
+            rebuildParents(root, null);
+            console.log(`Collapsed root: single child with ${singleChild.children.length} children`);
+        } else {
+            console.log(`Keeping root: single child is a leaf, not collapsing`);
+        }
+    }
+    
+    // Ensure all parent references are set correctly before rerooting
+    function ensureParentReferences(node, parent = null) {
+        node.parent = parent;
+        if (node.children) {
+            for (const child of node.children) {
+                ensureParentReferences(child, node);
+            }
+        }
+    }
+    ensureParentReferences(root, null);
+
+    // Reroot tree on subtype sequence if it exists and shouldReroot is true
+    if (shouldReroot && state.subtypeIndex < state.rawSequences.length) {
+        const subtypeName = state.rawSequences[state.subtypeIndex].name;
+        root = rerootTree(root, subtypeName);
+    }
+
+    applyTreeOrder(root);
+    
+    let totalLen = 0;
+    function checkLen(n) { totalLen += (n.len || 0); n.children.forEach(checkLen); }
+    checkLen(root);
+
+    const useCladogram = (totalLen === 0);
+    let maxDepth = 0;
+
+    function layoutX(node, currentDepth) {
+        let dist = useCladogram ? (node === root ? 0 : 1) : (node.len || 0);
+        node.xDepth = currentDepth + dist;
+        if(node.xDepth > maxDepth) maxDepth = node.xDepth;
+        node.children.forEach(c => layoutX(c, node.xDepth));
+    }
+    
+    root.len = 0; 
+    layoutX(root, 0);
+
+    state.tree = { root, maxDepth };
+    setTreeWidth(200);
+    if (dom.btnHistogram) {
+        dom.btnHistogram.disabled = false;
+    }
+    if (dom.btnMds) {
+        dom.btnMds.disabled = false;
+    }
+    recalc();
+    showOverlay(false);
+}
+
+function applyTreeOrder(root) {
+    const leafOrder = [];
+    function traverse(node) {
+        if(!node.children || node.children.length === 0) {
+            if(node.name) {
+                leafOrder.push(node.name);
+            }
+        } else {
+            node.children.forEach(traverse);
+        }
+    }
+    traverse(root);
+
+    // Keep reference sequence separate - it should not be reordered or matched to tree
+    const refSeq = state.rawSequences[state.refIndex];
+    const refName = refSeq?.name;
+    
+    // Preserve subtype sequence identity by name (not index)
+    const subtypeSeq = state.rawSequences[state.subtypeIndex];
+    const subtypeName = subtypeSeq?.name;
+    
+    // Create map of non-reference sequences
+    const seqMap = new Map();
+    state.rawSequences.forEach((s, idx) => {
+        if (idx !== state.refIndex) {
+            seqMap.set(s.name, s);
+        }
+    });
+    
+    // Reorder non-reference sequences according to tree (excluding ref name even if it appears in tree)
+    const newSeqList = [];
+    if (refSeq) {
+        newSeqList.push(refSeq); // Reference always first
+    }
+    
+    leafOrder.forEach(name => {
+        // Skip reference sequence even if it appears in the tree
+        if (name !== refName && seqMap.has(name)) {
+            newSeqList.push(seqMap.get(name));
+            seqMap.delete(name);
+        }
+    });
+    // Add any remaining sequences that weren't in the tree
+    for(let s of seqMap.values()) newSeqList.push(s);
+    
+    state.rawSequences = newSeqList;
+    state.refIndex = 0; // Reference is always at index 0
+    
+    // Update subtype index to point to the subtype sequence by name (not position)
+    const newSubtypeIndex = state.rawSequences.findIndex(s => s.name === subtypeName);
+    if (newSubtypeIndex !== -1) {
+        state.subtypeIndex = newSubtypeIndex;
+    } else {
+        // Subtype not found in reordered list (shouldn't happen, but handle gracefully)
+        console.warn(`Subtype sequence "${subtypeName}" not found after reordering. Keeping original index.`);
+    }
+}
+
+function showLadderizeModal() {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    document.getElementById('ladderize-overlay').style.display = 'flex';
+}
+
+function showHistogramModal() {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    
+    // Calculate root-to-leaf distances for all leaves
+    const distances = [];
+    
+    function collectLeafDistances(node, distanceFromRoot) {
+        const branchLength = node.len || 0;
+        const currentDistance = distanceFromRoot + branchLength;
+        
+        if (!node.children || node.children.length === 0) {
+            // This is a leaf node
+            distances.push({
+                name: node.name || 'Unnamed',
+                distance: currentDistance
+            });
+        } else {
+            // This is an internal node, recurse to children
+            node.children.forEach(child => {
+                collectLeafDistances(child, currentDistance);
+            });
+        }
+    }
+    
+    collectLeafDistances(state.tree.root, 0);
+    
+    // Draw histogram
+    drawHistogram(distances);
+    
+    document.getElementById('histogram-overlay').style.display = 'flex';
+}
+
+function drawHistogram(distances) {
+    const canvas = document.getElementById('histogram-canvas');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = { top: 40, right: 40, bottom: 60, left: 60 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    if (distances.length === 0) {
+        ctx.fillStyle = '#374151';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No leaf nodes found', width / 2, height / 2);
+        return;
+    }
+    
+    // Calculate bin statistics
+    const minDist = Math.min(...distances.map(d => d.distance));
+    const maxDist = Math.max(...distances.map(d => d.distance));
+    const range = maxDist - minDist;
+    
+    // Use a reasonable number of bins (between 10 and 30)
+    const numBins = Math.min(30, Math.max(10, Math.ceil(Math.sqrt(distances.length))));
+    const binWidth = range / numBins;
+    
+    // Create bins
+    const bins = new Array(numBins).fill(0);
+    const binLabels = [];
+    
+    for (let i = 0; i < numBins; i++) {
+        binLabels.push(minDist + (i + 0.5) * binWidth);
+    }
+    
+    // Count distances in each bin
+    distances.forEach(d => {
+        let binIndex = Math.floor((d.distance - minDist) / binWidth);
+        if (binIndex >= numBins) binIndex = numBins - 1;
+        if (binIndex < 0) binIndex = 0;
+        bins[binIndex]++;
+    });
+    
+    const maxCount = Math.max(...bins);
+    
+    // Draw axes
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, padding.top);
+    ctx.lineTo(padding.left, padding.top + plotHeight);
+    ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+    ctx.stroke();
+    
+    // Draw histogram bars
+    const barWidth = plotWidth / numBins;
+    ctx.fillStyle = '#3b82f6';
+    
+    bins.forEach((count, i) => {
+        const barHeight = (count / maxCount) * plotHeight;
+        const x = padding.left + i * barWidth;
+        const y = padding.top + plotHeight - barHeight;
+        
+        ctx.fillRect(x, y, barWidth - 1, barHeight);
+    });
+    
+    // Draw axis labels
+    ctx.fillStyle = '#374151';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    
+    // X-axis labels (show a few key values)
+    const numXLabels = 5;
+    for (let i = 0; i <= numXLabels; i++) {
+        const value = minDist + (i / numXLabels) * range;
+        const x = padding.left + (i / numXLabels) * plotWidth;
+        ctx.fillText(value.toFixed(3), x, padding.top + plotHeight + 20);
+    }
+    
+    // Y-axis labels
+    ctx.textAlign = 'right';
+    const numYLabels = 5;
+    for (let i = 0; i <= numYLabels; i++) {
+        const value = Math.round((i / numYLabels) * maxCount);
+        const y = padding.top + plotHeight - (i / numYLabels) * plotHeight;
+        ctx.fillText(value.toString(), padding.left - 10, y + 4);
+    }
+    
+    // Draw title and axis labels
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Frequency', padding.left - 30, padding.top / 2);
+    
+    ctx.save();
+    ctx.translate(padding.left / 2, padding.top + plotHeight / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Root-to-Leaf Distance', 0, 0);
+    ctx.restore();
+    
+    // Draw statistics
+    const mean = distances.reduce((sum, d) => sum + d.distance, 0) / distances.length;
+    const variance = distances.reduce((sum, d) => sum + Math.pow(d.distance - mean, 2), 0) / distances.length;
+    const stdDev = Math.sqrt(variance);
+    
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Count: ${distances.length}`, padding.left, padding.top - 20);
+    ctx.fillText(`Mean: ${mean.toFixed(4)}`, padding.left, padding.top - 8);
+    ctx.fillText(`Std Dev: ${stdDev.toFixed(4)}`, padding.left + 120, padding.top - 8);
+    ctx.fillText(`Min: ${minDist.toFixed(4)}`, padding.left + 240, padding.top - 8);
+    ctx.fillText(`Max: ${maxDist.toFixed(4)}`, padding.left + 320, padding.top - 8);
+}
+
+function showMdsModal() {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    
+    // Collect all leaf nodes
+    const leaves = [];
+    function collectLeaves(node) {
+        if (!node.children || node.children.length === 0) {
+            leaves.push(node);
+        } else {
+            node.children.forEach(child => collectLeaves(child));
+        }
+    }
+    collectLeaves(state.tree.root);
+    
+    if (leaves.length < 2) {
+        alert("Need at least 2 leaves to create an MDS plot.");
+        return;
+    }
+    
+    // Get subtype name
+    const subtypeName = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length) 
+        ? state.rawSequences[state.subtypeIndex].name 
+        : null;
+    
+    // Calculate pairwise distance matrix
+    const n = leaves.length;
+    const distanceMatrix = [];
+    
+    // Build a map of all nodes to their distance from root
+    const nodeToRootDistance = new Map();
+    function calculateRootDistances(node, distanceFromRoot) {
+        const currentDistance = distanceFromRoot + (node.len || 0);
+        nodeToRootDistance.set(node, currentDistance);
+        if (node.children) {
+            node.children.forEach(child => calculateRootDistances(child, currentDistance));
+        }
+    }
+    calculateRootDistances(state.tree.root, 0);
+    
+    // Find lowest common ancestor (LCA) of two nodes
+    function findLCA(node1, node2) {
+        // Get all ancestors of node1
+        const ancestors1 = new Set();
+        let current = node1;
+        while (current) {
+            ancestors1.add(current);
+            current = current.parent;
+        }
+        
+        // Find first common ancestor by walking up from node2
+        current = node2;
+        while (current) {
+            if (ancestors1.has(current)) {
+                return current;
+            }
+            current = current.parent;
+        }
+        
+        return state.tree.root; // Fallback to root
+    }
+    
+    function calculateDistance(node1, node2) {
+        if (node1 === node2) return 0;
+        
+        const lca = findLCA(node1, node2);
+        const dist1 = nodeToRootDistance.get(node1) || 0;
+        const dist2 = nodeToRootDistance.get(node2) || 0;
+        const distLCA = nodeToRootDistance.get(lca) || 0;
+        
+        // Distance = (dist1 - distLCA) + (dist2 - distLCA)
+        return (dist1 - distLCA) + (dist2 - distLCA);
+    }
+    
+    // Build distance matrix
+    for (let i = 0; i < n; i++) {
+        distanceMatrix[i] = [];
+        for (let j = 0; j < n; j++) {
+            if (i === j) {
+                distanceMatrix[i][j] = 0;
+            } else {
+                distanceMatrix[i][j] = calculateDistance(leaves[i], leaves[j]);
+            }
+        }
+    }
+    
+    // Perform classical MDS
+    const mdsCoords = performClassicalMDS(distanceMatrix);
+    
+    // Calculate MDS coordinate ranges to set appropriate slider bounds
+    const xs = mdsCoords.map(c => c.x);
+    const ys = mdsCoords.map(c => c.y);
+    const rangeX = Math.max(...xs) - Math.min(...xs);
+    const rangeY = Math.max(...ys) - Math.min(...ys);
+    const minRange = Math.min(rangeX, rangeY);
+    
+    // Set epsilon slider step to 0.01 of the minimum range
+    const epsStep = minRange * 0.01;
+    const epsMin = epsStep; // Minimum should be at least one step
+    const epsMax = minRange * 2; // Maximum should cover a reasonable range (2x the minimum range)
+    const epsDefault = minRange * 0.1; // Default to 10% of minimum range
+    
+    // Store data for DBSCAN updates
+    window.mdsData = { leaves, coords: mdsCoords, subtypeName };
+    
+    // Set up sliders
+    const epsSlider = document.getElementById('mds-eps-slider');
+    const minPtsSlider = document.getElementById('mds-minpts-slider');
+    const epsValue = document.getElementById('mds-eps-value');
+    const minPtsValue = document.getElementById('mds-minpts-value');
+    
+    // Update epsilon slider attributes based on MDS data
+    epsSlider.min = epsMin.toString();
+    epsSlider.max = epsMax.toString();
+    epsSlider.step = epsStep.toString();
+    epsSlider.value = epsDefault.toString();
+    
+    // Calculate decimal places for display based on step size
+    // Clamp to valid range for toFixed() (0-100)
+    let decimalPlaces = 2; // Default
+    if (epsStep > 0 && isFinite(epsStep)) {
+        const calculated = Math.max(0, -Math.floor(Math.log10(epsStep)) + 1);
+        decimalPlaces = Math.min(100, Math.max(0, calculated));
+    }
+    
+    // Store current clusters for apply button
+    let currentClusters = null;
+    
+    const updatePlot = () => {
+        const eps = parseFloat(epsSlider.value);
+        const minPts = parseInt(minPtsSlider.value);
+        // Format epsilon with appropriate decimal places based on step size
+        epsValue.textContent = eps.toFixed(decimalPlaces);
+        minPtsValue.textContent = minPts.toString();
+        
+        // Find subtype index in leaves array
+        let subtypeIdx = -1;
+        if (subtypeName) {
+            for (let i = 0; i < leaves.length; i++) {
+                if (leaves[i].name === subtypeName) {
+                    subtypeIdx = i;
+                    break;
+                }
+            }
+        }
+        
+        // Find founder index and name in leaves array
+        let founderIdx = -1;
+        let founderName = null;
+        for (let i = 0; i < leaves.length; i++) {
+            if (leaves[i].name && leaves[i].name.startsWith('consensus_of_')) {
+                founderIdx = i;
+                founderName = leaves[i].name;
+                break;
+            }
+        }
+        
+        // Perform DBSCAN clustering (subtype will be isolated, founder can cluster naturally)
+        let clusters = performDBSCAN(mdsCoords, eps, minPts, subtypeIdx, null);
+        
+        // Renumber clusters by distance from founder (if present) or subtype
+        clusters = renumberClustersByDistanceFromSubtype(clusters, mdsCoords, subtypeIdx, leaves, subtypeName);
+        
+        currentClusters = clusters; // Store for apply button
+        
+        // Draw MDS plot with clusters and epsilon circles
+        drawMdsPlot(leaves, mdsCoords, subtypeName, clusters, eps, founderName);
+    };
+    
+    epsSlider.addEventListener('input', updatePlot);
+    minPtsSlider.addEventListener('input', updatePlot);
+    
+    // Apply button - apply clustering to tree
+    const applyBtn = document.getElementById('mds-apply-btn');
+    applyBtn.addEventListener('click', () => {
+        if (currentClusters === null) {
+            // Perform initial clustering if not done yet
+            const eps = parseFloat(epsSlider.value);
+            const minPts = parseInt(minPtsSlider.value);
+            
+            // Find subtype index in leaves array
+            let subtypeIdx = -1;
+            if (subtypeName) {
+                for (let i = 0; i < leaves.length; i++) {
+                    if (leaves[i].name === subtypeName) {
+                        subtypeIdx = i;
+                        break;
+                    }
+                }
+            }
+            
+            // Find founder index and name in leaves array
+            let founderIdx = -1;
+            let founderName = null;
+            for (let i = 0; i < leaves.length; i++) {
+                if (leaves[i].name && leaves[i].name.startsWith('consensus_of_')) {
+                    founderIdx = i;
+                    founderName = leaves[i].name;
+                    break;
+                }
+            }
+            
+            let clusters = performDBSCAN(mdsCoords, eps, minPts, subtypeIdx, null);
+            clusters = renumberClustersByDistanceFromSubtype(clusters, mdsCoords, subtypeIdx, leaves, subtypeName);
+            currentClusters = clusters;
+        }
+        
+        // Create mapping from leaf name to cluster ID
+        const leafToCluster = new Map();
+        leaves.forEach((leaf, i) => {
+            if (leaf.name) {
+                leafToCluster.set(leaf.name, currentClusters[i]);
+            }
+        });
+        
+        // Store in state
+        state.leafClusters = leafToCluster;
+        
+        // Update legend
+        updateColorLegend();
+        
+        // Re-render tree
+        recalc();
+        
+        // Close modal
+        document.getElementById('mds-overlay').style.display = 'none';
+    });
+    
+    // Update initial value display
+    epsValue.textContent = epsDefault.toFixed(decimalPlaces);
+    
+    // Initial draw
+    updatePlot();
+    
+    document.getElementById('mds-overlay').style.display = 'flex';
+}
+
+// --- Legend Dragging ---
+function initLegendDragging() {
+    const legend = document.getElementById('color-legend');
+    const header = document.getElementById('legend-header');
+    if (!legend || !header) return;
+    
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+    
+    header.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
+    
+    function dragStart(e) {
+        if (e.target.tagName === 'BUTTON') return; // Don't drag when clicking close button
+        
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        // Get current position
+        const rect = legend.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+        
+        e.preventDefault();
+    }
+    
+    function drag(e) {
+        if (!isDragging) return;
+        
+        e.preventDefault();
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        const newLeft = initialLeft + deltaX;
+        const newTop = initialTop + deltaY;
+        
+        // Update position using left/top instead of transform
+        legend.style.left = newLeft + 'px';
+        legend.style.right = 'auto';
+        legend.style.top = newTop + 'px';
+    }
+    
+    function dragEnd(e) {
+        isDragging = false;
+    }
+}
+
+function performClassicalMDS(distanceMatrix) {
+    const n = distanceMatrix.length;
+    
+    // Step 1: Square the distance matrix
+    const dSquared = distanceMatrix.map(row => row.map(d => d * d));
+    
+    // Step 2: Double-center the squared distance matrix
+    // B = -0.5 * H * D^2 * H where H = I - (1/n) * 11^T
+    
+    // Calculate row and column means of D^2
+    const rowMeans = [];
+    const colMeans = [];
+    const grandMean = [];
+    
+    for (let i = 0; i < n; i++) {
+        let rowSum = 0;
+        for (let j = 0; j < n; j++) {
+            rowSum += dSquared[i][j];
+        }
+        rowMeans[i] = rowSum / n;
+    }
+    
+    for (let j = 0; j < n; j++) {
+        let colSum = 0;
+        for (let i = 0; i < n; i++) {
+            colSum += dSquared[i][j];
+        }
+        colMeans[j] = colSum / n;
+    }
+    
+    let grandSum = 0;
+    for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+            grandSum += dSquared[i][j];
+        }
+    }
+    const grandMeanValue = grandSum / (n * n);
+    
+    // Compute B = -0.5 * (D^2 - row_means - col_means + grand_mean)
+    const B = [];
+    for (let i = 0; i < n; i++) {
+        B[i] = [];
+        for (let j = 0; j < n; j++) {
+            B[i][j] = -0.5 * (dSquared[i][j] - rowMeans[i] - colMeans[j] + grandMeanValue);
+        }
+    }
+    
+    // Step 3: Find eigenvalues and eigenvectors using a more robust method
+    const eigenResult = computeEigenDecomposition(B, 2);
+    
+    // Extract first two eigenvectors (largest eigenvalues)
+    // Scale by sqrt(eigenvalue) to get coordinates
+    const coords = [];
+    
+    // Ensure we have valid eigenvalues (should be non-negative for valid distance matrices)
+    const lambda1 = Math.max(0, eigenResult.values[0]);
+    const lambda2 = Math.max(0, eigenResult.values[1]);
+    
+    // Check if second eigenvalue is too small (relative to first)
+    const ratio = lambda2 / (lambda1 + 1e-10);
+    
+    for (let i = 0; i < n; i++) {
+        const x = eigenResult.vectors[0][i] * Math.sqrt(lambda1);
+        let y = eigenResult.vectors[1][i] * Math.sqrt(lambda2);
+        
+        // If second eigenvalue is very small, still use it but scale appropriately
+        // This ensures we get some spread in the second dimension
+        if (ratio < 1e-6 && lambda2 > 0) {
+            // Scale up the second dimension to make it visible
+            y = eigenResult.vectors[1][i] * Math.sqrt(lambda1) * 0.1;
+        }
+        
+        coords.push({ x, y });
+    }
+    
+    return coords;
+}
+
+function computeEigenDecomposition(matrix, numComponents) {
+    const n = matrix.length;
+    const vectors = [];
+    const values = [];
+    
+    // Work with a copy of the matrix to avoid modifying the original
+    const A = matrix.map(row => [...row]);
+    
+    // Use power iteration with deflation for multiple eigenvectors
+    for (let comp = 0; comp < numComponents; comp++) {
+        // Start with random vector
+        let v = [];
+        for (let i = 0; i < n; i++) {
+            v[i] = Math.random() - 0.5;
+        }
+        
+        // Normalize
+        let norm = Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
+        if (norm < 1e-10) {
+            // If norm is too small, use a unit vector
+            v = new Array(n).fill(0);
+            v[comp % n] = 1;
+            norm = 1;
+        }
+        v = v.map(x => x / norm);
+        
+        // Power iteration with orthogonalization
+        for (let iter = 0; iter < 200; iter++) {
+            // Apply matrix: newV = A * v
+            const newV = [];
+            for (let i = 0; i < n; i++) {
+                let sum = 0;
+                for (let j = 0; j < n; j++) {
+                    sum += A[i][j] * v[j];
+                }
+                newV[i] = sum;
+            }
+            
+            // Orthogonalize against previous eigenvectors
+            for (let prev = 0; prev < comp; prev++) {
+                const dot = newV.reduce((sum, x, i) => sum + x * vectors[prev][i], 0);
+                for (let i = 0; i < n; i++) {
+                    newV[i] -= dot * vectors[prev][i];
+                }
+            }
+            
+            // Normalize
+            norm = Math.sqrt(newV.reduce((sum, x) => sum + x * x, 0));
+            if (norm < 1e-10) {
+                // Vector collapsed, try a different direction
+                for (let i = 0; i < n; i++) {
+                    newV[i] = Math.random() - 0.5;
+                }
+                // Re-orthogonalize
+                for (let prev = 0; prev < comp; prev++) {
+                    const dot = newV.reduce((sum, x, i) => sum + x * vectors[prev][i], 0);
+                    for (let i = 0; i < n; i++) {
+                        newV[i] -= dot * vectors[prev][i];
+                    }
+                }
+                norm = Math.sqrt(newV.reduce((sum, x) => sum + x * x, 0));
+                if (norm < 1e-10) break;
+            }
+            
+            newV.forEach((x, i) => { v[i] = x / norm; });
+            
+            // Check convergence
+            if (iter > 10) {
+                let maxChange = 0;
+                for (let i = 0; i < n; i++) {
+                    const change = Math.abs(newV[i] / norm - v[i]);
+                    if (change > maxChange) maxChange = change;
+                }
+                if (maxChange < 1e-8) break;
+            }
+        }
+        
+        // Calculate eigenvalue using Rayleigh quotient
+        const Av = [];
+        for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) {
+                sum += A[i][j] * v[j];
+            }
+            Av[i] = sum;
+        }
+        const eigenvalue = v.reduce((sum, x, i) => sum + x * Av[i], 0);
+        
+        vectors.push([...v]);
+        values.push(eigenvalue);
+        
+        // Deflate matrix for next iteration: A = A - lambda * v * v^T
+        if (comp < numComponents - 1) {
+            for (let i = 0; i < n; i++) {
+                for (let j = 0; j < n; j++) {
+                    A[i][j] -= eigenvalue * v[i] * v[j];
+                }
+            }
+        }
+    }
+    
+    return { vectors, values };
+}
+
+function performDBSCAN(coords, eps, minPts, subtypeIndex = null, founderIndex = null) {
+    const n = coords.length;
+    const visited = new Array(n).fill(false);
+    const clusters = new Array(n).fill(-1); // -1 means noise/unassigned
+    let clusterId = 0;
+    
+    // Calculate Euclidean distances between all points
+    function distance(p1, p2) {
+        const dx = p1.x - p2.x;
+        const dy = p1.y - p2.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    // Find all neighbors within eps radius (excluding subtype only)
+    function getNeighbors(pointIndex) {
+        const neighbors = [];
+        const point = coords[pointIndex];
+        for (let i = 0; i < n; i++) {
+            if (i !== pointIndex && distance(point, coords[i]) <= eps) {
+                // Exclude subtype from neighbor calculations (founder can cluster naturally)
+                if (subtypeIndex !== null && (pointIndex === subtypeIndex || i === subtypeIndex)) {
+                    continue; // Subtype is always isolated
+                }
+                neighbors.push(i);
+            }
+        }
+        return neighbors;
+    }
+    
+    // Expand cluster from a seed point
+    function expandCluster(pointIndex, neighbors) {
+        clusters[pointIndex] = clusterId;
+        
+        let i = 0;
+        while (i < neighbors.length) {
+            const neighborIndex = neighbors[i];
+            
+            if (!visited[neighborIndex]) {
+                visited[neighborIndex] = true;
+                const neighborNeighbors = getNeighbors(neighborIndex);
+                
+                if (neighborNeighbors.length >= minPts) {
+                    // Add neighbors of this neighbor to the list
+                    neighbors.push(...neighborNeighbors);
+                }
+            }
+            
+            // Assign to cluster if not already assigned
+            if (clusters[neighborIndex] === -1) {
+                clusters[neighborIndex] = clusterId;
+            }
+            
+            i++;
+        }
+    }
+    
+    // First, assign subtype to its own cluster (cluster 0) if subtype exists
+    if (subtypeIndex !== null && subtypeIndex >= 0 && subtypeIndex < n) {
+        clusters[subtypeIndex] = 0;
+        visited[subtypeIndex] = true;
+        clusterId = 1; // Start next cluster at 1
+    }
+    
+    // Main DBSCAN algorithm (skip subtype only, founder can cluster naturally)
+    for (let i = 0; i < n; i++) {
+        if (visited[i]) continue;
+        if (subtypeIndex !== null && i === subtypeIndex) continue; // Skip subtype
+        
+        visited[i] = true;
+        const neighbors = getNeighbors(i);
+        
+        if (neighbors.length < minPts) {
+            // Mark as noise (cluster -1)
+            clusters[i] = -1;
+        } else {
+            // Start a new cluster
+            expandCluster(i, neighbors);
+            clusterId++;
+        }
+    }
+    
+    return clusters;
+}
+
+// Renumber clusters by distance from subtype
+function renumberClustersByDistanceFromSubtype(clusters, coords, subtypeIndex, leaves, subtypeName) {
+    if (subtypeIndex === null || subtypeIndex < 0 || subtypeIndex >= coords.length) {
+        return clusters; // No subtype, return as-is
+    }
+    
+    // Find subtype index in leaves array
+    let subtypeIdxInLeaves = -1;
+    for (let i = 0; i < leaves.length; i++) {
+        if (leaves[i].name === subtypeName) {
+            subtypeIdxInLeaves = i;
+            break;
+        }
+    }
+    
+    if (subtypeIdxInLeaves === -1) {
+        return clusters; // Subtype not found in leaves
+    }
+    
+    // Check if founder sequence exists
+    let founderIdxInLeaves = -1;
+    let founderClusterId = null;
+    for (let i = 0; i < leaves.length; i++) {
+        if (leaves[i].name && leaves[i].name.startsWith('consensus_of_')) {
+            founderIdxInLeaves = i;
+            founderClusterId = clusters[i];
+            break;
+        }
+    }
+    
+    // Determine reference point for renumbering
+    let referencePos;
+    let referenceClusterId;
+    let useFounder = false;
+    
+    if (founderIdxInLeaves >= 0 && founderClusterId !== null && founderClusterId !== -1) {
+        // Use founder as reference
+        referencePos = coords[founderIdxInLeaves];
+        referenceClusterId = founderClusterId;
+        useFounder = true;
+    } else {
+        // Use subtype as reference
+        referencePos = coords[subtypeIdxInLeaves];
+        referenceClusterId = 0; // Subtype's cluster
+    }
+    
+    // Calculate cluster centroids (excluding subtype's cluster 0 and founder cluster if using founder)
+    const clusterPoints = new Map(); // clusterId -> [point indices]
+    for (let i = 0; i < clusters.length; i++) {
+        const cid = clusters[i];
+        // Exclude noise, subtype cluster (0), and founder cluster if using founder
+        if (cid !== -1 && cid !== 0) {
+            if (useFounder && cid === founderClusterId) {
+                continue; // Skip founder cluster when using founder as reference
+            }
+            if (!clusterPoints.has(cid)) {
+                clusterPoints.set(cid, []);
+            }
+            clusterPoints.get(cid).push(i);
+        }
+    }
+    
+    // Calculate centroids and distances
+    const clusterDistances = [];
+    clusterPoints.forEach((pointIndices, clusterId) => {
+        // Calculate centroid
+        let sumX = 0, sumY = 0;
+        pointIndices.forEach(idx => {
+            sumX += coords[idx].x;
+            sumY += coords[idx].y;
+        });
+        const centroid = {
+            x: sumX / pointIndices.length,
+            y: sumY / pointIndices.length
+        };
+        
+        // Calculate distance from reference (founder or subtype) to centroid
+        const dx = referencePos.x - centroid.x;
+        const dy = referencePos.y - centroid.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        clusterDistances.push({ clusterId, distance: dist });
+    });
+    
+    // Sort by distance (closest first)
+    clusterDistances.sort((a, b) => a.distance - b.distance);
+    
+    // Create mapping: old cluster ID -> new cluster ID
+    const clusterMap = new Map();
+    clusterMap.set(0, 0); // Subtype stays at 0
+    
+    if (useFounder && founderClusterId !== null) {
+        clusterMap.set(founderClusterId, 1); // Founder becomes cluster 1
+        // Other clusters start at 2
+        clusterDistances.forEach((item, index) => {
+            if (item.clusterId !== founderClusterId) {
+                clusterMap.set(item.clusterId, index + 2);
+            }
+        });
+    } else {
+        // No founder, use subtype-based numbering
+        clusterDistances.forEach((item, index) => {
+            clusterMap.set(item.clusterId, index + 1); // Closest = 1, next = 2, etc.
+        });
+    }
+    
+    // Renumber clusters
+    const renumbered = clusters.map(cid => {
+        if (cid === -1) return -1; // Keep noise as -1
+        if (cid === 0) return 0; // Subtype stays at 0
+        return clusterMap.get(cid) || cid; // Map to new ID
+    });
+    
+    return renumbered;
+}
+
+function drawMdsPlot(leaves, coords, subtypeName, clusters = null, epsilon = null, founderName = null) {
+    const canvas = document.getElementById('mds-canvas');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const padding = { top: 40, right: 40, bottom: 60, left: 60 };
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    if (coords.length === 0) {
+        ctx.fillStyle = '#374151';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data to plot', width / 2, height / 2);
+        return;
+    }
+    
+    // Find min/max for scaling
+    const xs = coords.map(c => c.x);
+    const ys = coords.map(c => c.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    
+    // Scale to fit plot area with some padding
+    const scaleX = plotWidth / rangeX * 0.9;
+    const scaleY = plotHeight / rangeY * 0.9;
+    const offsetX = padding.left + (width - padding.left - padding.right) / 2;
+    const offsetY = padding.top + (height - padding.top - padding.bottom) / 2;
+    
+    function toPlotX(x) {
+        return offsetX + (x - (minX + maxX) / 2) * scaleX;
+    }
+    
+    function toPlotY(y) {
+        return offsetY - (y - (minY + maxY) / 2) * scaleY; // Flip Y axis
+    }
+    
+    // Draw axes
+    ctx.strokeStyle = '#9ca3af';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, offsetY);
+    ctx.lineTo(width - padding.right, offsetY);
+    ctx.moveTo(offsetX, padding.top);
+    ctx.lineTo(offsetX, height - padding.bottom);
+    ctx.stroke();
+    
+    // Draw axis labels
+    ctx.fillStyle = '#374151';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MDS Dimension 1', offsetX, height - padding.bottom + 30);
+    
+    ctx.save();
+    ctx.translate(padding.left - 20, offsetY);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('MDS Dimension 2', 0, 0);
+    ctx.restore();
+    
+    const noiseColor = '#9ca3af'; // Grey for noise
+    
+    // Calculate epsilon radius in plot coordinates (if epsilon is provided)
+    // Epsilon is in data space, need to convert to pixels
+    // Use average of scaleX and scaleY to convert distance to pixels
+    const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+    const epsilonRadius = epsilon !== null ? epsilon * avgScale : 0;
+    
+    // Draw epsilon circles first (behind points)
+    if (epsilon !== null && epsilonRadius > 0) {
+        leaves.forEach((leaf, i) => {
+            const x = toPlotX(coords[i].x);
+            const y = toPlotY(coords[i].y);
+            const isSubtype = subtypeName && leaf.name === subtypeName;
+            const isFounder = founderName && leaf.name === founderName;
+            const clusterId = clusters ? clusters[i] : -1;
+            
+            // Determine color based on clustering
+            let circleColor;
+            if (isSubtype) {
+                circleColor = '#dc2626'; // Red for subtype
+            } else if (clusterId === -1) {
+                circleColor = noiseColor; // Grey for noise
+            } else {
+                circleColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+            }
+            
+            // Draw light circle with cluster color
+            ctx.beginPath();
+            ctx.arc(x, y, epsilonRadius, 0, 2 * Math.PI);
+            ctx.fillStyle = circleColor;
+            ctx.globalAlpha = 0.2; // Light/transparent
+            ctx.fill();
+            ctx.globalAlpha = 1.0; // Reset alpha
+        });
+    }
+    
+    // Draw points
+    leaves.forEach((leaf, i) => {
+        const x = toPlotX(coords[i].x);
+        const y = toPlotY(coords[i].y);
+        const isSubtype = subtypeName && leaf.name === subtypeName;
+        const isFounder = founderName && leaf.name === founderName;
+        const clusterId = clusters ? clusters[i] : -1;
+        
+        // Determine color based on clustering
+        let fillColor, strokeColor;
+        if (isSubtype) {
+            fillColor = '#dc2626'; // Red for subtype
+            strokeColor = '#991b1b';
+        } else if (clusterId === -1) {
+            fillColor = noiseColor; // Grey for noise
+            strokeColor = '#6b7280';
+        } else {
+            fillColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+            strokeColor = fillColor;
+        }
+        
+        // Draw point
+        ctx.beginPath();
+        if (isSubtype) {
+            // Draw subtype as a diamond
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 2;
+            const size = 8;
+            ctx.moveTo(x, y - size);
+            ctx.lineTo(x + size, y);
+            ctx.lineTo(x, y + size);
+            ctx.lineTo(x - size, y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        } else {
+            // Draw regular leaves as circles
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = 1;
+            ctx.arc(x, y, 5, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+        }
+    });
+    
+    // Draw labels for subtype and founder AFTER all points and circles
+    leaves.forEach((leaf, i) => {
+        const x = toPlotX(coords[i].x);
+        const y = toPlotY(coords[i].y);
+        const isSubtype = subtypeName && leaf.name === subtypeName;
+        const isFounder = founderName && leaf.name === founderName;
+        
+        if (isSubtype || isFounder) {
+            ctx.fillStyle = '#111827';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(leaf.name || 'Unnamed', x + 8, y + 3);
+        }
+    });
+    
+    // Draw legend
+    ctx.fillStyle = '#111827';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    let legendY = padding.top - 25;
+    ctx.fillText('Legend:', padding.left, legendY);
+    
+    // Subtype
+    ctx.fillStyle = '#dc2626';
+    ctx.strokeStyle = '#991b1b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const subtypeX = padding.left + 60;
+    const subtypeY = legendY - 5;
+    const size = 6;
+    ctx.moveTo(subtypeX, subtypeY - size);
+    ctx.lineTo(subtypeX + size, subtypeY);
+    ctx.lineTo(subtypeX, subtypeY + size);
+    ctx.lineTo(subtypeX - size, subtypeY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#111827';
+    ctx.fillText('Subtype', subtypeX + 10, subtypeY + 4);
+    
+    // Show cluster info if clustering is active
+    if (clusters) {
+        const numClusters = new Set(clusters.filter(c => c !== -1)).size;
+        const numNoise = clusters.filter(c => c === -1).length;
+        
+        let xPos = subtypeX + 80;
+        
+        if (numClusters > 0) {
+            ctx.fillText(`Clusters: ${numClusters}`, xPos, legendY);
+            xPos += 100;
+        }
+        
+        if (numNoise > 0) {
+            ctx.fillStyle = noiseColor;
+            ctx.beginPath();
+            ctx.arc(xPos, subtypeY, 5, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = '#6b7280';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = '#111827';
+            ctx.fillText(`Noise: ${numNoise}`, xPos + 10, subtypeY + 4);
+        }
+    }
+}
+
+function runLadderizeTask() {
+    const mode = document.getElementById('sel-ladderize-mode').value;
+    document.getElementById('ladderize-overlay').style.display = 'none';
+    ladderizeTree(mode);
+}
+
+function ladderizeTree(mode) {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    
+    saveState();
+    
+    if (mode === 'weight') {
+        // Sort by number of leaves (weight)
+    function countLeaves(node) {
+        if (!node.children || node.children.length === 0) {
+            node.leafCount = 1;
+            return 1;
+        }
+        let count = 0;
+        for (const child of node.children) {
+            count += countLeaves(child);
+        }
+        node.leafCount = count;
+        return count;
+    }
+    
+    function sortChildren(node) {
+            // Only terminate recursion when there are zero children (leaf node)
+            if (!node.children || node.children.length === 0) return;
+            // If there's only one child, still recurse into it (don't sort, but recurse)
+            if (node.children.length > 1) {
+        node.children.sort((a, b) => a.leafCount - b.leafCount);
+            }
+        for (const child of node.children) {
+            sortChildren(child);
+        }
+    }
+    
+    countLeaves(state.tree.root);
+    sortChildren(state.tree.root);
+    } else if (mode === 'depth') {
+        // For each node, calculate the maximum depth from root to deepest leaf in each child's subtree
+        // Using branch lengths (sum of branch lengths from root), not node counts
+        // Then sort children from shallowest to deepest by that maximum depth
+        function calculateSubtreeMaxDepth(node, depthFromRoot = 0) {
+            // Add this node's branch length to the depth from root
+            const branchLength = node.len || 0;
+            const currentDepth = depthFromRoot + branchLength;
+            
+            if (!node.children || node.children.length === 0) {
+                // Leaf node: its depth from root is the sum of branch lengths from root
+                node.subtreeMaxDepth = currentDepth;
+                return currentDepth;
+            }
+            // Internal node: find max depth among all leaves in this subtree
+            let maxLeafDepth = -1;
+            for (const child of node.children) {
+                const childMaxDepth = calculateSubtreeMaxDepth(child, currentDepth);
+                if (childMaxDepth > maxLeafDepth) {
+                    maxLeafDepth = childMaxDepth;
+                }
+            }
+            node.subtreeMaxDepth = maxLeafDepth;
+            return node.subtreeMaxDepth;
+        }
+        
+        function sortChildren(node) {
+            // Only terminate recursion when there are zero children (leaf node)
+            if (!node.children || node.children.length === 0) return;
+            
+            // If there's only one child, still recurse into it (don't sort, but recurse)
+            if (node.children.length > 1) {
+                // Sort in ascending order: shallowest subtrees first, deepest subtrees last in array
+                // In depth-first traversal, we visit children in array order [shallow, deep]
+                // Shallow subtrees processed first → their leaves collected first → appear at top
+                // Deep subtrees processed last → their leaves collected last → appear at bottom
+                node.children.sort((a, b) => a.subtreeMaxDepth - b.subtreeMaxDepth);
+            }
+            
+            // Recursively sort children of each child
+            for (const child of node.children) {
+                sortChildren(child);
+            }
+        }
+        
+        calculateSubtreeMaxDepth(state.tree.root, 0);
+        sortChildren(state.tree.root);
+    }
+    
+    applyTreeOrder(state.tree.root);
+    recalc();
+}
+
+// --- Epitope Loading and Selection ---
+function loadEpitopes(file) {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/).filter(line => line.trim());
+            const epitopes = [];
+            
+            for (const line of lines) {
+                const parts = line.split(',').map(p => p.trim());
+                if (parts.length < 2) continue;
+                
+                const name = parts[0];
+                const regions = [];
+                
+                // Parse coordinate pairs from remaining parts
+                for (let i = 1; i < parts.length; i++) {
+                    const coordStr = parts[i];
+                    if (!coordStr) continue;
+                    
+                    if (coordStr.includes(':')) {
+                        // Format: start:stop
+                        const [startStr, endStr] = coordStr.split(':').map(s => parseInt(s.trim()));
+                        if (!isNaN(startStr) && !isNaN(endStr)) {
+                            regions.push({ start: startStr, end: endStr });
+                        }
+                    } else {
+                        // Format: single coordinate (both start and stop)
+                        const coord = parseInt(coordStr.trim());
+                        if (!isNaN(coord)) {
+                            regions.push({ start: coord, end: coord });
+                        }
+                    }
+                }
+                
+                if (regions.length > 0) {
+                    epitopes.push({ name, regions });
+                }
+            }
+            
+            state.epitopes = epitopes;
+            
+            alert(`Loaded ${epitopes.length} epitope(s). Use "Select Epitope" to choose one.`);
+        } catch (err) {
+            console.error("Error loading epitopes:", err);
+            alert("Error loading epitopes: " + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function showEpitopeSelector() {
+    if (state.epitopes.length === 0) {
+        alert("No epitopes loaded. Please load epitopes first.");
+        return;
+    }
+    
+    // Create a simple selector dialog
+    const selector = document.createElement('div');
+    selector.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 10000; min-width: 300px;';
+    
+    const title = document.createElement('h3');
+    title.textContent = 'Select Epitope';
+    title.style.margin = '0 0 15px 0';
+    selector.appendChild(title);
+    
+    const list = document.createElement('select');
+    list.style.cssText = 'width: 100%; padding: 8px; margin-bottom: 15px; font-size: 14px;';
+    
+    // Add "None" option to clear selection
+    const noneOption = document.createElement('option');
+    noneOption.value = '';
+    noneOption.textContent = 'None (show all)';
+    if (!state.selectedEpitope) noneOption.selected = true;
+    list.appendChild(noneOption);
+    
+    for (const epitope of state.epitopes) {
+        const option = document.createElement('option');
+        option.value = epitope.name;
+        option.textContent = epitope.name;
+        if (state.selectedEpitope === epitope.name) option.selected = true;
+        list.appendChild(option);
+    }
+    selector.appendChild(list);
+    
+    const buttonDiv = document.createElement('div');
+    buttonDiv.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end;';
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #ccc; background: white; cursor: pointer;';
+    cancelBtn.onclick = () => selector.remove();
+    buttonDiv.appendChild(cancelBtn);
+    
+    const selectBtn = document.createElement('button');
+    selectBtn.textContent = 'Select';
+    selectBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: white; cursor: pointer;';
+    selectBtn.onclick = () => {
+        const selectedName = list.value;
+        selectEpitope(selectedName || null);
+        selector.remove();
+    };
+    buttonDiv.appendChild(selectBtn);
+    
+    selector.appendChild(buttonDiv);
+    document.body.appendChild(selector);
+}
+
+function selectEpitope(epitopeName) {
+    state.selectedEpitope = epitopeName;
+    
+    if (!epitopeName) {
+        // Clear epitope selection - show all
+        state.epitopeColumns = null;
+        recalc();
+        return;
+    }
+    
+    // Find the epitope
+    const epitope = state.epitopes.find(e => e.name === epitopeName);
+    if (!epitope) {
+        alert(`Epitope "${epitopeName}" not found.`);
+        return;
+    }
+    
+    // Create a set of allowed alignment columns
+    // For each region, find all alignment columns from start to end (including gaps)
+    const allowedColumns = new Set();
+    
+    for (const region of epitope.regions) {
+        // Find all columns where the reference coordinate is within [start, end]
+        // This includes gaps within the region (where refCoord stays the same between region coordinates)
+        // but excludes gaps after the region ends (where refCoord equals end but the reference has a gap)
+        
+        // Get the reference sequence to check for gaps
+        const refSeq = state.viewSequences[state.refIndex]?.seq;
+        
+        // Find the last column where refCoord === region.end AND the reference has an actual character (not a gap)
+        // This is the true end of the region (before any trailing gaps)
+        let lastEndCol = null;
+        for (let i = 0; i < state.refMap.length; i++) {
+            const refCoord = state.refMap[i];
+            if (refCoord === region.end) {
+                // Check if this column has an actual character in the reference (not a gap)
+                if (refSeq && i < refSeq.length && refSeq[i] !== '-') {
+                    lastEndCol = i;
+                }
+            } else if (refCoord > region.end) {
+                // We've passed the end, stop searching
+                break;
+            }
+        }
+        
+        // If we didn't find a non-gap column at region.end, find the last column where refCoord === region.end
+        // (This handles edge cases where region.end might be at a gap)
+        if (lastEndCol === null) {
+            for (let i = state.refMap.length - 1; i >= 0; i--) {
+                if (state.refMap[i] === region.end) {
+                    lastEndCol = i;
+                    break;
+                } else if (state.refMap[i] < region.end) {
+                    break;
+                }
+            }
+        }
+        
+        // Now include all columns where refCoord is within [start, end] AND we haven't passed the last end column
+        // This ensures we include gaps within the region but exclude gaps after the region
+        for (let i = 0; i < state.refMap.length; i++) {
+            const refCoord = state.refMap[i];
+            
+            // Only include if:
+            // 1. Reference coordinate is within the region range [start, end]
+            // 2. We haven't passed the last column where refCoord equals end and has a non-gap character
+            //    (This excludes gaps after the region that have refCoord = end)
+            if (refCoord >= region.start && refCoord <= region.end) {
+                if (lastEndCol === null || i <= lastEndCol) {
+                    allowedColumns.add(i);
+                }
+            }
+        }
+    }
+    
+    state.epitopeColumns = allowedColumns;
+    
+    recalc();
+}
+
+function setTreeWidth(w) {
+    state.treeWidth = Math.max(0, w);
+    document.documentElement.style.setProperty('--tree-width', state.treeWidth + 'px');
+    onResize();
+}
+
+function setNamesWidth(w) {
+    state.namesWidth = Math.max(100, Math.min(800, w));
+    document.documentElement.style.setProperty('--names-width', state.namesWidth + 'px');
+    onResize();
+}
+
+function calculateNamesWidth() {
+    if (!state.rawSequences.length) {
+        setNamesWidth(200); // Default width
+        return;
+    }
+    
+    // Ensure canvas is initialized for text measurement
+    if (dom.cvsNames.width === 0) {
+        dom.cvsNames.width = 1;
+        dom.cvsNames.height = 1;
+    }
+    
+    // Calculate width needed for longest sequence name
+    const ctx = dom.cvsNames.getContext('2d');
+    ctx.font = CONFIG.labelFont;
+    
+    let maxWidth = 0;
+    state.rawSequences.forEach((s, idx) => {
+        let text = s.name;
+        if(idx === state.refIndex) text += " [Reference]";
+        if(idx === state.subtypeIndex) text += " [Subtype]";
+        if(s.name && s.name.startsWith('consensus_of_')) {
+            text += " [Founder]";
+        }
+        const metrics = ctx.measureText(text);
+        if (metrics.width > maxWidth) {
+            maxWidth = metrics.width;
+        }
+    });
+    
+    // Add padding (20px on each side) and set width
+    const calculatedWidth = Math.ceil(maxWidth) + 40;
+    setNamesWidth(Math.max(200, Math.min(800, calculatedWidth)));
+}
+
+function setMode(m, disableNT = false) {
+    state.mode = m;
+    if(m === 'NT') {
+        dom.btnNt.classList.add('active'); dom.btnAa.classList.remove('active');
+        dom.grpFrame.style.opacity = '0.4'; dom.grpFrame.style.pointerEvents = 'none';
+        // Enable NT button
+        dom.btnNt.disabled = false;
+        dom.btnNt.style.opacity = '1';
+    } else {
+        dom.btnAa.classList.add('active'); dom.btnNt.classList.remove('active');
+        dom.grpFrame.style.opacity = '1'; dom.grpFrame.style.pointerEvents = 'auto';
+        // Disable NT button if AA alignment was detected (can't reverse translate)
+        if (disableNT) {
+            dom.btnNt.disabled = true;
+            dom.btnNt.style.opacity = '0.5';
+            dom.btnNt.title = 'NT mode disabled: amino acid alignment cannot be reverse translated';
+        } else {
+            dom.btnNt.disabled = false;
+            dom.btnNt.style.opacity = '1';
+            dom.btnNt.title = '';
+        }
+    }
+    state.selection = null;
+    recalc();
+}
+
+function recalc() {
+    dom.btnUndo.disabled = (state.history.length === 0);
+    dom.btnUndo.style.opacity = (state.history.length === 0) ? "0.5" : "1";
+
+    if(!state.rawSequences.length) return;
+
+    // Always put reference sequence at the top
+    const refSeq = state.rawSequences[state.refIndex];
+    const nonRefSequences = state.rawSequences.filter((s, idx) => idx !== state.refIndex);
+    
+    let allViewSequences;
+    if(state.mode === 'NT') {
+        const refView = refSeq ? { name: refSeq.name, seq: refSeq.seq } : null;
+        const nonRefViews = nonRefSequences.map(s => ({ name: s.name, seq: s.seq }));
+        allViewSequences = refView ? [refView, ...nonRefViews] : nonRefViews;
+    } else {
+        // AA mode
+        if (state.isAASequence) {
+            // Sequences are already amino acids, use them directly
+            const refView = refSeq ? { name: refSeq.name, seq: refSeq.seq } : null;
+            const nonRefViews = nonRefSequences.map(s => ({ name: s.name, seq: s.seq }));
+            allViewSequences = refView ? [refView, ...nonRefViews] : nonRefViews;
+        } else {
+            // Sequences are DNA, translate to AA
+        const offset = state.frame - 1;
+            const refView = refSeq ? {
+                name: refSeq.name,
+                seq: (() => {
+                    const dna = refSeq.seq;
+                    const aa = [];
+                    for(let i=offset; i<dna.length; i+=3) {
+                        if(i+2 >= dna.length) break;
+                        const codon = dna.slice(i, i+3).join('');
+                        if(codon.includes('-')) aa.push('-');
+                        else if (/[^ACGT]/i.test(codon)) aa.push('X');
+                        else aa.push(CODON_TABLE[codon] || 'X');
+                    }
+                    return aa;
+                })()
+            } : null;
+            const nonRefViews = nonRefSequences.map(s => {
+            const dna = s.seq;
+            const aa = [];
+            for(let i=offset; i<dna.length; i+=3) {
+                if(i+2 >= dna.length) break;
+                const codon = dna.slice(i, i+3).join('');
+                if(codon.includes('-')) aa.push('-');
+                else if (/[^ACGT]/i.test(codon)) aa.push('X');
+                else aa.push(CODON_TABLE[codon] || 'X');
+            }
+            return { name: s.name, seq: aa };
+        });
+            allViewSequences = refView ? [refView, ...nonRefViews] : nonRefViews;
+        }
+    }
+    
+    state.viewSequences = allViewSequences;
+    // Reference is always at index 0 in viewSequences
+    state.refIndex = 0;
+    
+    // Find subtype index in viewSequences (for highlighting and bottom ruler)
+    const subtypeName = state.rawSequences[state.subtypeIndex]?.name;
+    const subtypeViewIndex = state.viewSequences.findIndex(s => s.name === subtypeName);
+    state.subtypeViewIndex = subtypeViewIndex >= 0 ? subtypeViewIndex : -1;
+
+    let max = 0;
+    state.viewSequences.forEach(s => max = Math.max(max, s.seq.length));
+    state.maxLength = max;
+    
+    // Use reference sequence for top ruler coordinate mapping
+    state.refMap = new Int32Array(max + 1);
+    if(state.viewSequences[state.refIndex]) {
+        const refSeq = state.viewSequences[state.refIndex].seq;
+        let count = 0;
+        for(let i=0; i<max; i++) {
+            const char = (i < refSeq.length) ? refSeq[i] : '-';
+            if(char !== '-') count++;
+            state.refMap[i] = count;
+        }
+    }
+    
+    
+
+    dom.sizer.style.width = (max * CONFIG.charWidth + 200) + 'px';
+    dom.sizer.style.height = (state.viewSequences.length * CONFIG.rowHeight) + 'px';
+    
+    if(state.tree) {
+        const nameToRow = new Map();
+        state.viewSequences.forEach((s, i) => nameToRow.set(s.name, i));
+        
+        let matchedCount = 0;
+        
+        function computeY(node) {
+            if(!node.children || node.children.length === 0) {
+                if(node.name && nameToRow.has(node.name)) {
+                    node.yRow = nameToRow.get(node.name);
+                    node.hidden = false;
+                    matchedCount++;
+                } else {
+                    node.yRow = 0;
+                    node.hidden = true;
+                }
+            } else {
+                let sumY = 0, count = 0;
+                let minC = Infinity, maxC = -Infinity;
+                let allHidden = true;
+                
+                node.children.forEach(c => {
+                    computeY(c);
+                    if(!c.hidden) {
+                        sumY += c.yRow;
+                        if(c.yRow < minC) minC = c.yRow;
+                        if(c.yRow > maxC) maxC = c.yRow;
+                        count++;
+                        allHidden = false;
+                    }
+                });
+                node.hidden = allHidden;
+                node.yRow = count ? (minC + maxC) / 2 : 0;
+            }
+        }
+        computeY(state.tree.root);
+    }
+
+    render();
+}
+
+// --- Interactions ---
+function getCoords(e, type) {
+    let r = 0, c = 0;
+    const rect = (type==='SEQ'?dom.areaSeq:(type==='NAMES'?dom.areaNames:dom.areaRuler)).getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    if(type === 'SEQ') {
+        c = Math.floor((x + dom.areaSeq.scrollLeft) / CONFIG.charWidth);
+        r = Math.floor((y + dom.areaSeq.scrollTop) / CONFIG.rowHeight);
+    } else if (type === 'NAMES') {
+        r = Math.floor((y + dom.areaSeq.scrollTop) / CONFIG.rowHeight);
+    } else if (type === 'RULER') {
+        c = Math.floor((x + dom.areaSeq.scrollLeft) / CONFIG.charWidth);
+    }
+    return { r, c };
+}
+
+function onMouseDown(e, type) {
+    dom.areaSeq.focus();
+    
+    const { r, c } = getCoords(e, type);
+    const maxR = Math.max(0, state.viewSequences.length - 1);
+    const safeR = Math.min(r, maxR);
+    const safeC = Math.max(0, c);
+
+    state.mouse.isDown = true;
+    state.mouse.startR = safeR;
+    state.mouse.startC = safeC;
+    state.mouse.lastHoverC = safeC;
+
+    // Shift Click Logic
+    if(e.shiftKey && state.selectionAnchor) {
+        state.mouse.target = type;
+        const anchor = state.selectionAnchor;
+        
+        let newR1 = Math.min(anchor.r, safeR);
+        let newR2 = Math.max(anchor.r, safeR);
+        let newC1 = Math.min(anchor.c, safeC);
+        let newC2 = Math.max(anchor.c, safeC);
+
+        if(type === 'NAMES') {
+            state.selection = { r1: newR1, r2: newR2, c1: 0, c2: 99999999 };
+        } else if (type === 'RULER') {
+            state.selection = { r1: 0, r2: maxR, c1: newC1, c2: newC2 };
+        } else if (type === 'SEQ') {
+            state.selection = { r1: newR1, r2: newR2, c1: newC1, c2: newC2 };
+        }
+        render();
+        return;
+    }
+
+    if(type === 'SEQ' && isInsideSelection(r, c) && !e.shiftKey) {
+        state.mouse.target = 'MOVE';
+        dom.areaSeq.classList.add('grabbing');
+    } else if (state.mouse.target === 'RESIZE_TREE') {
+        // handled
+    } else {
+        state.mouse.target = type;
+        
+        // Set Anchor
+        state.selectionAnchor = { r: safeR, c: safeC };
+
+        if(type === 'SEQ') {
+            state.selection = { r1: safeR, c1: safeC, r2: safeR, c2: safeC };
+        } else if (type === 'NAMES') {
+            state.selection = { r1: safeR, r2: safeR, c1: 0, c2: 99999999 }; 
+        } else if (type === 'RULER') {
+            state.selection = { r1: 0, r2: maxR, c1: safeC, c2: safeC };
+        }
+    }
+    render();
+}
+
+function onMouseMove(e) {
+    if(!state.mouse.isDown) return;
+
+    if(state.mouse.target === 'RESIZE_TREE') {
+        const x = e.clientX;
+        const newW = Math.max(20, Math.min(600, x));
+        setTreeWidth(newW);
+        return;
+    }
+    
+    if(state.mouse.target === 'RESIZE_NAMES') {
+        const deltaX = e.clientX - state.mouse.startX;
+        const newW = Math.max(100, Math.min(800, state.mouse.startNamesWidth + deltaX));
+        setNamesWidth(newW);
+        return;
+    }
+    
+    const { r, c } = getCoords(e, 'SEQ');
+    const safeR = Math.max(0, Math.min(state.viewSequences.length-1, r));
+    const safeC = Math.max(0, c);
+
+    if(state.mouse.target === 'SEQ') {
+        state.selection.r1 = Math.min(state.mouse.startR, safeR);
+        state.selection.r2 = Math.max(state.mouse.startR, safeR);
+        state.selection.c1 = Math.min(state.mouse.startC, safeC);
+        state.selection.c2 = Math.max(state.mouse.startC, safeC);
+        render();
+    } else if(state.mouse.target === 'NAMES') {
+        state.selection.r1 = Math.min(state.mouse.startR, safeR);
+        state.selection.r2 = Math.max(state.mouse.startR, safeR);
+        state.selection.c1 = 0; state.selection.c2 = 99999999;
+        render();
+    } else if(state.mouse.target === 'RULER') {
+        state.selection.c1 = Math.min(state.mouse.startC, safeC);
+        state.selection.c2 = Math.max(state.mouse.startC, safeC);
+        state.selection.r1 = 0; state.selection.r2 = state.viewSequences.length - 1;
+        render();
+    } else if(state.mouse.target === 'MOVE') {
+        const delta = safeC - state.mouse.lastHoverC;
+        if(delta !== 0) {
+            if(!state.dragSaved) { saveState(); state.dragSaved = true; }
+            attemptMoveSelection(delta);
+            state.mouse.lastHoverC = safeC;
+        }
+    }
+}
+
+function onMouseUp() {
+    state.mouse.isDown = false;
+    state.mouse.target = null;
+    state.dragSaved = false;
+    dom.areaSeq.classList.remove('grabbing');
+}
+
+function isInsideSelection(r, c) {
+    const s = state.selection;
+    if(!s) return false;
+    return r >= s.r1 && r <= s.r2 && c >= s.c1 && c <= s.c2;
+}
+
+// --- Editing Logic ---
+function onKeyDown(e) {
+    if(!state.selection) return;
+    if(e.ctrlKey || e.metaKey) return;
+
+    if(e.key === ' ') { e.preventDefault(); saveState(); insertGap(); }
+    else if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); saveState(); handleDeletion(); }
+    else if (state.mode === 'NT') {
+        const char = e.key.toUpperCase();
+        // Allow IUPAC ambigs
+        if(/^[ACGTURYMKSWHBVDN-]$/.test(char)) { e.preventDefault(); saveState(); overwriteBlock(char); }
+    }
+}
+
+function handleDeletion() {
+    const { r1, r2, c1, c2 } = state.selection;
+    const allRows = state.viewSequences.length;
+
+    if(c1 === 0 && c2 >= 99999) {
+        state.rawSequences.splice(r1, r2 - r1 + 1);
+        state.selection = null;
+        recalc(); return;
+    }
+    if(r1 === 0 && r2 >= allRows - 1) {
+        const count = c2 - c1 + 1;
+        state.rawSequences.forEach(s => {
+            const dna = s.seq;
+            if(state.mode === 'NT') { if(c1 < dna.length) dna.splice(c1, count); }
+            else { const off = state.frame - 1; const idx = (c1 * 3) + off; if(idx < dna.length) dna.splice(idx, count * 3); }
+        });
+        state.selection = null; recalc(); return;
+    }
+    deleteBlock();
+}
+
+function deleteBlock() {
+    const { r1, r2, c1, c2 } = state.selection;
+    const count = c2 - c1 + 1;
+    const safeC2 = (c2 > 99999) ? state.maxLength + 10 : c2;
+    const safeCount = safeC2 - c1 + 1;
+
+    for(let r=r1; r<=r2; r++) {
+        if(!state.rawSequences[r]) continue;
+        const dna = state.rawSequences[r].seq;
+        if(state.mode === 'NT') dna.splice(c1, safeCount);
+        else {
+            const off = state.frame - 1;
+            const idx = (c1 * 3) + off;
+            if(idx < dna.length) dna.splice(idx, safeCount * 3);
+        }
+    }
+    state.selection = { r1, r2, c1, c2: c1 }; recalc();
+}
+
+function insertGap() {
+    const { r1, r2, c1 } = state.selection;
+    for(let r=r1; r<=r2; r++) {
+        if(!state.rawSequences[r]) continue;
+        const dna = state.rawSequences[r].seq;
+        if(state.mode === 'NT') dna.splice(c1, 0, '-');
+        else { const idx = (c1 * 3) + (state.frame - 1); dna.splice(idx, 0, '-', '-', '-'); }
+    }
+    recalc();
+}
+
+function overwriteBlock(char) {
+    const { r1, r2, c1, c2 } = state.selection;
+    for(let r=r1; r<=r2; r++) {
+        if(!state.rawSequences[r]) continue;
+        const dna = state.rawSequences[r].seq;
+        const effectiveC2 = Math.min(c2, dna.length + 50); 
+        for(let c=c1; c<=effectiveC2; c++) {
+            if(c < dna.length) dna[c] = char; else dna.push(char);
+        }
+    }
+    recalc();
+}
+
+function attemptMoveSelection(dir) {
+    if(dir === 0) return;
+    const { r1, r2, c1, c2 } = state.selection;
+    let canMove = true;
+    for(let r=r1; r<=r2; r++) {
+        if(!state.rawSequences[r]) continue;
+        const dna = state.rawSequences[r].seq;
+        let start, end, step;
+        if(state.mode === 'NT') { start = c1; end = c2; step = 1; }
+        else { const off = state.frame - 1; start = c1*3+off; end = c2*3+off+2; step = 3; }
+        const checkEnd = Math.min(end, dna.length - 1);
+
+        if(dir > 0) {
+            for(let k=1; k<=step; k++) if(checkEnd + k < dna.length && dna[checkEnd + k] !== '-') { canMove = false; break; }
+        } else {
+            if(start - step < 0) { canMove = false; break; }
+            for(let k=1; k<=step; k++) if(dna[start - k] !== '-') { canMove = false; break; }
+        }
+        if(!canMove) break;
+    }
+    if(!canMove) return;
+
+    for(let r=r1; r<=r2; r++) {
+        if(!state.rawSequences[r]) continue;
+        const dna = state.rawSequences[r].seq;
+        let start, end, step;
+        if(state.mode === 'NT') { start = c1; end = c2; step = 1; }
+        else { const off = state.frame - 1; start = c1*3+off; end = c2*3+off+2; step = 3; }
+        const effectiveEnd = Math.min(end, dna.length - 1);
+
+        if(dir > 0) {
+            while(dna.length <= effectiveEnd + step) dna.push('-');
+            for(let i = effectiveEnd; i >= start; i--) { dna[i+step] = dna[i]; dna[i] = '-'; }
+        } else {
+            for(let i = start; i <= effectiveEnd; i++) { dna[i-step] = dna[i]; dna[i] = '-'; }
+        }
+    }
+    state.selection.c1 += (dir>0?1:-1); state.selection.c2 += (dir>0?1:-1); recalc();
+}
+
+// --- Render ---
+function showOverlay(b) { dom.overlay.classList.toggle('active', b); }
+
+function onResize() {
+    dom.cvsNames.width = dom.areaNames.clientWidth;
+    dom.cvsNames.height = dom.areaNames.clientHeight;
+    dom.cvsRuler.width = dom.areaRuler.clientWidth;
+    dom.cvsRuler.height = dom.areaRuler.clientHeight;
+    dom.cvsSeq.width = dom.areaSeq.clientWidth;
+    dom.cvsSeq.height = dom.areaSeq.clientHeight;
+    if(state.treeWidth > 0) {
+        dom.cvsTree.width = dom.areaTree.clientWidth;
+        dom.cvsTree.height = dom.areaTree.clientHeight;
+    }
+    render();
+}
+
+function render() {
+    if(!state.viewSequences.length && state.rawSequences.length === 0) {
+        ctxSeq.clearRect(0,0,dom.cvsSeq.width, dom.cvsSeq.height);
+        return;
+    }
+
+    const vW = dom.cvsSeq.width, vH = dom.cvsSeq.height;
+    const scrollLeft = dom.areaSeq.scrollLeft, scrollTop = dom.areaSeq.scrollTop;
+
+    const startRow = Math.floor(scrollTop / CONFIG.rowHeight);
+    const endRow = Math.min(state.viewSequences.length, Math.ceil((scrollTop + vH) / CONFIG.rowHeight));
+    
+    const startCol = Math.floor(scrollLeft / CONFIG.charWidth);
+    const endCol = Math.ceil((scrollLeft + vW) / CONFIG.charWidth);
+
+    // Sequence
+    ctxSeq.fillStyle = '#ffffff'; ctxSeq.fillRect(0,0,vW,vH);
+    ctxSeq.font = CONFIG.font; ctxSeq.textBaseline = 'middle'; ctxSeq.textAlign = 'center';
+    const colors = state.mode === 'NT' ? CONFIG.colors.NT : CONFIG.colors.AA;
+    
+    // Get the sequence to use for highlighting based on user selection
+    let highlightSeq = null;
+    if (state.highlightMatches) {
+        if (state.highlightMatches === 'founder') {
+            // Find founder sequence (consensus_of_ prefix)
+            const founderIndex = state.viewSequences.findIndex(s => 
+                s.name && s.name.startsWith('consensus_of_')
+            );
+            if (founderIndex >= 0) {
+                highlightSeq = state.viewSequences[founderIndex].seq;
+            }
+        } else if (state.highlightMatches === 'subtype') {
+            // Use subtype sequence
+            if (state.subtypeViewIndex >= 0 && state.viewSequences[state.subtypeViewIndex]) {
+                highlightSeq = state.viewSequences[state.subtypeViewIndex].seq;
+            }
+        } else if (state.highlightMatches === 'reference') {
+            // Use reference sequence
+            if (state.refIndex >= 0 && state.viewSequences[state.refIndex]) {
+                highlightSeq = state.viewSequences[state.refIndex].seq;
+            }
+        }
+    }
+
+    // If epitope is selected, only show columns in the epitopeColumns set
+    const showColumn = (c) => {
+        if (state.epitopeColumns === null) return true; // No epitope selected, show all
+        return state.epitopeColumns.has(c);
+    };
+
+    for(let r=startRow; r<endRow; r++) {
+        const seq = state.viewSequences[r].seq;
+        const y = (r * CONFIG.rowHeight) - scrollTop;
+        for(let c=startCol; c<endCol; c++) {
+            if(c >= seq.length) break;
+            
+            // Skip columns not in the epitope
+            if (!showColumn(c)) continue;
+            
+            const char = seq[c];
+            const x = (c * CONFIG.charWidth) - scrollLeft;
+            let fillColor;
+            
+            // Use light grey for gap characters to distinguish from suppressed columns (white)
+            if (char === '-') {
+                fillColor = '#e5e7eb'; // Light grey for gaps
+            } else {
+                fillColor = colors[char] || colors['default'];
+                
+                if(state.highlightMatches && highlightSeq) {
+                    const highlightChar = (c < highlightSeq.length) ? highlightSeq[c] : '-';
+                    if(highlightChar !== '-') {
+                        if(char === highlightChar) {
+                            fillColor = CONFIG.highlightMatchColor;
+                        }
+                    }
+                }
+            }
+
+            ctxSeq.fillStyle = fillColor;
+            ctxSeq.fillRect(x, y, CONFIG.charWidth, CONFIG.rowHeight);
+            if(char !== '-') {
+                ctxSeq.fillStyle = '#000';
+                ctxSeq.fillText(char, x + CONFIG.charWidth/2, y + CONFIG.rowHeight/2);
+            }
+        }
+    }
+
+    // Selection
+    if(state.selection) {
+        const { r1, r2, c1, c2 } = state.selection;
+        const visC2 = Math.min(c2, state.maxLength + 20);
+        const sx = (c1 * CONFIG.charWidth) - scrollLeft;
+        const sy = (r1 * CONFIG.rowHeight) - scrollTop;
+        const w = Math.max(4, (visC2 - c1 + 1) * CONFIG.charWidth);
+        const h = (r2 - r1 + 1) * CONFIG.rowHeight;
+        
+        ctxSeq.fillStyle = 'rgba(37, 99, 235, 0.2)'; ctxSeq.fillRect(sx, sy, w, h);
+        ctxSeq.strokeStyle = 'rgba(37, 99, 235, 0.8)'; ctxSeq.lineWidth = 1; ctxSeq.strokeRect(sx, sy, w, h);
+    }
+
+    // Names
+    ctxNames.fillStyle = '#fff'; ctxNames.fillRect(0,0,dom.cvsNames.width, dom.cvsNames.height);
+    ctxNames.font = CONFIG.labelFont; ctxNames.textBaseline = 'middle'; ctxNames.textAlign = 'left';
+    for(let r=startRow; r<endRow; r++) {
+        const y = (r * CONFIG.rowHeight) - scrollTop;
+        let isSel = state.selection && (r >= state.selection.r1 && r <= state.selection.r2);
+        
+        // Check if this is the subtype sequence in viewSequences
+        const isSubtype = state.viewSequences[r].name === state.rawSequences[state.subtypeIndex]?.name;
+        // Check if this is a founder sequence
+        const isFounder = state.viewSequences[r].name && state.viewSequences[r].name.startsWith('consensus_of_');
+        
+        // Determine background and text colors based on grouping only
+        let bgColor, textColor;
+        const seqName = state.viewSequences[r].name;
+        const groupId = state.sequenceGroups ? state.sequenceGroups.get(seqName) : undefined;
+        
+        // Set background color: use group color if grouping exists, otherwise default
+        if(r === state.refIndex) {
+            bgColor = '#eff6ff';
+        } else if(isSubtype) {
+            bgColor = '#fef3c7'; // Light yellow background for subtype
+        } else if (groupId !== undefined) {
+            // Use group color for background
+            const lightBgColor = GROUP_LIGHT_BG[groupId % GROUP_LIGHT_BG.length];
+            bgColor = isSel ? '#eff6ff' : lightBgColor;
+        } else {
+            // Default background
+            bgColor = isSel ? '#eff6ff' : (r%2===0 ? '#f9fafb' : '#fff');
+        }
+        
+        // Set text color: use group color if grouping exists, otherwise default
+        if(r === state.refIndex) {
+            textColor = '#2563eb';
+        } else if(isSubtype) {
+            textColor = '#d97706'; // Orange color for subtype
+        } else if (groupId !== undefined) {
+            // Use group color for text
+            textColor = GROUP_COLORS[groupId % GROUP_COLORS.length];
+        } else {
+            // Default text color
+            textColor = isSel ? '#1e40af' : '#374151';
+        }
+        
+        ctxNames.fillStyle = bgColor;
+        ctxNames.fillRect(0, y, dom.cvsNames.width, CONFIG.rowHeight);
+        
+        if(r === state.refIndex) {
+            ctxNames.font = "bold " + CONFIG.labelFont;
+        } else if(isSubtype) {
+            ctxNames.font = "bold " + CONFIG.labelFont;
+        } else {
+            ctxNames.font = CONFIG.labelFont;
+        }
+        
+        // Draw sequence name with labels
+        ctxNames.fillStyle = textColor;
+        let label = state.viewSequences[r].name;
+        if(r === state.refIndex) label += " [Reference]";
+        if(isSubtype && state.subtypeIndex < state.rawSequences.length) {
+            label += " [Subtype]";
+        }
+        if(isFounder) {
+            label += " [Founder]";
+        }
+        ctxNames.fillText(label, 10, y + CONFIG.rowHeight/2);
+    }
+    
+    // Update color legend
+    updateColorLegend();
+
+    // Ruler
+    ctxRuler.fillStyle = '#f3f4f6'; ctxRuler.fillRect(0,0,dom.cvsRuler.width, dom.cvsRuler.height);
+    ctxRuler.font = "10px sans-serif"; ctxRuler.textAlign = "center"; 
+    
+    const h = dom.cvsRuler.height;
+    const mid = h / 2;
+
+    ctxRuler.strokeStyle = '#e5e7eb';
+    ctxRuler.beginPath(); ctxRuler.moveTo(0, mid); ctxRuler.lineTo(dom.cvsRuler.width, mid); ctxRuler.stroke();
+
+    ctxRuler.strokeStyle = "#9ca3af";
+
+    for(let c=startCol; c<endCol; c++) {
+        // Skip columns not in the epitope
+        if (!showColumn(c)) continue;
+        
+        const x = (c * CONFIG.charWidth) - scrollLeft + (CONFIG.charWidth/2);
+        let isSel = state.selection && (c >= state.selection.c1 && c <= state.selection.c2);
+        
+        if(isSel) {
+            ctxRuler.fillStyle = "rgba(37, 99, 235, 0.2)";
+            ctxRuler.fillRect((c*CONFIG.charWidth)-scrollLeft, 0, CONFIG.charWidth, h);
+        }
+
+        // Top ruler: Reference coordinates (for defining epitopes)
+        const refIdx = state.refMap[c];
+        const prevRefIdx = (c > 0) ? state.refMap[c-1] : 0;
+        
+        if(refIdx !== prevRefIdx) {
+            ctxRuler.fillStyle = "#2563eb"; 
+            if(refIdx===1 || refIdx % CONFIG.rulerTickStep === 0) {
+                ctxRuler.moveTo(x, 0); ctxRuler.lineTo(x, 15);
+                // Position coordinate text slightly lower to avoid overlap with epitope start coords
+                ctxRuler.fillText(refIdx, x, mid / 2 + 4);
+            } else if(refIdx % (CONFIG.rulerTickStep/2)===0) {
+                ctxRuler.moveTo(x, 0); ctxRuler.lineTo(x, 8);
+            }
+        }
+        
+        // Show epitope region boundaries on reference ruler
+        if (state.selectedEpitope && state.epitopes.length > 0) {
+            const epitope = state.epitopes.find(e => e.name === state.selectedEpitope);
+            if (epitope) {
+                for (const region of epitope.regions) {
+                    // Check if this column corresponds to the start or end of a region
+                    if (refIdx === region.start && refIdx !== prevRefIdx) {
+                        // Start coordinate at the top
+                        ctxRuler.fillStyle = "#dc2626"; // Red color for start
+                        ctxRuler.font = "9px sans-serif";
+                        ctxRuler.textAlign = "center";
+                        ctxRuler.fillText(region.start.toString(), x, 10);
+                    }
+                    if (refIdx === region.end && refIdx !== prevRefIdx) {
+                        // End coordinate at the bottom (just above the divider line)
+                        ctxRuler.fillStyle = "#dc2626"; // Red color for end
+                        ctxRuler.font = "9px sans-serif";
+                        ctxRuler.textAlign = "center";
+                        ctxRuler.fillText(region.end.toString(), x, mid - 5);
+                    }
+                }
+            }
+        }
+        
+        // Bottom ruler: Alignment positions (every 10th position, counting all positions including gaps)
+        const alnIdx = c + 1;
+        ctxRuler.fillStyle = "#6b7280";
+        if(alnIdx===1 || alnIdx % CONFIG.rulerTickStep === 0) {
+            ctxRuler.moveTo(x, mid + 15); ctxRuler.lineTo(x, h);
+            ctxRuler.fillText(alnIdx, x, mid + 12);
+        } else if(alnIdx % (CONFIG.rulerTickStep/2)===0) {
+            ctxRuler.moveTo(x, mid + 22); ctxRuler.lineTo(x, h);
+        }
+    }
+    ctxRuler.stroke();
+    
+    ctxRuler.fillStyle = "#2563eb"; ctxRuler.font = "9px sans-serif"; ctxRuler.textAlign = "left";
+    ctxRuler.fillText("Ref", 2, 12);
+    ctxRuler.fillStyle = "#6b7280";
+    ctxRuler.fillText("Aln", 2, mid + 12);
+
+    // Tree
+    if(state.treeWidth > 0 && state.tree) {
+        ctxTree.clearRect(0, 0, dom.cvsTree.width, dom.cvsTree.height);
+        ctxTree.save();
+        ctxTree.translate(0, -scrollTop);
+        ctxTree.strokeStyle = '#374151';
+        ctxTree.lineWidth = 1;
+
+        const padding = 15;
+        const availableW = dom.cvsTree.width - padding;
+        const xScale = state.tree.maxDepth > 0 ? (availableW / state.tree.maxDepth) : 1;
+
+        const drawNode = (node) => {
+            if(node.hidden) return;
+            const x = (node.xDepth * xScale) + 5;
+            const y = (node.yRow * CONFIG.rowHeight) + (CONFIG.rowHeight/2);
+
+            if(node.children && node.children.length > 0) {
+                // Internal node - draw branches first
+                let minY = Infinity, maxY = -Infinity;
+                node.children.forEach(c => {
+                    if(c.hidden) return;
+                    drawNode(c);
+                    const cx = (c.xDepth * xScale) + 5;
+                    const cy = (c.yRow * CONFIG.rowHeight) + (CONFIG.rowHeight/2);
+                    
+                    ctxTree.beginPath();
+                    ctxTree.moveTo(x, cy);
+                    ctxTree.lineTo(cx, cy);
+                    ctxTree.stroke();
+
+                    if(cy < minY) minY = cy;
+                    if(cy > maxY) maxY = cy;
+                });
+
+                if(minY !== Infinity) {
+                    ctxTree.beginPath();
+                    ctxTree.moveTo(x, minY);
+                    ctxTree.lineTo(x, maxY);
+                    ctxTree.stroke();
+                }
+                
+                // Draw circle for internal node
+                ctxTree.fillStyle = '#374151';
+                ctxTree.beginPath();
+                ctxTree.arc(x, y, 3, 0, 2 * Math.PI);
+                ctxTree.fill();
+            } else {
+                // Leaf node - draw dotted line to names
+                ctxTree.save();
+                ctxTree.setLineDash([2, 4]);
+                ctxTree.strokeStyle = '#d1d5db';
+                ctxTree.beginPath();
+                ctxTree.moveTo(x, y);
+                ctxTree.lineTo(dom.cvsTree.width, y);
+                ctxTree.stroke();
+                ctxTree.restore();
+                
+                // Draw diamond for leaf node with cluster color if available
+                let fillColor = '#374151'; // Default grey
+                const isSubtype = state.subtypeIndex >= 0 && 
+                                 state.rawSequences[state.subtypeIndex]?.name === node.name;
+                
+                if (isSubtype) {
+                    fillColor = '#dc2626'; // Red for subtype
+                } else if (state.leafClusters && node.name) {
+                    const clusterId = state.leafClusters.get(node.name);
+                    if (clusterId !== undefined && clusterId !== -1) {
+                        // Use CLUSTER_COLORS palette (same as MDS plot)
+                        fillColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+                    } else if (clusterId === -1) {
+                        fillColor = '#9ca3af'; // Grey for noise
+                    }
+                }
+                
+                ctxTree.fillStyle = fillColor;
+                drawDiamond(ctxTree, x, y, 10); // Doubled from 5 to 10
+            }
+        };
+
+        drawNode(state.tree.root);
+        ctxTree.restore();
+    }
+}
+
+// Initialize legend dragging
+initLegendDragging();
+
+init();
+</script>
+</body>
+</html>
