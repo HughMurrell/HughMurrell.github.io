@@ -12,6 +12,8 @@
     <script src="https://murrellgroup.github.io/WebWidgets/frameclean.js"></script>
     <!-- Included Aioli for bioWASM -->
     <script src="https://biowasm.com/cdn/v3/aioli.js"></script>
+    <!-- Included UMAP for dimensionality reduction -->
+    <script src="umap-js.min.js"></script>
     <style>
         :root {
             --bg-color: #f8f9fa;
@@ -209,7 +211,7 @@
                 <button id="btn-reroot-tree" title="Reroot tree on subtype sequence">Reroot</button>
                 <button id="btn-ladderize-tree" title="Ladderize tree and reorder sequences">Ladderize</button>
                 <button id="btn-histogram" title="Show histogram of root-to-leaf distances" disabled>Histogram</button>
-                <button id="btn-mds" title="Show MDS plot of pairwise leaf distances" disabled>MDS</button>
+                <button id="btn-mds" title="Show 2D projection and clustering of pairwise leaf distances" disabled>Cluster</button>
                 <button id="btn-export-tree" title="Export current tree as Newick">Export</button>
             </div>
         </div>
@@ -392,9 +394,56 @@
     </div>
 </div>
 
+<div id="method-select-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Select Projection Method</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Choose dimensionality reduction method:</label>
+            <select id="sel-projection-method" style="width: 100%;">
+                <option value="mds">MDS (Classical Multidimensional Scaling)</option>
+                <option value="umap">UMAP (Uniform Manifold Approximation and Projection)</option>
+                <option value="hierarchical">Hierarchical (Tree-based Clustering)</option>
+            </select>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button onclick="document.getElementById('method-select-overlay').style.display='none'">Cancel</button>
+            <button id="btn-confirm-method" class="active">Continue</button>
+        </div>
+    </div>
+</div>
+
+<div id="hierarchical-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;">
+    <div class="help-box" style="width: 500px; pointer-events: auto;">
+        <h2>Hierarchical Clustering</h2>
+        <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: #374151; min-width: 120px;">Level 1 Depth:</label>
+                    <input type="range" id="hier-slider-1" min="0" max="1" step="0.01" value="0" style="flex: 1;">
+                    <span id="hier-value-1" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">0.00</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: #374151; min-width: 120px;">Level 2 Depth:</label>
+                    <input type="range" id="hier-slider-2" min="0" max="1" step="0.01" value="0" style="flex: 1;">
+                    <span id="hier-value-2" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">0.00</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: #374151; min-width: 120px;">Level 3 Depth:</label>
+                    <input type="range" id="hier-slider-3" min="0" max="1" step="0.01" value="0" style="flex: 1;">
+                    <span id="hier-value-3" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">0.00</span>
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button id="btn-hier-cancel">Cancel</button>
+            <button id="btn-hier-accept" class="active">Accept</button>
+        </div>
+    </div>
+</div>
+
 <div id="mds-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="help-box" style="width: 700px; max-width: 90vw;">
-        <h2>MDS Plot of Pairwise Leaf Distances</h2>
+        <h2>2D Projection of Pairwise Leaf Distances</h2>
         <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 15px;">
             <div style="display: flex; flex-direction: column; gap: 5px;">
                 <label style="font-size: 12px; color: #374151;">DBSCAN Parameters:</label>
@@ -407,6 +456,24 @@
                     <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Min Neighbors:</label>
                     <input type="range" id="mds-minpts-slider" min="1" max="10" step="1" value="2" style="flex: 1;">
                     <span id="mds-minpts-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">2</span>
+                </div>
+            </div>
+            <div id="umap-params-container" style="display: none; flex-direction: column; gap: 5px;">
+                <label style="font-size: 12px; color: #374151;">UMAP Parameters:</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 11px; color: #6b7280; min-width: 80px;">nNeighbors:</label>
+                    <input type="range" id="umap-nneighbors-slider" min="2" max="100" step="1" value="15" style="flex: 1;">
+                    <span id="umap-nneighbors-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">15</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Spread:</label>
+                    <input type="range" id="umap-spread-slider" min="0.1" max="3.0" step="0.1" value="1.0" style="flex: 1;">
+                    <span id="umap-spread-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">1.0</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Min Distance:</label>
+                    <input type="range" id="umap-mindist-slider" min="0.0" max="1.0" step="0.01" value="0.1" style="flex: 1;">
+                    <span id="umap-mindist-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">0.1</span>
                 </div>
             </div>
             <canvas id="mds-canvas" width="660" height="500" style="width: 100%; max-width: 660px; height: auto; border: 1px solid #e5e7eb; background: white;"></canvas>
@@ -615,6 +682,8 @@ const state = {
     aioliCLI: null,
     isAASequence: false, // Flag to track if sequences are already amino acids (not DNA to be translated)
     leafClusters: null, // Map from leaf name to cluster ID (from MDS clustering)
+    hierarchicalActive: false, // Whether hierarchical clustering modal is active
+    hierarchicalDepths: [0, 0, 0], // Current depth values for hierarchical clustering sliders
     sequenceGroups: null, // Map from sequence name to group ID (from grouping by name field)
     groupDelimiter: null, // Delimiter used for grouping
     groupFieldNum: null, // Field number (1-based) used for grouping
@@ -694,7 +763,7 @@ async function init() {
         console.log("Loading FastTree from bioWASM...");
         state.aioliCLI = await new Aioli(["fasttree/2.1.11"]);
         console.log("FastTree successfully loaded");
-    } catch (err) {
+        } catch (err) {
         console.error("Failed to initialize FastTree:", err);
         state.aioliCLI = null;
     }
@@ -740,6 +809,21 @@ async function init() {
     }
     if (dom.btnMds) {
         dom.btnMds.addEventListener('click', showMdsModal);
+    }
+    
+    // Method selection popup - Continue button
+    const btnConfirmMethod = document.getElementById('btn-confirm-method');
+    if (btnConfirmMethod) {
+        btnConfirmMethod.addEventListener('click', () => {
+            const methodSelect = document.getElementById('sel-projection-method');
+            const selectedMethod = methodSelect ? methodSelect.value : 'mds';
+            document.getElementById('method-select-overlay').style.display = 'none';
+            if (selectedMethod === 'hierarchical') {
+                showHierarchicalModal();
+            } else {
+                showProjectionPlot(selectedMethod);
+            }
+        });
     }
     document.getElementById('btn-run-ladderize').addEventListener('click', runLadderizeTask);
     dom.btnClearAlignment.addEventListener('click', clearAlignment);
@@ -2349,9 +2433,9 @@ function rerootTree(root, targetNode, targetType = 'subtype') {
         
         // Remove node from parent's children array (if it's there)
         if (parent.children) {
-            const parentChildIndex = parent.children.indexOf(node);
-            if (parentChildIndex !== -1) {
-                parent.children.splice(parentChildIndex, 1);
+        const parentChildIndex = parent.children.indexOf(node);
+        if (parentChildIndex !== -1) {
+            parent.children.splice(parentChildIndex, 1);
             }
         }
         
@@ -2567,7 +2651,7 @@ function parseTree(newick, isIndexed = false, shouldReroot = true) {
         // This prevents making leaf nodes direct children of root
         if (singleChild.children && singleChild.children.length > 0) {
             root = singleChild;
-            delete root.parent;
+        delete root.parent;
             // Rebuild parent references after collapsing root
             function rebuildParents(node, parent = null) {
                 node.parent = parent;
@@ -2870,7 +2954,7 @@ function showMdsModal() {
     collectLeaves(state.tree.root);
     
     if (leaves.length < 2) {
-        alert("Need at least 2 leaves to create an MDS plot.");
+        alert("Need at least 2 leaves to create a projection.");
         return;
     }
     
@@ -2940,12 +3024,62 @@ function showMdsModal() {
         }
     }
     
-    // Perform classical MDS
-    const mdsCoords = performClassicalMDS(distanceMatrix);
+    // Store data for use after method selection
+    window.mdsModalData = { leaves, distanceMatrix, subtypeName };
     
-    // Calculate MDS coordinate ranges to set appropriate slider bounds
-    const xs = mdsCoords.map(c => c.x);
-    const ys = mdsCoords.map(c => c.y);
+    // Show method selection popup
+    document.getElementById('method-select-overlay').style.display = 'flex';
+}
+
+function showProjectionPlot(selectedMethod) {
+    // Get stored data
+    const { leaves, distanceMatrix, subtypeName } = window.mdsModalData;
+    if (!leaves || !distanceMatrix) {
+        alert("Error: Projection data not available.");
+        return;
+    }
+    
+    // Show/hide UMAP parameters based on selected method
+    const umapParamsContainer = document.getElementById('umap-params-container');
+    if (umapParamsContainer) {
+        umapParamsContainer.style.display = selectedMethod === 'umap' ? 'flex' : 'none';
+    }
+    
+    // Function to perform projection based on selected method
+    function performProjection(method, distMatrix, nNeighbors = 15, spread = 1.0, minDist = 0.1) {
+        if (method === 'umap') {
+            return performUMAP(distMatrix, nNeighbors, spread, minDist);
+        } else {
+            return performClassicalMDS(distMatrix);
+        }
+    }
+    
+    // Get UMAP parameter sliders
+    const nNeighborsSlider = document.getElementById('umap-nneighbors-slider');
+    const spreadSlider = document.getElementById('umap-spread-slider');
+    const minDistSlider = document.getElementById('umap-mindist-slider');
+    const nNeighborsValue = document.getElementById('umap-nneighbors-value');
+    const spreadValue = document.getElementById('umap-spread-value');
+    const minDistValue = document.getElementById('umap-mindist-value');
+    
+    // Calculate initial nNeighbors (adaptive based on data size)
+    const n = distanceMatrix.length;
+    const initialNNeighbors = Math.min(15, Math.max(2, Math.floor(Math.sqrt(n))));
+    if (nNeighborsSlider) {
+        // Set max to number of data points
+        nNeighborsSlider.max = n.toString();
+        nNeighborsSlider.value = initialNNeighbors.toString();
+    }
+    
+    // Perform initial projection with selected method
+    let nNeighbors = nNeighborsSlider ? parseInt(nNeighborsSlider.value) : initialNNeighbors;
+    let spread = spreadSlider ? parseFloat(spreadSlider.value) : 1.0;
+    let minDist = minDistSlider ? parseFloat(minDistSlider.value) : 0.1;
+    let projectionCoords = performProjection(selectedMethod, distanceMatrix, nNeighbors, spread, minDist);
+    
+    // Calculate coordinate ranges to set appropriate slider bounds
+    const xs = projectionCoords.map(c => c.x);
+    const ys = projectionCoords.map(c => c.y);
     const rangeX = Math.max(...xs) - Math.min(...xs);
     const rangeY = Math.max(...ys) - Math.min(...ys);
     const minRange = Math.min(rangeX, rangeY);
@@ -2953,11 +3087,12 @@ function showMdsModal() {
     // Set epsilon slider step to 0.01 of the minimum range
     const epsStep = minRange * 0.01;
     const epsMin = epsStep; // Minimum should be at least one step
-    const epsMax = minRange * 2; // Maximum should cover a reasonable range (2x the minimum range)
+    // For UMAP, set max to 2x current spread value; for MDS, use 2x minimum range
+    const epsMax = selectedMethod === 'umap' ? spread * 2 : minRange * 2;
     const epsDefault = minRange * 0.1; // Default to 10% of minimum range
     
     // Store data for DBSCAN updates
-    window.mdsData = { leaves, coords: mdsCoords, subtypeName };
+    window.mdsData = { leaves, coords: projectionCoords, subtypeName };
     
     // Set up sliders
     const epsSlider = document.getElementById('mds-eps-slider');
@@ -2965,7 +3100,7 @@ function showMdsModal() {
     const epsValue = document.getElementById('mds-eps-value');
     const minPtsValue = document.getElementById('mds-minpts-value');
     
-    // Update epsilon slider attributes based on MDS data
+    // Update epsilon slider attributes based on projection data
     epsSlider.min = epsMin.toString();
     epsSlider.max = epsMax.toString();
     epsSlider.step = epsStep.toString();
@@ -2981,6 +3116,38 @@ function showMdsModal() {
     
     // Store current clusters for apply button
     let currentClusters = null;
+    
+    // Function to recalculate projection (for UMAP parameter changes)
+    const recalculateProjection = () => {
+        if (selectedMethod === 'umap') {
+            nNeighbors = nNeighborsSlider ? parseInt(nNeighborsSlider.value) : 15;
+            spread = spreadSlider ? parseFloat(spreadSlider.value) : 1.0;
+            minDist = minDistSlider ? parseFloat(minDistSlider.value) : 0.1;
+            projectionCoords = performProjection(selectedMethod, distanceMatrix, nNeighbors, spread, minDist);
+            
+            // Update coordinate ranges for epsilon slider
+            const xs = projectionCoords.map(c => c.x);
+            const ys = projectionCoords.map(c => c.y);
+            const rangeX = Math.max(...xs) - Math.min(...xs);
+            const rangeY = Math.max(...ys) - Math.min(...ys);
+            const minRange = Math.min(rangeX, rangeY);
+            const epsStep = minRange * 0.01;
+            const epsMin = epsStep;
+            // For UMAP, set max to 2x current spread value
+            const epsMax = spread * 2;
+            const epsDefault = minRange * 0.1;
+            
+            epsSlider.min = epsMin.toString();
+            epsSlider.max = epsMax.toString();
+            epsSlider.step = epsStep.toString();
+            if (parseFloat(epsSlider.value) > epsMax) {
+                epsSlider.value = epsDefault.toString();
+            }
+            
+            // Update stored coords
+            window.mdsData.coords = projectionCoords;
+        }
+    };
     
     const updatePlot = () => {
         const eps = parseFloat(epsSlider.value);
@@ -3012,19 +3179,57 @@ function showMdsModal() {
         }
         
         // Perform DBSCAN clustering (subtype will be isolated, founder can cluster naturally)
-        let clusters = performDBSCAN(mdsCoords, eps, minPts, subtypeIdx, null);
+        let clusters = performDBSCAN(projectionCoords, eps, minPts, subtypeIdx, null);
         
         // Renumber clusters by distance from founder (if present) or subtype
-        clusters = renumberClustersByDistanceFromSubtype(clusters, mdsCoords, subtypeIdx, leaves, subtypeName);
+        clusters = renumberClustersByDistanceFromSubtype(clusters, projectionCoords, subtypeIdx, leaves, subtypeName);
         
         currentClusters = clusters; // Store for apply button
         
-        // Draw MDS plot with clusters and epsilon circles
-        drawMdsPlot(leaves, mdsCoords, subtypeName, clusters, eps, founderName);
+        // Draw projection plot with clusters and epsilon circles
+        drawMdsPlot(leaves, projectionCoords, subtypeName, clusters, eps, founderName);
     };
     
     epsSlider.addEventListener('input', updatePlot);
     minPtsSlider.addEventListener('input', updatePlot);
+    
+    // Initialize UMAP parameter display values
+    if (nNeighborsValue) {
+        nNeighborsValue.textContent = nNeighbors.toString();
+    }
+    if (spreadValue) {
+        spreadValue.textContent = spread.toFixed(1);
+    }
+    if (minDistValue) {
+        minDistValue.textContent = minDist.toFixed(2);
+    }
+    
+    // Add event listeners for UMAP parameter sliders
+    if (nNeighborsSlider && spreadSlider && minDistSlider) {
+        nNeighborsSlider.addEventListener('input', () => {
+            if (nNeighborsValue) {
+                nNeighborsValue.textContent = nNeighborsSlider.value;
+            }
+            recalculateProjection();
+            updatePlot();
+        });
+        
+        spreadSlider.addEventListener('input', () => {
+            if (spreadValue) {
+                spreadValue.textContent = parseFloat(spreadSlider.value).toFixed(1);
+            }
+            recalculateProjection();
+            updatePlot();
+        });
+        
+        minDistSlider.addEventListener('input', () => {
+            if (minDistValue) {
+                minDistValue.textContent = parseFloat(minDistSlider.value).toFixed(2);
+            }
+            recalculateProjection();
+            updatePlot();
+        });
+    }
     
     // Apply button - apply clustering to tree
     const applyBtn = document.getElementById('mds-apply-btn');
@@ -3056,12 +3261,27 @@ function showMdsModal() {
                 }
             }
             
-            let clusters = performDBSCAN(mdsCoords, eps, minPts, subtypeIdx, null);
-            clusters = renumberClustersByDistanceFromSubtype(clusters, mdsCoords, subtypeIdx, leaves, subtypeName);
+            let clusters = performDBSCAN(projectionCoords, eps, minPts, subtypeIdx, null);
+            clusters = renumberClustersByDistanceFromSubtype(clusters, projectionCoords, subtypeIdx, leaves, subtypeName);
             currentClusters = clusters;
         }
         
         // Create mapping from leaf name to cluster ID
+        // First, create a map from sequence names (without cluster suffix) to cluster IDs
+        const delimiter = state.groupDelimiter || '_';
+        const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`); // Matches _cl-<number> or _cl-na
+        
+        // Build map: original sequence name (without cluster suffix) -> cluster ID
+        const nameToCluster = new Map();
+        leaves.forEach((leaf, i) => {
+            if (leaf.name) {
+                // Remove any existing cluster suffix from leaf name for lookup
+                const originalLeafName = leaf.name.replace(clusterPattern, '');
+                nameToCluster.set(originalLeafName, currentClusters[i]);
+            }
+        });
+        
+        // Also create mapping from current leaf names to cluster IDs (for tree update)
         const leafToCluster = new Map();
         leaves.forEach((leaf, i) => {
             if (leaf.name) {
@@ -3069,8 +3289,98 @@ function showMdsModal() {
             }
         });
         
-        // Store in state
-        state.leafClusters = leafToCluster;
+        // Store in state (using original names)
+        state.leafClusters = nameToCluster;
+        
+        // Create mapping from old name to new name
+        const nameMapping = new Map();
+        
+        // Update names in rawSequences
+        state.rawSequences.forEach(seq => {
+            if (seq.name) {
+                // Get original name (remove any existing cluster suffix for lookup)
+                const originalName = seq.name.replace(clusterPattern, '');
+                const clusterId = nameToCluster.get(originalName);
+                
+                if (clusterId !== undefined && clusterId !== -1) {
+                    // Only update if sequence is in a cluster (not noise)
+                    const oldName = seq.name;
+                    const newName = originalName + `${delimiter}cl-${clusterId}`;
+                    seq.name = newName;
+                    if (oldName !== newName) {
+                        nameMapping.set(oldName, newName);
+                    }
+                } else if (clusterId === -1) {
+                    // For noise, label with _cl-na (not assigned)
+                    const oldName = seq.name;
+                    const newName = originalName + `${delimiter}cl-na`;
+                    seq.name = newName;
+                    if (oldName !== newName) {
+                        nameMapping.set(oldName, newName);
+                    }
+                }
+            }
+        });
+        
+        // Update tree node names to match sequence names
+        if (state.tree && state.tree.root && nameMapping.size > 0) {
+            function updateTreeNodeNames(node) {
+                if (node.name) {
+                    // Try to match by current name or by original name (without cluster suffix)
+                    const originalNodeName = node.name.replace(clusterPattern, '');
+                    
+                    // Check if we have a mapping for this node's current name
+                    if (nameMapping.has(node.name)) {
+                        node.name = nameMapping.get(node.name);
+                    } else {
+                        // Check if any sequence was updated from this original name
+                        for (const [oldName, newName] of nameMapping.entries()) {
+                            const oldOriginal = oldName.replace(clusterPattern, '');
+                            if (oldOriginal === originalNodeName) {
+                                node.name = newName;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (node.children) {
+                    node.children.forEach(child => updateTreeNodeNames(child));
+                }
+            }
+            updateTreeNodeNames(state.tree.root);
+        }
+        
+        // Update state.leafClusters to use new names (with cluster suffix)
+        // Rebuild from nameToCluster using updated sequence names
+        if (nameToCluster.size > 0) {
+            const updatedLeafClusters = new Map();
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const originalName = seq.name.replace(clusterPattern, '');
+                    const clusterId = nameToCluster.get(originalName);
+                    if (clusterId !== undefined) {
+                        updatedLeafClusters.set(seq.name, clusterId);
+                    }
+                }
+            });
+            state.leafClusters = updatedLeafClusters;
+        }
+        
+        // Update state.sequenceGroups to use new names (with cluster suffix)
+        // Rebuild from original sequenceGroups using updated sequence names
+        if (state.sequenceGroups && state.sequenceGroups.size > 0) {
+            const updatedSequenceGroups = new Map();
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const originalName = seq.name.replace(clusterPattern, '');
+                    const groupId = state.sequenceGroups.get(originalName);
+                    if (groupId !== undefined) {
+                        updatedSequenceGroups.set(seq.name, groupId);
+                    }
+                }
+            });
+            state.sequenceGroups = updatedSequenceGroups;
+        }
         
         // Update legend
         updateColorLegend();
@@ -3138,6 +3448,588 @@ function initLegendDragging() {
     function dragEnd(e) {
         isDragging = false;
     }
+}
+
+function performUMAP(distanceMatrix, nNeighbors = 15, spread = 1.0, minDist = 0.1) {
+    // Check if UMAP is available - try different possible exports
+    let UMAPClass = null;
+    
+    // Try different ways UMAP might be exported
+    if (typeof UMAP !== 'undefined') {
+        UMAPClass = UMAP;
+    } else if (typeof umap !== 'undefined') {
+        UMAPClass = umap;
+    } else if (typeof window !== 'undefined' && window.UMAP) {
+        UMAPClass = window.UMAP;
+    } else if (typeof window !== 'undefined' && window.umap) {
+        UMAPClass = window.umap;
+    }
+    
+    if (!UMAPClass) {
+        console.error('UMAP library not loaded. Falling back to MDS.');
+        return performClassicalMDS(distanceMatrix);
+    }
+    
+    const n = distanceMatrix.length;
+    
+    if (n < 2) {
+        return [{ x: 0, y: 0 }];
+    }
+    
+    // UMAP works with feature vectors, not distance matrices directly
+    // We need to convert the distance matrix to a feature space representation
+    // One approach: use the distance matrix rows as feature vectors
+    // Each point is represented by its distances to all other points
+    
+    // Create feature matrix from distance matrix
+    // Each row represents a point, each column is distance to another point
+    const data = [];
+    for (let i = 0; i < n; i++) {
+        const features = [];
+        for (let j = 0; j < n; j++) {
+            features.push(distanceMatrix[i][j]);
+        }
+        data.push(features);
+    }
+    
+    // Create UMAP instance with appropriate parameters
+    // nNeighbors is passed as a parameter to the function
+    
+    let umap;
+    try {
+        // Try different ways to instantiate UMAP
+        if (typeof UMAPClass === 'function') {
+            // Direct constructor
+            umap = new UMAPClass({
+                nNeighbors: nNeighbors,
+                minDist: minDist,
+                nComponents: 2,
+                nEpochs: 200,
+                spread: spread
+            });
+        } else if (UMAPClass.default && typeof UMAPClass.default === 'function') {
+            // Default export
+            umap = new UMAPClass.default({
+                nNeighbors: nNeighbors,
+                minDist: minDist,
+                nComponents: 2,
+                nEpochs: 200,
+                spread: spread
+            });
+        } else if (UMAPClass.UMAP && typeof UMAPClass.UMAP === 'function') {
+            // Namespace export
+            umap = new UMAPClass.UMAP({
+                nNeighbors: nNeighbors,
+                minDist: minDist,
+                nComponents: 2,
+                nEpochs: 200,
+                spread: spread
+            });
+        } else {
+            throw new Error('Cannot determine how to instantiate UMAP');
+        }
+        
+        // Fit UMAP to the data
+        umap.fit(data);
+        
+        // Get the embedding
+        const embedding = umap.getEmbedding();
+        
+        // Convert to our coordinate format
+        const coords = embedding.map(point => ({
+            x: point[0],
+            y: point[1]
+        }));
+        
+        return coords;
+    } catch (err) {
+        console.error('UMAP initialization or fitting failed:', err);
+        return performClassicalMDS(distanceMatrix);
+    }
+}
+
+function showHierarchicalModal() {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    
+    // Ensure tree has depth information
+    if (!state.tree.maxDepth) {
+        // Recalculate tree layout if needed
+        let totalLen = 0;
+        function checkLen(n) { totalLen += (n.len || 0); n.children.forEach(checkLen); }
+        checkLen(state.tree.root);
+        const useCladogram = (totalLen === 0);
+        let maxDepth = 0;
+        function layoutX(node, currentDepth) {
+            let dist = useCladogram ? (node === state.tree.root ? 0 : 1) : (node.len || 0);
+            node.xDepth = currentDepth + dist;
+            if(node.xDepth > maxDepth) maxDepth = node.xDepth;
+            node.children.forEach(c => layoutX(c, node.xDepth));
+        }
+        layoutX(state.tree.root, 0);
+        state.tree.maxDepth = maxDepth;
+    }
+    
+    const maxDepth = state.tree.maxDepth;
+    
+    // Set up sliders
+    const slider1 = document.getElementById('hier-slider-1');
+    const slider2 = document.getElementById('hier-slider-2');
+    const slider3 = document.getElementById('hier-slider-3');
+    const value1 = document.getElementById('hier-value-1');
+    const value2 = document.getElementById('hier-value-2');
+    const value3 = document.getElementById('hier-value-3');
+    
+    // Set max values (allow one step past maximum depth)
+    const step = 0.01;
+    slider1.max = maxDepth + step;
+    slider2.max = maxDepth + step;
+    slider3.max = maxDepth + step;
+    
+    // Initialize values
+    slider1.value = 0;
+    slider2.value = 0;
+    slider3.value = 0;
+    value1.textContent = '0.00';
+    value2.textContent = '0.00';
+    value3.textContent = '0.00';
+    
+    // Function to update clustering
+    function updateHierarchicalClustering() {
+        const depth1 = parseFloat(slider1.value);
+        const depth2 = parseFloat(slider2.value);
+        const depth3 = parseFloat(slider3.value);
+        
+        // Store depths in state for drawing vertical lines
+        state.hierarchicalDepths = [depth1, depth2, depth3];
+        
+        applyHierarchicalClustering(depth1, depth2, depth3);
+    }
+    
+    // Slider event handlers with constraints
+    slider1.addEventListener('input', () => {
+        const val = parseFloat(slider1.value);
+        value1.textContent = val.toFixed(2);
+        
+        // Constrain slider2 >= slider1
+        if (parseFloat(slider2.value) < val) {
+            slider2.value = val;
+            value2.textContent = val.toFixed(2);
+        }
+        
+        // Constrain slider3 >= slider2
+        if (parseFloat(slider3.value) < parseFloat(slider2.value)) {
+            slider3.value = slider2.value;
+            value3.textContent = slider2.value;
+        }
+        
+        updateHierarchicalClustering();
+    });
+    
+    slider2.addEventListener('input', () => {
+        const val = parseFloat(slider2.value);
+        const val1 = parseFloat(slider1.value);
+        
+        // Constrain slider2 >= slider1
+        if (val < val1) {
+            slider2.value = val1;
+            value2.textContent = val1.toFixed(2);
+            return;
+        }
+        
+        value2.textContent = val.toFixed(2);
+        
+        // Constrain slider3 >= slider2
+        if (parseFloat(slider3.value) < val) {
+            slider3.value = val;
+            value3.textContent = val.toFixed(2);
+        }
+        
+        updateHierarchicalClustering();
+    });
+    
+    slider3.addEventListener('input', () => {
+        const val = parseFloat(slider3.value);
+        const val2 = parseFloat(slider2.value);
+        
+        // Constrain slider3 >= slider2
+        if (val < val2) {
+            slider3.value = val2;
+            value3.textContent = val2.toFixed(2);
+            return;
+        }
+        
+        value3.textContent = val.toFixed(2);
+        updateHierarchicalClustering();
+    });
+    
+    // Button handlers
+    document.getElementById('btn-hier-cancel').onclick = () => {
+        document.getElementById('hierarchical-overlay').style.display = 'none';
+        state.hierarchicalActive = false;
+        state.hierarchicalDepths = [0, 0, 0];
+        // Restore previous clustering if any
+        recalc();
+    };
+    
+    document.getElementById('btn-hier-accept').onclick = () => {
+        // Update sequence names with cluster numbers (same as MDS/UMAP)
+        const delimiter = state.groupDelimiter || '_';
+        const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`); // Matches _cl-<number> or _cl-na
+        
+        // Create mapping from old name to new name
+        const nameMapping = new Map();
+        
+        // Update names in rawSequences
+        state.rawSequences.forEach(seq => {
+            if (seq.name) {
+                // Get original name (remove any existing cluster suffix for lookup)
+                const originalName = seq.name.replace(clusterPattern, '');
+                const clusterId = state.leafClusters ? state.leafClusters.get(originalName) : undefined;
+                
+                if (clusterId !== undefined && clusterId !== -1) {
+                    // Only update if sequence is in a cluster (not noise)
+                    const oldName = seq.name;
+                    const newName = originalName + `${delimiter}cl-${clusterId}`;
+                    seq.name = newName;
+                    if (oldName !== newName) {
+                        nameMapping.set(oldName, newName);
+                    }
+                } else if (clusterId === -1) {
+                    // For noise, label with _cl-na (not assigned)
+                    const oldName = seq.name;
+                    const newName = originalName + `${delimiter}cl-na`;
+                    seq.name = newName;
+                    if (oldName !== newName) {
+                        nameMapping.set(oldName, newName);
+                    }
+                }
+            }
+        });
+        
+        // Update tree node names to match sequence names
+        if (state.tree && state.tree.root && nameMapping.size > 0) {
+            function updateTreeNodeNames(node) {
+                if (node.name) {
+                    // Try to match by current name or by original name (without cluster suffix)
+                    const originalNodeName = node.name.replace(clusterPattern, '');
+                    
+                    // Check if we have a mapping for this node's current name
+                    if (nameMapping.has(node.name)) {
+                        node.name = nameMapping.get(node.name);
+                    } else {
+                        // Check if any sequence was updated from this original name
+                        for (const [oldName, newName] of nameMapping.entries()) {
+                            const oldOriginal = oldName.replace(clusterPattern, '');
+                            if (oldOriginal === originalNodeName) {
+                                node.name = newName;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (node.children) {
+                    node.children.forEach(child => updateTreeNodeNames(child));
+                }
+            }
+            updateTreeNodeNames(state.tree.root);
+        }
+        
+        // Update state.leafClusters to use new names (with cluster suffix)
+        // Rebuild from original leafClusters using updated sequence names
+        if (state.leafClusters && state.leafClusters.size > 0) {
+            const updatedLeafClusters = new Map();
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const originalName = seq.name.replace(clusterPattern, '');
+                    const clusterId = state.leafClusters.get(originalName);
+                    if (clusterId !== undefined) {
+                        updatedLeafClusters.set(seq.name, clusterId);
+                    }
+                }
+            });
+            state.leafClusters = updatedLeafClusters;
+        }
+        
+        // Update state.sequenceGroups to use new names (with cluster suffix)
+        // Rebuild from original sequenceGroups using updated sequence names
+        if (state.sequenceGroups && state.sequenceGroups.size > 0) {
+            const updatedSequenceGroups = new Map();
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const originalName = seq.name.replace(clusterPattern, '');
+                    const groupId = state.sequenceGroups.get(originalName);
+                    if (groupId !== undefined) {
+                        updatedSequenceGroups.set(seq.name, groupId);
+                    }
+                }
+            });
+            state.sequenceGroups = updatedSequenceGroups;
+        }
+        
+        document.getElementById('hierarchical-overlay').style.display = 'none';
+        state.hierarchicalActive = false;
+        
+        // Re-render
+        recalc();
+    };
+    
+    // Show modal and set active state
+    document.getElementById('hierarchical-overlay').style.display = 'flex';
+    state.hierarchicalActive = true;
+    
+    // Initial clustering
+    updateHierarchicalClustering();
+}
+
+function applyHierarchicalClustering(depth1, depth2, depth3) {
+    if (!state.tree || !state.tree.root) return;
+    
+    const leafToCluster = new Map();
+    let clusterId = 2; // Start from 2 (cluster 0 for subtype, cluster 1 for leaves left of line)
+    const assignedNodes = new Set(); // Track which nodes have had their subtrees assigned
+    
+    // Get subtype name (use original name without cluster suffix for comparison)
+    const delimiter = state.groupDelimiter || '_';
+    const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+    const subtypeNameWithSuffix = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length) 
+        ? state.rawSequences[state.subtypeIndex].name 
+        : null;
+    const subtypeName = subtypeNameWithSuffix ? subtypeNameWithSuffix.replace(clusterPattern, '') : null;
+    
+    // First, assign cluster 0 to the subtype leaf
+    function assignSubtype(node) {
+        if (!node.children || node.children.length === 0) {
+            // This is a leaf - compare using original name (without cluster suffix)
+            if (node.name) {
+                const originalNodeName = node.name.replace(clusterPattern, '');
+                if (originalNodeName === subtypeName) {
+                    leafToCluster.set(node.name, 0);
+                }
+            }
+        } else {
+            // Internal node - recurse to children
+            node.children.forEach(assignSubtype);
+        }
+    }
+    assignSubtype(state.tree.root);
+    
+    // Second, assign cluster 1 to all leaves to the left of line 1 (depth < depth1)
+    function assignLeavesLeftOfLine(node) {
+        if (!node.children || node.children.length === 0) {
+            // This is a leaf
+            if (node.name) {
+                const originalNodeName = node.name.replace(clusterPattern, '');
+                if (originalNodeName !== subtypeName) {
+                    const currentDepth = node.xDepth || 0;
+                    if (currentDepth < depth1) {
+                        leafToCluster.set(node.name, 1);
+                    }
+                }
+            }
+        } else {
+            // Internal node - recurse to children
+            node.children.forEach(assignLeavesLeftOfLine);
+        }
+    }
+    assignLeavesLeftOfLine(state.tree.root);
+    
+    // Third, use BFS to find subtrees crossing line 1 and assign incremental cluster numbers
+    const queue1 = [state.tree.root];
+    
+    while (queue1.length > 0) {
+        const node = queue1.shift();
+        const currentDepth = node.xDepth || 0;
+        
+        // Check if this node crosses line 1 (depth threshold)
+        if (currentDepth > depth1 && depth1 >= 0) {
+            // Check if this node or any of its ancestors has already been assigned
+            // We only want to assign clusters to the first node we encounter at depth > depth1
+            // in each branch
+            let shouldAssign = true;
+            let ancestor = node.parent;
+            while (ancestor) {
+                if (assignedNodes.has(ancestor)) {
+                    shouldAssign = false;
+                    break;
+                }
+                ancestor = ancestor.parent;
+            }
+            
+            if (shouldAssign && !assignedNodes.has(node)) {
+                // Assign all leaves in this node's subtree to the current cluster number
+                // (but skip subtype and leaves already assigned to cluster 1)
+                function assignLeavesInSubtree(subtreeNode) {
+                    if (!subtreeNode.children || subtreeNode.children.length === 0) {
+                        // This is a leaf
+                        if (subtreeNode.name) {
+                            const originalLeafName = subtreeNode.name.replace(clusterPattern, '');
+                            if (originalLeafName !== subtypeName) {
+                                // Only assign if not already assigned (skip cluster 1 leaves)
+                                if (!leafToCluster.has(subtreeNode.name) || leafToCluster.get(subtreeNode.name) === 1) {
+                                    // Check if this leaf is actually to the right of the line
+                                    const leafDepth = subtreeNode.xDepth || 0;
+                                    if (leafDepth >= depth1) {
+                                        leafToCluster.set(subtreeNode.name, clusterId);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Internal node - recurse to children
+                        subtreeNode.children.forEach(assignLeavesInSubtree);
+                    }
+                }
+                
+                assignLeavesInSubtree(node);
+                assignedNodes.add(node);
+                clusterId++;
+            }
+        }
+        
+        // Add children to queue for BFS
+        if (node.children && node.children.length > 0) {
+            node.children.forEach(child => {
+                queue1.push(child);
+            });
+        }
+    }
+    
+    // Fourth, use BFS to find subtrees crossing line 2 and assign incremental cluster numbers
+    if (depth2 > depth1) {
+        const queue2 = [state.tree.root];
+        const assignedNodes2 = new Set(); // Track nodes assigned at line 2 level
+        
+        while (queue2.length > 0) {
+            const node = queue2.shift();
+            const currentDepth = node.xDepth || 0;
+            
+            // Check if this node crosses line 2 (depth threshold)
+            if (currentDepth > depth2) {
+                // Check if this node or any of its ancestors has already been assigned at line 2 level
+                let shouldAssign = true;
+                let ancestor = node.parent;
+                while (ancestor) {
+                    if (assignedNodes2.has(ancestor)) {
+                        shouldAssign = false;
+                        break;
+                    }
+                    ancestor = ancestor.parent;
+                }
+                
+                if (shouldAssign && !assignedNodes2.has(node)) {
+                    // Assign all leaves in this node's subtree to the current cluster number
+                    // Only assign leaves that are to the right of line 2 (depth >= depth2)
+                    function assignLeavesInSubtree2(subtreeNode) {
+                        if (!subtreeNode.children || subtreeNode.children.length === 0) {
+                            // This is a leaf
+                            if (subtreeNode.name) {
+                                const originalLeafName = subtreeNode.name.replace(clusterPattern, '');
+                                if (originalLeafName !== subtypeName) {
+                                    const leafDepth = subtreeNode.xDepth || 0;
+                                    // Only assign if leaf is to the right of line 2
+                                    if (leafDepth >= depth2) {
+                                        leafToCluster.set(subtreeNode.name, clusterId);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Internal node - recurse to children
+                            subtreeNode.children.forEach(assignLeavesInSubtree2);
+                        }
+                    }
+                    
+                    assignLeavesInSubtree2(node);
+                    assignedNodes2.add(node);
+                    clusterId++;
+                }
+            }
+            
+            // Add children to queue for BFS
+            if (node.children && node.children.length > 0) {
+                node.children.forEach(child => {
+                    queue2.push(child);
+                });
+            }
+        }
+    }
+    
+    // Fifth, use BFS to find subtrees crossing line 3 and assign incremental cluster numbers
+    if (depth3 > depth2) {
+        const queue3 = [state.tree.root];
+        const assignedNodes3 = new Set(); // Track nodes assigned at line 3 level
+        
+        while (queue3.length > 0) {
+            const node = queue3.shift();
+            const currentDepth = node.xDepth || 0;
+            
+            // Check if this node crosses line 3 (depth threshold)
+            if (currentDepth > depth3) {
+                // Check if this node or any of its ancestors has already been assigned at line 3 level
+                let shouldAssign = true;
+                let ancestor = node.parent;
+                while (ancestor) {
+                    if (assignedNodes3.has(ancestor)) {
+                        shouldAssign = false;
+                        break;
+                    }
+                    ancestor = ancestor.parent;
+                }
+                
+                if (shouldAssign && !assignedNodes3.has(node)) {
+                    // Assign all leaves in this node's subtree to the current cluster number
+                    // Only assign leaves that are to the right of line 3 (depth >= depth3)
+                    function assignLeavesInSubtree3(subtreeNode) {
+                        if (!subtreeNode.children || subtreeNode.children.length === 0) {
+                            // This is a leaf
+                            if (subtreeNode.name) {
+                                const originalLeafName = subtreeNode.name.replace(clusterPattern, '');
+                                if (originalLeafName !== subtypeName) {
+                                    const leafDepth = subtreeNode.xDepth || 0;
+                                    // Only assign if leaf is to the right of line 3
+                                    if (leafDepth >= depth3) {
+                                        leafToCluster.set(subtreeNode.name, clusterId);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Internal node - recurse to children
+                            subtreeNode.children.forEach(assignLeavesInSubtree3);
+                        }
+                    }
+                    
+                    assignLeavesInSubtree3(node);
+                    assignedNodes3.add(node);
+                    clusterId++;
+                }
+            }
+            
+            // Add children to queue for BFS
+            if (node.children && node.children.length > 0) {
+                node.children.forEach(child => {
+                    queue3.push(child);
+                });
+            }
+        }
+    }
+    
+    // Store in state using original names (without cluster suffix) for consistency with MDS/UMAP
+    // (delimiter and clusterPattern already defined at top of function)
+    const nameToCluster = new Map();
+    
+    // Convert leafToCluster (which uses current names) to nameToCluster (using original names)
+    for (const [leafName, clusterId] of leafToCluster.entries()) {
+        const originalName = leafName.replace(clusterPattern, '');
+        nameToCluster.set(originalName, clusterId);
+    }
+    
+    state.leafClusters = nameToCluster;
+    
+    // Update legend and re-render
+    updateColorLegend();
+    recalc();
 }
 
 function performClassicalMDS(distanceMatrix) {
@@ -3583,12 +4475,12 @@ function drawMdsPlot(leaves, coords, subtypeName, clusters = null, epsilon = nul
     ctx.fillStyle = '#374151';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('MDS Dimension 1', offsetX, height - padding.bottom + 30);
+    ctx.fillText('Dimension 1', offsetX, height - padding.bottom + 30);
     
     ctx.save();
     ctx.translate(padding.left - 20, offsetY);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText('MDS Dimension 2', 0, 0);
+    ctx.fillText('Dimension 2', 0, 0);
     ctx.restore();
     
     const noiseColor = '#9ca3af'; // Grey for noise
@@ -4570,7 +5462,7 @@ function render() {
                     const highlightChar = (c < highlightSeq.length) ? highlightSeq[c] : '-';
                     if(highlightChar !== '-') {
                         if(char === highlightChar) {
-                            fillColor = CONFIG.highlightMatchColor;
+                        fillColor = CONFIG.highlightMatchColor;
                         }
                     }
                 }
@@ -4809,13 +5701,24 @@ function render() {
                 
                 // Draw diamond for leaf node with cluster color if available
                 let fillColor = '#374151'; // Default grey
-                const isSubtype = state.subtypeIndex >= 0 && 
-                                 state.rawSequences[state.subtypeIndex]?.name === node.name;
+                // Use original names (without cluster suffix) for subtype comparison and cluster lookup
+                const delimiter = state.groupDelimiter || '_';
+                const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+                const originalNodeName = node.name ? node.name.replace(clusterPattern, '') : '';
+                const subtypeOriginalName = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length) 
+                    ? state.rawSequences[state.subtypeIndex].name.replace(clusterPattern, '') 
+                    : '';
+                const isSubtype = state.subtypeIndex >= 0 && originalNodeName === subtypeOriginalName;
                 
                 if (isSubtype) {
                     fillColor = '#dc2626'; // Red for subtype
                 } else if (state.leafClusters && node.name) {
-                    const clusterId = state.leafClusters.get(node.name);
+                    // Try lookup with current name first (for MDS clustering after names are updated)
+                    // Then try with original name (for hierarchical clustering before Accept is pressed)
+                    let clusterId = state.leafClusters.get(node.name);
+                    if (clusterId === undefined) {
+                        clusterId = state.leafClusters.get(originalNodeName);
+                    }
                     if (clusterId !== undefined && clusterId !== -1) {
                         // Use CLUSTER_COLORS palette (same as MDS plot)
                         fillColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
@@ -4830,6 +5733,48 @@ function render() {
         };
 
         drawNode(state.tree.root);
+        
+        // Draw vertical lines for hierarchical clustering depths if active
+        if (state.hierarchicalActive && state.hierarchicalDepths) {
+            const [depth1, depth2, depth3] = state.hierarchicalDepths;
+            // Calculate the full height of all sequences in the translated coordinate system
+            const totalHeight = state.viewSequences.length * CONFIG.rowHeight;
+            // Start from top (y=0 in translated coordinates) and go to bottom
+            const startY = 0;
+            const endY = totalHeight;
+            
+            ctxTree.save();
+            ctxTree.strokeStyle = '#ef4444'; // Red color for level 1
+            ctxTree.lineWidth = 1.5;
+            ctxTree.setLineDash([]);
+            if (depth1 > 0) {
+                const x1 = (depth1 * xScale) + 5;
+                ctxTree.beginPath();
+                ctxTree.moveTo(x1, startY);
+                ctxTree.lineTo(x1, endY);
+                ctxTree.stroke();
+            }
+            
+            ctxTree.strokeStyle = '#f59e0b'; // Orange color for level 2
+            if (depth2 > depth1) {
+                const x2 = (depth2 * xScale) + 5;
+                ctxTree.beginPath();
+                ctxTree.moveTo(x2, startY);
+                ctxTree.lineTo(x2, endY);
+                ctxTree.stroke();
+            }
+            
+            ctxTree.strokeStyle = '#10b981'; // Green color for level 3
+            if (depth3 > depth2) {
+                const x3 = (depth3 * xScale) + 5;
+                ctxTree.beginPath();
+                ctxTree.moveTo(x3, startY);
+                ctxTree.lineTo(x3, endY);
+                ctxTree.stroke();
+            }
+            ctxTree.restore();
+        }
+        
         ctxTree.restore();
     }
 }
