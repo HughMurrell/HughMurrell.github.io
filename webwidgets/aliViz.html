@@ -603,9 +603,9 @@ const CONFIG = {
 };
 
 // Single color palette for both groups and clusters
-// Index 0 is cyan (for cluster 0), indices 1+ are for groups and clusters 1+
+// Index 0 is magenta (for cluster 0), indices 1+ are for groups and clusters 1+
 const COLOR_PALETTE = [
-    '#06b6d4', // Cyan (index 0 - for cluster 0)
+    '#ff00ff', // Magenta (index 0 - for cluster 0)
     '#3b82f6', // Blue (index 1 - for first group/cluster 1)
     '#10b981', // Green (index 2 - for second group/cluster 2)
     '#f59e0b', // Amber (index 3 - for third group/cluster 3)
@@ -5867,21 +5867,28 @@ function render() {
                     : '';
                 const isSubtype = state.subtypeIndex >= 0 && originalNodeName === subtypeOriginalName;
                 
-                if (isSubtype) {
-                    fillColor = '#dc2626'; // Red for subtype
-                } else if (state.leafClusters && node.name) {
+                // Check cluster color first (cluster 0 should be cyan even for subtype)
+                if (state.leafClusters && node.name) {
                     // Try lookup with current name first (for MDS clustering after names are updated)
                     // Then try with original name (for hierarchical clustering before Accept is pressed)
                     let clusterId = state.leafClusters.get(node.name);
                     if (clusterId === undefined) {
                         clusterId = state.leafClusters.get(originalNodeName);
                     }
-                    if (clusterId !== undefined && clusterId !== -1) {
-                        // Use cluster color palette (cyan for 0, GROUP_COLORS for 1+)
-                        fillColor = getClusterColor(clusterId);
-                    } else if (clusterId === -1) {
-                        fillColor = '#9ca3af'; // Grey for noise
+                    if (clusterId !== undefined && clusterId !== null) {
+                        if (clusterId === -1) {
+                            fillColor = '#9ca3af'; // Grey for noise
+                        } else {
+                            // Use cluster color palette (cyan for 0, GROUP_COLORS for 1+)
+                            fillColor = getClusterColor(clusterId);
+                        }
+                    } else if (isSubtype) {
+                        // Only use red for subtype if not in a cluster
+                        fillColor = '#dc2626'; // Red for subtype
                     }
+                } else if (isSubtype) {
+                    // Only use red for subtype if no cluster information available
+                    fillColor = '#dc2626'; // Red for subtype
                 }
                 
                 ctxTree.fillStyle = fillColor;
