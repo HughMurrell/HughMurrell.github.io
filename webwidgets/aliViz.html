@@ -143,10 +143,10 @@
         .help-box {
             background: white; width: 600px; max-width: 90%; 
             padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            display: flex; flex-direction: column; gap: 10px;
+            display: flex; flex-direction: column; gap: 5px;
         }
-        .help-box h2 { margin: 0 0 10px 0; font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        .help-row { display: flex; justify-content: space-between; font-size: 13px; color: #374151; padding: 4px 0; border-bottom: 1px solid #f3f4f6; }
+        .help-box h2 { margin: 0 0 5px 0; font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .help-row { display: flex; justify-content: space-between; font-size: 13px; color: #374151; padding: 2px 0; border-bottom: 1px solid #f3f4f6; }
         .help-key { font-weight: bold; color: #111; }
         .close-help { align-self: flex-end; margin-top: 10px; }
 
@@ -547,6 +547,7 @@
 <div id="help-overlay">
     <div class="help-box">
         <h2>aliViz Help</h2>
+        <div style="font-size: 0.75em; color: #6b7280; margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee;">Based on the alignment app from <a href="https://murrellgroup.github.io/WebWidgets/alivibe.html" target="_blank" style="color: #3b82f6;">https://murrellgroup.github.io/WebWidgets/alivibe.html</a></div>
         <div class="help-row"><span class="help-key">Choose File</span> <span>Load an Alignment with Ref as first seq and SubType as second seq.</span></div>
         <div class="help-row"><span class="help-key">Sort</span> <span>Sort sequences by name (REF and SUBTYPE remain first)</span></div>
         <div class="help-row"><span class="help-key">Group</span> <span>Group sequences using field in Seq names</span></div>
@@ -3033,17 +3034,20 @@ function drawHistogram(distances) {
         ctx.fillText(value.toString(), padding.left - 10, y + 4);
     }
     
-    // Draw title and axis labels
+    // Draw axis labels
     ctx.fillStyle = '#111827';
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Frequency', padding.left - 30, padding.top / 2);
     
+    // Y-axis label (on the left, rotated vertically)
     ctx.save();
     ctx.translate(padding.left / 2, padding.top + plotHeight / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText('Root-to-Leaf Distance', 0, 0);
+    ctx.fillText('frequency', 0, 0);
     ctx.restore();
+    
+    // X-axis label (at the bottom, horizontal)
+    ctx.fillText('root to leaf distance', padding.left + plotWidth / 2, padding.top + plotHeight + 50);
     
     // Draw statistics
     const mean = distances.reduce((sum, d) => sum + d.distance, 0) / distances.length;
