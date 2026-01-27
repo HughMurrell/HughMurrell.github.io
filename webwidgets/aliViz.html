@@ -5,16 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>aliViz: View, Cluster, and Visualize Alignments in the browser</title>
     <!-- Included the NW Alignment Library -->
-    <script src="https://murrellgroup.github.io/WebWidgets/nw.js"></script>
+    <script src="https://hughmurrell.github.io/webwidgets/nw.js"></script>
     <!-- Included the Phylogenetic Tools Library -->
-    <script src="https://murrellgroup.github.io/WebWidgets/phylotools.js"></script>
-    <!-- Included the Frame Cleaning Library -->
-    <script src="https://murrellgroup.github.io/WebWidgets/frameclean.js"></script>
-    <!-- Included Aioli for bioWASM -->
-    <script src="https://biowasm.com/cdn/v3/aioli.js"></script>
+    <script src="https://hughmurrell.github.io/webwidgets/phylotools.js"></script>
     <!-- Included UMAP for dimensionality reduction -->
     <script src="https://hughmurrell.github.io/webwidgets/umap-js.min.js"></script>
-    <!-- Included html2pdf.js for PDF export (includes jsPDF and svg2pdf internally) -->
+    <!-- Included the Frame Cleaning Library -->
+    <!-- <script src="https://murrellgroup.github.io/WebWidgets/frameclean.js"></script> -->
+    <!-- Included Aioli for bioWASM -->
+    <script src="https://biowasm.com/cdn/v3/aioli.js"></script>
+     <!-- Included html2pdf.js for PDF export (includes jsPDF and svg2pdf internally) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root {
@@ -404,8 +404,8 @@
     </div>
 </div>
 
-<div id="method-select-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
-    <div class="help-box" style="width: 450px;">
+<div id="method-select-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;">
+    <div class="help-box" style="width: 450px; pointer-events: auto;">
         <h2>Select Projection Method</h2>
         <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
             <label style="text-transform: none; font-size: 13px; color: #374151;">Choose dimensionality reduction method:</label>
@@ -451,8 +451,8 @@
     </div>
 </div>
 
-<div id="mds-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
-    <div class="help-box" style="width: 700px; max-width: 90vw;">
+<div id="mds-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;">
+    <div class="help-box" style="width: 700px; max-width: 90vw; pointer-events: auto;">
         <h2>2D Projection of Pairwise Leaf Distances</h2>
         <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 15px;">
             <div style="display: flex; flex-direction: column; gap: 5px;">
@@ -602,24 +602,27 @@ const CONFIG = {
     }
 };
 
-// Color palettes for groups and clusters
-const GROUP_COLORS = [
-    '#3b82f6', // Blue
-    '#10b981', // Green
-    '#f59e0b', // Amber
-    '#8b5cf6', // Purple
-    '#ec4899', // Pink
-    '#06b6d4', // Cyan
-    '#84cc16', // Lime
-    '#f97316', // Orange
-    '#6366f1', // Indigo
-    '#14b8a6', // Teal
-    '#ef4444', // Red
-    '#fbbf24', // Yellow
-    '#a855f7', // Violet
-    '#22c55e', // Emerald
-    '#06b6d4', // Sky
+// Single color palette for both groups and clusters
+// Index 0 is cyan (for cluster 0), indices 1+ are for groups and clusters 1+
+const COLOR_PALETTE = [
+    '#06b6d4', // Cyan (index 0 - for cluster 0)
+    '#3b82f6', // Blue (index 1 - for first group/cluster 1)
+    '#10b981', // Green (index 2 - for second group/cluster 2)
+    '#f59e0b', // Amber (index 3 - for third group/cluster 3)
+    '#8b5cf6', // Purple (index 4 - for fourth group/cluster 4)
+    '#ec4899', // Pink (index 5)
+    '#84cc16', // Lime (index 6)
+    '#f97316', // Orange (index 7)
+    '#6366f1', // Indigo (index 8)
+    '#14b8a6', // Teal (index 9)
+    '#ef4444', // Red (index 10)
+    '#fbbf24', // Yellow (index 11)
+    '#a855f7', // Violet (index 12)
+    '#22c55e', // Emerald (index 13)
 ];
+
+// Keep GROUP_COLORS for backward compatibility (same as COLOR_PALETTE[1+])
+const GROUP_COLORS = COLOR_PALETTE.slice(1);
 
 const GROUP_LIGHT_BG = [
     '#dbeafe', // Light blue
@@ -639,17 +642,24 @@ const GROUP_LIGHT_BG = [
     '#cffafe', // Light sky
 ];
 
+// Helper function to get cluster color
+// Uses COLOR_PALETTE directly: cluster 0 -> palette[0] (cyan), cluster 1 -> palette[1], etc.
+function getClusterColor(clusterId) {
+    return COLOR_PALETTE[clusterId % COLOR_PALETTE.length];
+}
+
+// Keep CLUSTER_COLORS for backward compatibility (deprecated, use getClusterColor instead)
 const CLUSTER_COLORS = [
-    '#e11d48', // Rose
-    '#059669', // Emerald
-    '#dc2626', // Red
-    '#7c3aed', // Violet
-    '#ea580c', // Orange
-    '#0284c7', // Sky
-    '#16a34a', // Green
-    '#ca8a04', // Yellow
-    '#be185d', // Pink
-    '#0891b2', // Cyan
+    '#06b6d4', // Cyan (cluster 0)
+    '#3b82f6', // Blue (cluster 1, from GROUP_COLORS)
+    '#10b981', // Green (cluster 2, from GROUP_COLORS)
+    '#f59e0b', // Amber (cluster 3, from GROUP_COLORS)
+    '#8b5cf6', // Purple (cluster 4, from GROUP_COLORS)
+    '#ec4899', // Pink (cluster 5, from GROUP_COLORS)
+    '#06b6d4', // Cyan (cluster 6, from GROUP_COLORS)
+    '#84cc16', // Lime (cluster 7, from GROUP_COLORS)
+    '#f97316', // Orange (cluster 8, from GROUP_COLORS)
+    '#6366f1', // Indigo (cluster 9, from GROUP_COLORS)
 ];
 
 const CLUSTER_LIGHT_BG = [
@@ -1355,24 +1365,11 @@ function runGroupTask() {
     // Save state for undo
     saveState();
     
-    // Remove tree if it exists
-    state.tree = null;
-    setTreeWidth(0);
-    if (dom.btnHistogram) {
-        dom.btnHistogram.disabled = true;
-    }
-    if (dom.btnMds) {
-        dom.btnMds.disabled = true;
-    }
-    
-    // Group sequences by the specified field
+    // Group sequences by the specified field (no need to remove tree as grouping doesn't reorder sequences)
     const nameToGroup = new Map();
-    const groupToColor = new Map();
+    const uniqueGroupValues = new Set();
     
-    let groupId = 0;
-    const groupNames = new Map(); // Map from group value to group ID
-    const groupIdToValue = new Map(); // Map from group ID to group value (for legend)
-    
+    // First pass: collect all unique group values
     for (let i = 0; i < state.rawSequences.length; i++) {
         // Exclude REF and SUBTYPE
         if (i === state.refIndex || i === state.subtypeIndex) {
@@ -1387,17 +1384,40 @@ function runGroupTask() {
         
         if (fields.length > fieldNum) {
             const groupValue = fields[fieldNum];
-            
-            // Get or create group ID for this group value
-            if (!groupNames.has(groupValue)) {
-                groupNames.set(groupValue, groupId);
-                groupToColor.set(groupId, GROUP_COLORS[groupId % GROUP_COLORS.length]);
-                groupIdToValue.set(groupId, groupValue);
-                groupId++;
-            }
-            
+            uniqueGroupValues.add(groupValue);
+        }
+    }
+    
+    // Sort group values alphabetically and assign IDs and colors
+    const sortedGroupValues = Array.from(uniqueGroupValues).sort();
+    const groupNames = new Map(); // Map from group value to group ID
+    const groupIdToValue = new Map(); // Map from group ID to group value (for legend)
+    
+    sortedGroupValues.forEach((groupValue, index) => {
+        const groupId = index;
+        groupNames.set(groupValue, groupId);
+        groupIdToValue.set(groupId, groupValue);
+    });
+    
+    // Second pass: assign group IDs to sequences
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        // Exclude REF and SUBTYPE
+        if (i === state.refIndex || i === state.subtypeIndex) {
+            continue;
+        }
+        
+        const seq = state.rawSequences[i];
+        const name = seq.name || '';
+        
+        // Split by delimiter
+        const fields = name.split(delimiter);
+        
+        if (fields.length > fieldNum) {
+            const groupValue = fields[fieldNum];
             const gId = groupNames.get(groupValue);
-            nameToGroup.set(name, gId);
+            if (gId !== undefined) {
+                nameToGroup.set(name, gId);
+            }
         }
     }
     
@@ -1614,7 +1634,8 @@ function updateColorLegend() {
         });
         
         groupEntries.forEach(([groupId, groupValue]) => {
-            const color = GROUP_COLORS[groupId % GROUP_COLORS.length];
+            // Groups sorted alphabetically, use COLOR_PALETTE starting from index 1
+            const color = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
             const item = document.createElement('div');
             item.style.display = 'flex';
             item.style.alignItems = 'center';
@@ -1652,7 +1673,7 @@ function updateColorLegend() {
             const sortedClusterIds = Array.from(clusterIds).sort((a, b) => a - b);
             
             sortedClusterIds.forEach(clusterId => {
-                const color = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+                const color = getClusterColor(clusterId);
                 const item = document.createElement('div');
                 item.style.display = 'flex';
                 item.style.alignItems = 'center';
@@ -4618,7 +4639,7 @@ function drawMdsPlot(leaves, coords, subtypeName, clusters = null, epsilon = nul
             } else if (clusterId === -1) {
                 circleColor = noiseColor; // Grey for noise
             } else {
-                circleColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+                circleColor = getClusterColor(clusterId);
             }
             
             // Draw light circle with cluster color
@@ -4648,7 +4669,7 @@ function drawMdsPlot(leaves, coords, subtypeName, clusters = null, epsilon = nul
             fillColor = noiseColor; // Grey for noise
             strokeColor = '#6b7280';
         } else {
-            fillColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+            fillColor = getClusterColor(clusterId);
             strokeColor = fillColor;
         }
         
@@ -5648,8 +5669,9 @@ function render() {
         if(r === state.refIndex || isSubtype || isFounder) {
             bgColor = '#fce7f3'; // Light magenta background for Reference, Subtype, and Founder
         } else if (groupId !== undefined) {
-            // Use group color for background
-            const lightBgColor = GROUP_LIGHT_BG[groupId % GROUP_LIGHT_BG.length];
+            // Use group color for background (groups sorted alphabetically, use palette index groupId + 1)
+            const lightBgIndex = (groupId + 1) % GROUP_LIGHT_BG.length;
+            const lightBgColor = GROUP_LIGHT_BG[lightBgIndex];
             bgColor = isSel ? '#eff6ff' : lightBgColor;
         } else {
             // Default background
@@ -5660,8 +5682,8 @@ function render() {
         if(r === state.refIndex || isSubtype || isFounder) {
             textColor = '#ff00ff'; // Magenta for Reference, Subtype, and Founder
         } else if (groupId !== undefined) {
-            // Use group color for text
-            textColor = GROUP_COLORS[groupId % GROUP_COLORS.length];
+            // Use group color for text (groups sorted alphabetically, use palette index groupId + 1)
+            textColor = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
         } else {
             // Default text color
             textColor = isSel ? '#1e40af' : '#374151';
@@ -5855,8 +5877,8 @@ function render() {
                         clusterId = state.leafClusters.get(originalNodeName);
                     }
                     if (clusterId !== undefined && clusterId !== -1) {
-                        // Use CLUSTER_COLORS palette (same as MDS plot)
-                        fillColor = CLUSTER_COLORS[clusterId % CLUSTER_COLORS.length];
+                        // Use cluster color palette (cyan for 0, GROUP_COLORS for 1+)
+                        fillColor = getClusterColor(clusterId);
                     } else if (clusterId === -1) {
                         fillColor = '#9ca3af'; // Grey for noise
                     }
@@ -6038,10 +6060,10 @@ function showSequenceLogo() {
         
         // Show in a modal
         const overlay = document.createElement('div');
-        overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+        overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;';
         
         const modal = document.createElement('div');
-        modal.style.cssText = 'background: white; padding: 20px; border-radius: 8px; max-width: 90vw; max-height: 90vh; overflow: auto;';
+        modal.style.cssText = 'background: white; padding: 20px; border-radius: 8px; max-width: 90vw; max-height: 90vh; overflow: auto; pointer-events: auto;';
         
         // Get file name and epitope name from state (needed for export)
         const fileName = state.currentFileName || dom.file?.files?.[0]?.name || 'Unknown';
@@ -6613,7 +6635,8 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         rowLabel.setAttribute('font-weight', 'bold');
         // Use the same color as assigned to the group in the legend
         const groupId = groupData.groupId;
-        const labelColor = GROUP_COLORS[groupId % GROUP_COLORS.length];
+        // Groups sorted alphabetically, use COLOR_PALETTE starting from index 1
+        const labelColor = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
         rowLabel.setAttribute('fill', labelColor);
         rowLabel.textContent = `Variants at ${groupData.groupValue} (${groupData.count})`;
         svg.appendChild(rowLabel);
