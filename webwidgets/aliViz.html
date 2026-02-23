@@ -16,6 +16,8 @@
     <script src="https://biowasm.com/cdn/v3/aioli.js"></script>
      <!-- Included html2pdf.js for PDF export (includes jsPDF and svg2pdf internally) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- 3Dmol.js for PDB 3D structure viewing (epitope coloring without molstar.lib) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.1/3Dmol-min.js"></script>
     <style>
         :root {
             --bg-color: #f8f9fa;
@@ -47,13 +49,28 @@
 
         #controls {
             height: var(--header-height);
+            flex: 0 0 auto;
+            min-width: 0; /* allow flex item to shrink so inner can overflow */
+            max-width: 100%;
             background: var(--panel-bg);
             border-bottom: 1px solid var(--border-color);
-            display: flex; align-items: center;
-            padding: 0 20px; gap: 15px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            flex-shrink: 0; z-index: 20;
+            z-index: 20;
+            overflow: hidden; /* clip to bounds; scrolling happens in scroll wrapper */
+        }
+        #controls-scroll {
+            width: 100%;
+            height: 100%;
             overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x;
+        }
+        #controls-inner {
+            display: inline-flex; align-items: center;
+            padding: 0 20px; gap: 15px;
+            min-height: var(--header-height);
+            box-sizing: border-box;
         }
 
         .control-group { display: flex; flex-direction: column; gap: 4px; }
@@ -193,13 +210,19 @@
 
 <div id="app">
     <div id="controls">
+        <div id="controls-scroll">
+        <div id="controls-inner">
+        <div class="control-group">
+            <label>Info</label>
+            <button id="btn-help" class="btn-icon">?</button>
+        </div>
         <div class="control-group">
             <label>Sequences</label>
             <div style="display:flex; gap:5px; align-items:center;">
                 <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt">
-                <button id="btn-sort-sequences" title="Sort sequences by name (REF and SUBTYPE remain first)">Sort</button>
                 <button id="btn-group-sequences" title="Group sequences by name field">Group</button>
                 <button id="btn-subtype" title="Add founder sequence from selected group">Add Founder</button>
+                <button id="btn-sort-sequences" title="Sort sequences by name (REF and SUBTYPE remain first)">Sort</button>
             </div>
         </div>
         <div class="control-group">
@@ -283,13 +306,16 @@
                 <button id="btn-show-logo" title="Show sequence logo for selected epitope">Show Logo</button>
             </div>
         </div>
-        
-
-        <div style="width:1px; height:30px; background:#e5e7eb; margin:0 10px;"></div>
-
         <div class="control-group">
-            <label>Info</label>
-            <button id="btn-help" class="btn-icon">?</button>
+            <label>3D Structure</label>
+            <div style="display:flex; gap:5px; align-items:center;">
+                <input type="file" id="inp-pdb" accept=".pdb,.ent,.cif" style="display: none;">
+                <button id="btn-load-pdb" title="Load PDB/CIF file or fetch by PDB ID">Load file</button>
+                <button id="btn-view-3d" title="Display loaded structure in 3D">View 3D</button>
+            </div>
+        </div>
+
+        </div>
         </div>
     </div>
 
@@ -464,7 +490,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Min Neighbors:</label>
-                    <input type="range" id="mds-minpts-slider" min="1" max="10" step="1" value="2" style="flex: 1;">
+                    <input type="range" id="mds-minpts-slider" min="0" max="5" step="1" value="2" style="flex: 1;">
                     <span id="mds-minpts-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">2</span>
                 </div>
             </div>
@@ -472,8 +498,8 @@
                 <label style="font-size: 12px; color: #374151;">UMAP Parameters:</label>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <label style="font-size: 11px; color: #6b7280; min-width: 80px;">nNeighbors:</label>
-                    <input type="range" id="umap-nneighbors-slider" min="2" max="100" step="1" value="15" style="flex: 1;">
-                    <span id="umap-nneighbors-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">15</span>
+                    <input type="range" id="umap-nneighbors-slider" min="0" max="5" step="1" value="2" style="flex: 1;">
+                    <span id="umap-nneighbors-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">2</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Spread:</label>
@@ -528,6 +554,23 @@
     </div>
 </div>
 
+<div id="pdb-load-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 320px;">
+        <h2>Load 3D structure</h2>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
+            <button type="button" id="btn-pdb-choose-file" style="padding: 8px 14px; text-align: left;">Choose file...</button>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <label style="font-size: 13px; color: #374151; white-space: nowrap;">PDB ID</label>
+                <input type="text" id="inp-pdb-id" placeholder="e.g. 7U2N" maxlength="4" style="width: 5em; padding: 6px 8px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 4px;">
+                <button type="button" id="btn-fetch-pdb">Fetch</button>
+            </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+            <button type="button" id="btn-pdb-load-cancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <div id="subtype-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="help-box" style="width: 450px;">
         <h2>Add Founder Sequence</h2>
@@ -566,6 +609,8 @@
         <div class="help-row"><span class="help-key">Load Epitopes</span> <span>Load epitope descriptions from CSV file</span></div>
         <div class="help-row"><span class="help-key">Select Epitope</span> <span>Select an epitope to restrict display</span></div>
         <div class="help-row"><span class="help-key">Show Logo</span> <span>Generate sequence logo for selected epitope</span></div>
+        <div class="help-row"><span class="help-key">3D Structure</span> <span>Load a PDB/CIF file, or enter a 4-character PDB ID and click Fetch to load from RCSB. Chains are added as sequences (xxxx_Chain_y [PDB_y]) and aligned to the reference (AA mode).</span></div>
+        <div class="help-row"><span class="help-key">View 3D</span> <span>Display the loaded PDB structure in a 3D viewer window</span></div>
         <div class="help-row"><span class="help-key">IUPAC</span> <span>Full IUPAC ambiguity codes supported in Nucleotide view</span></div>
         <button class="close-help" onclick="document.getElementById('help-overlay').classList.remove('active')">Close</button>
     </div>
@@ -574,6 +619,32 @@
 <div id="ctx-menu">
     <div class="item" id="ctx-info-group">Group: Not assigned</div>
     <div class="item" id="ctx-info-cluster">Cluster: Not assigned</div>
+</div>
+
+<div id="pdb3d-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 10001;">
+    <div id="pdb3d-window" style="position: fixed; left: 5%; top: 5%; width: 90vw; max-width: 1000px; height: 85vh; background: var(--panel-bg, #fff); border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; z-index: 10002;">
+        <div id="pdb3d-title-bar" style="flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border-color, #d1d5db); cursor: move; user-select: none; background: #fff; z-index: 10;">
+            <span id="pdb3d-title" style="font-weight: 600;">PDB 3D Structure</span>
+            <button id="btn-close-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Close</button>
+        </div>
+        <div id="pdb3d-hint" style="flex-shrink: 0; margin: 0; padding: 6px 14px; font-size: 11px; color: #374151; background: #f3f4f6; border-bottom: 1px solid var(--border-color, #e5e7eb); z-index: 10;">Epitope residues are colored automatically (residue colors, rest gray). Use <strong>Chains</strong> to show/hide chains.</div>
+        <div id="pdb3d-toolbar" style="flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border-color, #e5e7eb); background: #fff; z-index: 10;">
+            <span style="font-size: 12px; font-weight: 600;">Style:</span>
+            <select id="pdb3d-style-select" style="padding: 4px 8px; font-size: 12px;">
+                <option value="cartoon">Cartoon</option>
+                <option value="sphere">Sphere</option>
+                <option value="stick">Stick</option>
+                <option value="line">Line</option>
+                <option value="trace">Trace</option>
+                <option value="cross">Cross</option>
+            </select>
+            <span style="font-size: 12px; font-weight: 600; margin-left: 8px;">Chains:</span>
+            <span id="pdb3d-chains-list" style="display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center;"></span>
+            <button type="button" id="pdb3d-select-all" style="padding: 4px 8px; font-size: 11px;">All</button>
+            <button type="button" id="pdb3d-select-none" style="padding: 4px 8px; font-size: 11px;">None</button>
+        </div>
+        <div id="pdb3d-viewer" style="flex: 1; min-height: 0; width: 100%; position: relative; z-index: 1;"></div>
+    </div>
 </div>
 
 <script>
@@ -721,7 +792,10 @@ const state = {
     groupFieldNum: null, // Field number (1-based) used for grouping
     groupNames: null, // Map from group ID to group value (for legend)
     originalSubtype: null, // Store original subtype sequence for reverting
-    currentFileName: null // Store the current alignment file name
+    currentFileName: null, // Store the current alignment file name
+    pdbFileContent: null, // Raw PDB/CIF text for 3D viewer (set when Load PDB/CIF or fetch by ID)
+    pdbFileName: null,    // PDB/CIF file name for 3D overlay title
+    pdbFormat: 'pdb'     // 'pdb' or 'cif' for 3Dmol addModel
 };
 
 // --- DOM ---
@@ -750,6 +824,14 @@ const dom = {
     btnLoadEpitopes: document.getElementById('btn-load-epitopes'),
     btnSelectEpitope: document.getElementById('btn-select-epitope'),
     btnShowLogo: document.getElementById('btn-show-logo'),
+    inpPdb: document.getElementById('inp-pdb'),
+    inpPdbId: document.getElementById('inp-pdb-id'),
+    btnLoadPdb: document.getElementById('btn-load-pdb'),
+    btnFetchPdb: document.getElementById('btn-fetch-pdb'),
+    btnView3d: document.getElementById('btn-view-3d'),
+    pdbOverlay: document.getElementById('pdb3d-overlay'),
+    pdbViewerContainer: document.getElementById('pdb3d-viewer'),
+    pdbTitle: document.getElementById('pdb3d-title'),
     selFrame: document.getElementById('sel-frame'),
     grpFrame: document.getElementById('grp-frame'),
     overlay: document.getElementById('overlay'),
@@ -790,6 +872,78 @@ function drawDiamond(ctx, x, y, size) {
     ctx.fill();
 }
 
+// --- Button State Management ---
+function disableButtonsOnStartup() {
+    // Disable all buttons except the help button and file input
+    if (dom.btnSortSequences) dom.btnSortSequences.disabled = true;
+    if (dom.btnGroupSequences) dom.btnGroupSequences.disabled = true;
+    if (dom.btnSubtype) dom.btnSubtype.disabled = true;
+    if (dom.btnInferTree) dom.btnInferTree.disabled = true;
+    if (dom.btnRerootTree) dom.btnRerootTree.disabled = true;
+    if (dom.btnLadderizeTree) dom.btnLadderizeTree.disabled = true;
+    if (dom.btnHistogram) dom.btnHistogram.disabled = true;
+    if (dom.btnMds) dom.btnMds.disabled = true;
+    if (dom.btnDownload) dom.btnDownload.disabled = true;
+    if (dom.btnExportTree) dom.btnExportTree.disabled = true;
+    if (dom.btnClearAlignment) dom.btnClearAlignment.disabled = true;
+    if (dom.btnClearTree) dom.btnClearTree.disabled = true;
+    if (dom.btnUndo) dom.btnUndo.disabled = true;
+    if (dom.btnNt) dom.btnNt.disabled = true;
+    if (dom.btnAa) dom.btnAa.disabled = true;
+    if (dom.selHighlight) dom.selHighlight.disabled = true;
+    if (dom.btnLoadEpitopes) dom.btnLoadEpitopes.disabled = true;
+    if (dom.btnSelectEpitope) dom.btnSelectEpitope.disabled = true;
+    if (dom.btnShowLogo) dom.btnShowLogo.disabled = true;
+    // Help button should always be enabled, so we don't disable it
+}
+
+function enableButtonsAfterLoad() {
+    // Enable buttons that become usable after a file is loaded
+    // Group is enabled, but Add Founder and Sort require a successful grouping first
+    if (dom.btnGroupSequences) dom.btnGroupSequences.disabled = false;
+    if (dom.btnInferTree) dom.btnInferTree.disabled = false;
+    if (dom.btnDownload) dom.btnDownload.disabled = false;
+    if (dom.btnClearAlignment) dom.btnClearAlignment.disabled = false;
+    if (dom.selHighlight) dom.selHighlight.disabled = false;
+    if (dom.btnLoadEpitopes) dom.btnLoadEpitopes.disabled = false;
+    // Add Founder and Sort remain disabled until grouping is done
+    // Histogram, Cluster, and tree export remain disabled until ladderize is done
+}
+
+function enableButtonsAfterGrouping() {
+    // Enable Add Founder and Sort after successful grouping
+    if (dom.btnSubtype) dom.btnSubtype.disabled = false;
+    if (dom.btnSortSequences) dom.btnSortSequences.disabled = false;
+}
+
+function enableButtonsAfterInference() {
+    // Enable Reroot and Clear Tree buttons after successful tree inference
+    if (dom.btnRerootTree) dom.btnRerootTree.disabled = false;
+    if (dom.btnClearTree) dom.btnClearTree.disabled = false;
+}
+
+function enableButtonsAfterReroot() {
+    // Enable Ladderize button after successful rerooting
+    if (dom.btnLadderizeTree) dom.btnLadderizeTree.disabled = false;
+}
+
+function enableButtonsAfterLadderize() {
+    // Enable Histogram, Cluster, and tree export buttons after successful ladderize
+    if (dom.btnHistogram) dom.btnHistogram.disabled = false;
+    if (dom.btnMds) dom.btnMds.disabled = false;
+    if (dom.btnExportTree) dom.btnExportTree.disabled = false;
+}
+
+function enableButtonsAfterLoadEpitopes() {
+    // Enable Select Epitope button after successful epitope loading
+    if (dom.btnSelectEpitope) dom.btnSelectEpitope.disabled = false;
+}
+
+function enableButtonsAfterSelectEpitope() {
+    // Enable Show Logo button after successful epitope selection
+    if (dom.btnShowLogo) dom.btnShowLogo.disabled = false;
+}
+
 // --- Init ---
 async function init() {
     // Initialize Aioli with FastTree only
@@ -801,6 +955,9 @@ async function init() {
         console.error("Failed to initialize FastTree:", err);
         state.aioliCLI = null;
     }
+    
+    // Disable buttons that require a file to be loaded
+    disableButtonsOnStartup();
 
     dom.file.addEventListener('change', e => loadFile(e.target.files[0]));
     if (dom.fileTree) {
@@ -831,6 +988,56 @@ async function init() {
     }
     if (dom.btnShowLogo) {
         dom.btnShowLogo.addEventListener('click', showSequenceLogo);
+    }
+    var pdbLoadOverlay = document.getElementById('pdb-load-overlay');
+    if (dom.btnLoadPdb) {
+        dom.btnLoadPdb.addEventListener('click', function () {
+            if (pdbLoadOverlay) pdbLoadOverlay.style.display = 'flex';
+        });
+    }
+    if (document.getElementById('btn-pdb-choose-file') && dom.inpPdb) {
+        document.getElementById('btn-pdb-choose-file').addEventListener('click', function () { dom.inpPdb.click(); });
+    }
+    if (dom.inpPdb) {
+        dom.inpPdb.addEventListener('change', function (e) {
+            if (e.target.files && e.target.files[0]) {
+                loadPdbFile(e.target.files[0]);
+                if (pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
+            }
+            e.target.value = '';
+        });
+    }
+    if (document.getElementById('btn-pdb-load-cancel')) {
+        document.getElementById('btn-pdb-load-cancel').addEventListener('click', function () {
+            if (pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
+        });
+    }
+    if (pdbLoadOverlay) {
+        pdbLoadOverlay.addEventListener('click', function (e) {
+            if (e.target === pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
+        });
+    }
+    if (dom.btnFetchPdb && dom.inpPdbId) {
+        dom.btnFetchPdb.addEventListener('click', function () {
+            var code = (dom.inpPdbId.value || '').trim().toUpperCase().slice(0, 4);
+            if (!/^[A-Z0-9]{4}$/.test(code)) {
+                alert('Enter a valid 4-character PDB ID (e.g. 7U2N).');
+                return;
+            }
+            if (pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
+            loadPdbById(code);
+        });
+    }
+    if (dom.btnView3d) {
+        dom.btnView3d.addEventListener('click', openPdbViewerFromState);
+    }
+    const btnClosePdb3d = document.getElementById('btn-close-pdb3d');
+    if (btnClosePdb3d && dom.pdbOverlay) {
+        btnClosePdb3d.addEventListener('mousedown', e => e.stopPropagation());
+        btnClosePdb3d.addEventListener('click', closePdbViewer);
+    }
+    if (dom.pdbOverlay) {
+        dom.pdbOverlay.addEventListener('click', e => { if (e.target === dom.pdbOverlay) closePdbViewer(); });
     }
     dom.btnInferTree.addEventListener('click', showInferModal);
     dom.btnExportTree.addEventListener('click', exportTree);
@@ -894,6 +1101,25 @@ async function init() {
 
     dom.areaSeq.addEventListener('scroll', () => requestAnimationFrame(render));
     window.addEventListener('resize', onResize);
+
+    // Ensure top controls panel can scroll horizontally (wheel/trackpad over panel).
+    // Attach to #controls (always present) and resolve #controls-scroll in the handler so it works
+    // after refresh: refresh can load cached HTML without #controls-scroll, so attaching only to
+    // #controls-scroll at init would attach nothing; new tab loads fresh HTML and would work.
+    var controlsPanel = document.getElementById('controls');
+    if (controlsPanel) {
+        controlsPanel.addEventListener('wheel', function (e) {
+            var scrollEl = document.getElementById('controls-scroll');
+            if (!scrollEl) return;
+            if (e.deltaX !== 0) {
+                scrollEl.scrollLeft += e.deltaX;
+                e.preventDefault();
+            } else if (e.deltaY !== 0) {
+                scrollEl.scrollLeft += e.deltaY;
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
     
     dom.areaSeq.addEventListener('mousedown', (e) => onMouseDown(e, 'SEQ'));
     dom.areaNames.addEventListener('mousedown', (e) => { 
@@ -1194,10 +1420,17 @@ function clearAlignment() {
     state.groupFieldNum = null;
     state.groupNames = null;
     state.leafClusters = null;
+    state.pdbFileContent = null;
+    state.pdbFileName = null;
+    state.pdbFormat = 'pdb';
     dom.sizer.style.width = '1px';
     dom.sizer.style.height = '1px';
     setTreeWidth(0);
     updateColorLegend();
+    
+    // Disable buttons again after clearing alignment
+    disableButtonsOnStartup();
+    
     recalc();
     render();
 }
@@ -1211,6 +1444,20 @@ function clearTreeOnly() {
     }
     if (dom.btnMds) {
         dom.btnMds.disabled = true;
+    }
+    // Disable Clear Tree button after clearing the tree
+    if (dom.btnClearTree) {
+        dom.btnClearTree.disabled = true;
+    }
+    // Also disable buttons that depend on the tree
+    if (dom.btnRerootTree) {
+        dom.btnRerootTree.disabled = true;
+    }
+    if (dom.btnLadderizeTree) {
+        dom.btnLadderizeTree.disabled = true;
+    }
+    if (dom.btnExportTree) {
+        dom.btnExportTree.disabled = true;
     }
     updateColorLegend();
     render();
@@ -1279,26 +1526,29 @@ function sortSequencesByName() {
         ? state.rawSequences[state.subtypeIndex] 
         : null;
     
-    // Get all other sequences (excluding REF and SUBTYPE)
+    // Get other sequences: non-PDB (for sorting) and PDB chains (kept in order, always after Reference)
     const otherSeqs = [];
+    const pdbChains = [];
     for (let i = 0; i < state.rawSequences.length; i++) {
-        if (i !== state.refIndex && i !== state.subtypeIndex) {
-            otherSeqs.push({
-                index: i,
-                seq: state.rawSequences[i]
-            });
+        if (i === state.refIndex || i === state.subtypeIndex) continue;
+        const s = state.rawSequences[i];
+        if (isPdbChainSequence(s)) {
+            pdbChains.push(s);
+        } else {
+            otherSeqs.push({ index: i, seq: s });
         }
     }
     
-    // Sort other sequences by name
+    // Sort non-PDB sequences by name
     otherSeqs.sort((a, b) => {
         const nameA = a.seq.name || '';
         const nameB = b.seq.name || '';
         return nameA.localeCompare(nameB);
     });
     
-    // Rebuild sequence list: REF at 0, SUBTYPE at 1, then sorted others
+    // Rebuild: REF at 0, then PDB chains, then SUBTYPE (if any), then sorted non-PDB
     const newSequences = [refSeq];
+    pdbChains.forEach(s => newSequences.push(s));
     if (subtypeSeq && subtypeSeq !== refSeq) {
         newSequences.push(subtypeSeq);
     }
@@ -1310,19 +1560,14 @@ function sortSequencesByName() {
     
     state.rawSequences = newSequences;
     
-    // Update indices
+    // Update indices (subtype position depends on how many PDB chains are after ref)
     state.refIndex = 0;
-    if (subtypeSeq && subtypeSeq !== refSeq) {
-        state.subtypeIndex = 1;
+    const subtypeName = subtypeSeq ? subtypeSeq.name : null;
+    if (subtypeName) {
+        const newSubtypeIdx = state.rawSequences.findIndex(s => s.name === subtypeName);
+        state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : 0;
     } else {
-        // If subtype was the same as ref, find it in the new list
-        const subtypeName = subtypeSeq ? subtypeSeq.name : null;
-        if (subtypeName) {
-            const newSubtypeIdx = state.rawSequences.findIndex(s => s.name === subtypeName);
-            state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : 1;
-        } else {
-            state.subtypeIndex = newSequences.length > 1 ? 1 : 0;
-        }
+        state.subtypeIndex = state.rawSequences.length > 1 ? 1 : 0;
     }
     
     // Recalculate view sequences
@@ -1372,8 +1617,8 @@ function runGroupTask() {
     
     // First pass: collect all unique group values
     for (let i = 0; i < state.rawSequences.length; i++) {
-        // Exclude REF and SUBTYPE
-        if (i === state.refIndex || i === state.subtypeIndex) {
+        // Exclude REF, SUBTYPE, and PDB chain sequences (3D only)
+        if (i === state.refIndex || i === state.subtypeIndex || isPdbChainSequence(state.rawSequences[i])) {
             continue;
         }
         
@@ -1402,8 +1647,8 @@ function runGroupTask() {
     
     // Second pass: assign group IDs to sequences
     for (let i = 0; i < state.rawSequences.length; i++) {
-        // Exclude REF and SUBTYPE
-        if (i === state.refIndex || i === state.subtypeIndex) {
+        // Exclude REF, SUBTYPE, and PDB chain sequences (3D only)
+        if (i === state.refIndex || i === state.subtypeIndex || isPdbChainSequence(state.rawSequences[i])) {
             continue;
         }
         
@@ -1427,6 +1672,9 @@ function runGroupTask() {
     state.groupDelimiter = delimiter;
     state.groupFieldNum = fieldNumOneBased; // Store 1-based field number
     state.groupNames = groupIdToValue; // Store group ID to value mapping for legend
+    
+    // Enable Add Founder and Sort buttons after successful grouping
+    enableButtonsAfterGrouping();
     
     // Update legend
     updateColorLegend();
@@ -1480,17 +1728,20 @@ function calculateFounder(sequences) {
         sequences.forEach(seq => {
             if (pos < seq.length) {
                 const char = seq[pos].toUpperCase();
-                if (char !== '-') {
-                    counts[char] = (counts[char] || 0) + 1;
-                    total++;
-                }
+                // Include all characters including gaps
+                counts[char] = (counts[char] || 0) + 1;
+                total++;
+            } else {
+                // If sequence is shorter than this position, count it as a gap
+                counts['-'] = (counts['-'] || 0) + 1;
+                total++;
             }
         });
         
         if (total === 0) {
             founder.push('-');
         } else {
-            // Find the most common character
+            // Find the most common character (including gaps)
             let maxCount = 0;
             let founderChar = '-';
             
@@ -1499,11 +1750,6 @@ function calculateFounder(sequences) {
                     maxCount = count;
                     founderChar = char;
                 }
-            }
-            
-            // If there's a tie, prefer non-gap characters
-            if (founderChar === '-' && Object.keys(counts).length > 0) {
-                founderChar = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
             }
             
             founder.push(founderChar);
@@ -1795,6 +2041,14 @@ function runInferTask() {
     const method = document.getElementById('sel-infer-method').value;
     document.getElementById('infer-overlay').style.display = 'none';
 
+    // Disable buttons that require ladderize (will be re-enabled after ladderize)
+    if (dom.btnHistogram) dom.btnHistogram.disabled = true;
+    if (dom.btnMds) dom.btnMds.disabled = true;
+    if (dom.btnExportTree) dom.btnExportTree.disabled = true;
+    // Disable reroot and ladderize buttons (will be re-enabled after inference/reroot)
+    if (dom.btnRerootTree) dom.btnRerootTree.disabled = true;
+    if (dom.btnLadderizeTree) dom.btnLadderizeTree.disabled = true;
+
     // Clear clustering state and remove cluster annotations before inferring a new tree
     if (state.leafClusters || state.hierarchicalActive) {
         const delimiter = state.groupDelimiter || '_';
@@ -1844,12 +2098,13 @@ function inferTreeNJ() {
     
     setTimeout(() => {
         try {
-            // Exclude reference sequence from tree inference
+            // Exclude reference and PDB chain sequences from tree inference
             const refName = state.rawSequences[state.refIndex]?.name;
-            const nonRefSequences = state.rawSequences.filter((s, idx) => idx !== state.refIndex);
+            const nonRefSequences = state.rawSequences.filter((s, idx) =>
+                idx !== state.refIndex && !isPdbChainSequence(s));
             
             if (nonRefSequences.length < 2) {
-                alert("Need at least 2 non-reference sequences to infer a tree.");
+                alert("Need at least 2 non-reference, non-PDB sequences to infer a tree.");
                 showOverlay(false);
                 return;
             }
@@ -1888,21 +2143,21 @@ async function runFastTreeTask() {
     dom.overlaySub.textContent = "via bioWASM";
 
     try {
-        // Exclude reference sequence from tree inference
-        const nonRefSequences = state.rawSequences.filter((s, idx) => idx !== state.refIndex);
+        // Exclude reference and PDB chain sequences from tree inference
+        const nonRefSequences = state.rawSequences.filter((s, idx) =>
+            idx !== state.refIndex && !isPdbChainSequence(s));
         
         if (nonRefSequences.length < 2) {
-            alert("Need at least 2 non-reference sequences to infer a tree.");
+            alert("Need at least 2 non-reference, non-PDB sequences to infer a tree.");
             showOverlay(false);
             return;
         }
         
-        // Use indices as temporary names to avoid truncation/special character issues
-        // Map original indices to new indices (excluding ref)
+        // Use indices as temporary names (excluding ref and PDB chains)
         const indexMap = new Map();
         let newIdx = 0;
         state.rawSequences.forEach((s, origIdx) => {
-            if (origIdx !== state.refIndex) {
+            if (origIdx !== state.refIndex && !isPdbChainSequence(s)) {
                 indexMap.set(newIdx, origIdx);
                 newIdx++;
             }
@@ -2172,6 +2427,9 @@ function finalizeLoad(seqs) {
         setMode('NT', false);
     }
     
+    // Enable buttons that become usable after a file is loaded
+    enableButtonsAfterLoad();
+    
     // Calculate and set names panel width to accommodate all names
     calculateNamesWidth();
     
@@ -2378,6 +2636,9 @@ function rerootTreeOnTarget(targetType) {
         state.tree.maxDepth = maxDepth;
         state.tree.useCladogram = useCladogram;
         
+        // Enable Ladderize button after successful rerooting (even if just adjusting branch lengths)
+        enableButtonsAfterReroot();
+        
         recalc();
         return; // Exit early since we've handled this case
     }
@@ -2466,6 +2727,9 @@ function rerootTreeOnTarget(targetType) {
         state.tree.maxDepth = maxDepth;
         state.tree.useCladogram = useCladogram2;
     }
+    
+    // Enable Ladderize button after successful rerooting
+    enableButtonsAfterReroot();
     
     recalc();
 }
@@ -2831,12 +3095,11 @@ function parseTree(newick, isIndexed = false, shouldReroot = true) {
 
     state.tree = { root, maxDepth };
     setTreeWidth(200);
-    if (dom.btnHistogram) {
-        dom.btnHistogram.disabled = false;
-    }
-    if (dom.btnMds) {
-        dom.btnMds.disabled = false;
-    }
+    // Don't enable Histogram, Cluster, or tree export here - they require ladderize first
+    
+    // Enable Reroot button after successful tree inference/loading
+    enableButtonsAfterInference();
+    
     recalc();
     showOverlay(false);
 }
@@ -2862,29 +3125,32 @@ function applyTreeOrder(root) {
     const subtypeSeq = state.rawSequences[state.subtypeIndex];
     const subtypeName = subtypeSeq?.name;
     
-    // Create map of non-reference sequences
+    // Create map of non-reference sequences; collect PDB chains in order (they go right after reference)
     const seqMap = new Map();
+    const pdbChainsInOrder = [];
     state.rawSequences.forEach((s, idx) => {
-        if (idx !== state.refIndex) {
+        if (idx === state.refIndex) return;
+        if (isPdbChainSequence(s)) {
+            pdbChainsInOrder.push(s);
+        } else {
             seqMap.set(s.name, s);
         }
     });
     
-    // Reorder non-reference sequences according to tree (excluding ref name even if it appears in tree)
+    // Order: Reference first, then PDB chains, then tree-ordered non-PDB, then any remaining non-PDB
     const newSeqList = [];
     if (refSeq) {
         newSeqList.push(refSeq); // Reference always first
     }
-    
+    pdbChainsInOrder.forEach(s => newSeqList.push(s)); // PDB chains immediately after reference
     leafOrder.forEach(name => {
-        // Skip reference sequence even if it appears in the tree
         if (name !== refName && seqMap.has(name)) {
             newSeqList.push(seqMap.get(name));
             seqMap.delete(name);
         }
     });
-    // Add any remaining sequences that weren't in the tree
-    for(let s of seqMap.values()) newSeqList.push(s);
+    // Add any remaining non-PDB sequences that weren't in the tree
+    seqMap.forEach(s => newSeqList.push(s));
     
     state.rawSequences = newSeqList;
     state.refIndex = 0; // Reference is always at index 0
@@ -3190,12 +3456,12 @@ function showProjectionPlot(selectedMethod) {
     const spreadValue = document.getElementById('umap-spread-value');
     const minDistValue = document.getElementById('umap-mindist-value');
     
-    // Calculate initial nNeighbors (adaptive based on data size)
+    // Calculate initial nNeighbors (clamped to 0-5 range)
     const n = distanceMatrix.length;
-    const initialNNeighbors = Math.min(15, Math.max(2, Math.floor(Math.sqrt(n))));
+    const initialNNeighbors = Math.min(5, Math.max(0, Math.floor(Math.sqrt(n))));
     if (nNeighborsSlider) {
-        // Set max to number of data points
-        nNeighborsSlider.max = n.toString();
+        // Keep max at 5 (slider range is 0-5)
+        nNeighborsSlider.max = '5';
         nNeighborsSlider.value = initialNNeighbors.toString();
     }
     
@@ -4862,7 +5128,49 @@ function ladderizeTree(mode) {
     }
     
     applyTreeOrder(state.tree.root);
+    
+    // Enable Histogram, Cluster, and tree export buttons after successful ladderize
+    enableButtonsAfterLadderize();
+    
     recalc();
+}
+
+// --- Temporary Notification ---
+function showTemporaryNotification(message, duration) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #2563eb;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10001;
+        font-size: 14px;
+        font-weight: 500;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    // Fade in
+    setTimeout(() => {
+        notification.style.opacity = '1';
+    }, 10);
+    
+    // Fade out and remove after duration
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, duration);
 }
 
 // --- Epitope Loading and Selection ---
@@ -4910,7 +5218,11 @@ function loadEpitopes(file) {
             
             state.epitopes = epitopes;
             
-            alert(`Loaded ${epitopes.length} epitope(s). Use "Select Epitope" to choose one.`);
+            // Enable Select Epitope button after successful loading
+            enableButtonsAfterLoadEpitopes();
+            
+            // Show temporary notification that disappears after 2 seconds
+            showTemporaryNotification(`Loaded ${epitopes.length} epitope(s). Use "Select Epitope" to choose one.`, 2000);
         } catch (err) {
             console.error("Error loading epitopes:", err);
             alert("Error loading epitopes: " + err.message);
@@ -4976,12 +5288,27 @@ function showEpitopeSelector() {
     document.body.appendChild(selector);
 }
 
+/** Convert a ref region (1-based inclusive start/end) to alignment column indices. Only includes columns where the reference has a residue (not a gap), so the region stops at the last coordinate and does not include trailing (or leading) gaps. Used by epitope highlighting, logos, and region logos. */
+function getAlignmentColumnsForRefRegion(region) {
+    var refSeq = state.viewSequences && state.refIndex >= 0 ? state.viewSequences[state.refIndex].seq : null;
+    if (!refSeq || !state.refMap) return [];
+    var cols = [];
+    for (var col = 0; col < state.refMap.length && col < refSeq.length; col++) {
+        if (refSeq[col] !== '-' && refSeq[col] !== '.' && state.refMap[col] >= region.start && state.refMap[col] <= region.end) {
+            cols.push(col);
+        }
+    }
+    return cols;
+}
+
 function selectEpitope(epitopeName) {
     state.selectedEpitope = epitopeName;
     
     if (!epitopeName) {
         // Clear epitope selection - show all
         state.epitopeColumns = null;
+        // Disable Show Logo button when epitope selection is cleared
+        if (dom.btnShowLogo) dom.btnShowLogo.disabled = true;
         recalc();
         return;
     }
@@ -4993,65 +5320,16 @@ function selectEpitope(epitopeName) {
         return;
     }
     
-    // Create a set of allowed alignment columns
-    // For each region, find all alignment columns from start to end (including gaps)
+    // Create a set of allowed alignment columns using shared ref-coord-to-column mapping
     const allowedColumns = new Set();
-    
     for (const region of epitope.regions) {
-        // Find all columns where the reference coordinate is within [start, end]
-        // This includes gaps within the region (where refCoord stays the same between region coordinates)
-        // but excludes gaps after the region ends (where refCoord equals end but the reference has a gap)
-        
-        // Get the reference sequence to check for gaps
-        const refSeq = state.viewSequences[state.refIndex]?.seq;
-        
-        // Find the last column where refCoord === region.end AND the reference has an actual character (not a gap)
-        // This is the true end of the region (before any trailing gaps)
-        let lastEndCol = null;
-        for (let i = 0; i < state.refMap.length; i++) {
-            const refCoord = state.refMap[i];
-            if (refCoord === region.end) {
-                // Check if this column has an actual character in the reference (not a gap)
-                if (refSeq && i < refSeq.length && refSeq[i] !== '-') {
-                    lastEndCol = i;
-                }
-            } else if (refCoord > region.end) {
-                // We've passed the end, stop searching
-                break;
-            }
-        }
-        
-        // If we didn't find a non-gap column at region.end, find the last column where refCoord === region.end
-        // (This handles edge cases where region.end might be at a gap)
-        if (lastEndCol === null) {
-            for (let i = state.refMap.length - 1; i >= 0; i--) {
-                if (state.refMap[i] === region.end) {
-                    lastEndCol = i;
-                    break;
-                } else if (state.refMap[i] < region.end) {
-                    break;
-                }
-            }
-        }
-        
-        // Now include all columns where refCoord is within [start, end] AND we haven't passed the last end column
-        // This ensures we include gaps within the region but exclude gaps after the region
-        for (let i = 0; i < state.refMap.length; i++) {
-            const refCoord = state.refMap[i];
-            
-            // Only include if:
-            // 1. Reference coordinate is within the region range [start, end]
-            // 2. We haven't passed the last column where refCoord equals end and has a non-gap character
-            //    (This excludes gaps after the region that have refCoord = end)
-            if (refCoord >= region.start && refCoord <= region.end) {
-                if (lastEndCol === null || i <= lastEndCol) {
-                    allowedColumns.add(i);
-                }
-            }
-        }
+        const cols = getAlignmentColumnsForRefRegion(region);
+        cols.forEach(function (c) { allowedColumns.add(c); });
     }
-    
     state.epitopeColumns = allowedColumns;
+    
+    // Enable Show Logo button after successful epitope selection
+    enableButtonsAfterSelectEpitope();
     
     recalc();
 }
@@ -5155,14 +5433,24 @@ function recalc() {
     let allViewSequences;
     if(state.mode === 'NT') {
         const refView = refSeq ? { name: refSeq.name, seq: refSeq.seq } : null;
-        const nonRefViews = nonRefSequences.map(s => ({ name: s.name, seq: s.seq }));
+        const nonRefViews = nonRefSequences.map(s => {
+            const v = { name: s.name, seq: s.seq };
+            if (s.chainStart != null && s.chainStart >= 0) v.chainStart = s.chainStart;
+            if (s.isPdbChain) v.isPdbChain = true;
+            return v;
+        });
         allViewSequences = refView ? [refView, ...nonRefViews] : nonRefViews;
     } else {
         // AA mode
         if (state.isAASequence) {
-            // Sequences are already amino acids, use them directly
+            // Sequences are already amino acids, use them directly (preserve chainStart and isPdbChain for PDB chains)
             const refView = refSeq ? { name: refSeq.name, seq: refSeq.seq } : null;
-            const nonRefViews = nonRefSequences.map(s => ({ name: s.name, seq: s.seq }));
+            const nonRefViews = nonRefSequences.map(s => {
+                const v = { name: s.name, seq: s.seq };
+                if (s.chainStart != null && s.chainStart >= 0) v.chainStart = s.chainStart;
+                if (s.isPdbChain) v.isPdbChain = true;
+                return v;
+            });
             allViewSequences = refView ? [refView, ...nonRefViews] : nonRefViews;
         } else {
             // Sequences are DNA, translate to AA
@@ -5192,7 +5480,10 @@ function recalc() {
                 else if (/[^ACGT]/i.test(codon)) aa.push('X');
                 else aa.push(CODON_TABLE[codon] || 'X');
             }
-            return { name: s.name, seq: aa };
+            const v = { name: s.name, seq: aa };
+            if (s.chainStart != null && s.chainStart >= 0) v.chainStart = s.chainStart;
+            if (s.isPdbChain) v.isPdbChain = true;
+            return v;
         });
             allViewSequences = refView ? [refView, ...nonRefViews] : nonRefViews;
         }
@@ -5540,19 +5831,29 @@ function onResize() {
 
 function render() {
     if(!state.viewSequences.length && state.rawSequences.length === 0) {
-        // Draw watermark "aliViz" on white background when no alignment is loaded
+        // Draw watermark on white background when no alignment is loaded
         const vW = dom.cvsSeq.width, vH = dom.cvsSeq.height;
         ctxSeq.fillStyle = '#ffffff';
         ctxSeq.fillRect(0, 0, vW, vH);
         
-        // Draw watermark text
+        // Draw watermark text - two lines stacked and centered
         ctxSeq.save();
         ctxSeq.fillStyle = '#b0b0b0'; // Darker grey for watermark
-        ctxSeq.font = 'bold 144px Arial, sans-serif';
         ctxSeq.textAlign = 'center';
         ctxSeq.textBaseline = 'middle';
         ctxSeq.globalAlpha = 0.5; // More visible watermark
-        ctxSeq.fillText('aliViz', vW / 2, vH / 2);
+        const centerX = vW / 2;
+        const centerY = vH / 2;
+        
+        // Draw two lines of text, stacked and centered
+        ctxSeq.font = 'bold 144px Arial, sans-serif';
+        const lineHeight = 180; // Spacing between lines
+        const startY = centerY - (lineHeight / 2); // Start above center
+        
+        ctxSeq.fillText('aliViz', centerX, startY);
+        ctxSeq.font = 'bold 72px Arial, sans-serif'; // Smaller font for the group name
+        ctxSeq.fillText('HIVDiversity Group', centerX, startY + lineHeight);
+        
         ctxSeq.restore();
         return;
     }
@@ -5663,6 +5964,8 @@ function render() {
         const isSubtype = state.viewSequences[r].name === state.rawSequences[state.subtypeIndex]?.name;
         // Check if this is a founder sequence
         const isFounder = state.viewSequences[r].name && state.viewSequences[r].name.startsWith('consensus_of_');
+        // Check if this is a PDB chain sequence (3D visualization only)
+        const isPdbChain = isPdbChainSequence(state.viewSequences[r]);
         
         // Determine background and text colors based on grouping only
         let bgColor, textColor;
@@ -5670,8 +5973,8 @@ function render() {
         const groupId = state.sequenceGroups ? state.sequenceGroups.get(seqName) : undefined;
         
         // Set background color: use group color if grouping exists, otherwise default
-        if(r === state.refIndex || isSubtype || isFounder) {
-            bgColor = '#fce7f3'; // Light magenta background for Reference, Subtype, and Founder
+        if(r === state.refIndex || isSubtype || isFounder || isPdbChain) {
+            bgColor = '#fce7f3'; // Light magenta background for Reference, Subtype, Founder, and PDB chains
         } else if (groupId !== undefined) {
             // Use group color for background (groups sorted alphabetically, use palette index groupId + 1)
             const lightBgIndex = (groupId + 1) % GROUP_LIGHT_BG.length;
@@ -5683,8 +5986,8 @@ function render() {
         }
         
         // Set text color: use group color if grouping exists, otherwise default
-        if(r === state.refIndex || isSubtype || isFounder) {
-            textColor = '#ff00ff'; // Magenta for Reference, Subtype, and Founder
+        if(r === state.refIndex || isSubtype || isFounder || isPdbChain) {
+            textColor = '#ff00ff'; // Magenta for Reference, Subtype, Founder, and PDB chains
         } else if (groupId !== undefined) {
             // Use group color for text (groups sorted alphabetically, use palette index groupId + 1)
             textColor = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
@@ -5702,13 +6005,15 @@ function render() {
             ctxNames.font = "bold " + CONFIG.labelFont;
         } else if(isFounder) {
             ctxNames.font = "bold " + CONFIG.labelFont;
+        } else if(isPdbChain) {
+            ctxNames.font = "bold " + CONFIG.labelFont;
         } else {
             ctxNames.font = CONFIG.labelFont;
         }
         
         // Draw sequence name with labels
         ctxNames.fillStyle = textColor;
-        let label = state.viewSequences[r].name;
+        let label = isPdbChain ? getPdbChainDisplayLabel(state.viewSequences[r].name) : state.viewSequences[r].name;
         if(r === state.refIndex) label += " [Reference]";
         if(isSubtype && state.subtypeIndex < state.rawSequences.length) {
             label += " [Subtype]";
@@ -5947,6 +6252,1169 @@ function render() {
     }
 }
 
+// --- PDB 3D Viewer (3Dmol.js: epitope = residue colors, rest = gray) ---
+let pdb3dViewerInstance = null;
+var pdb3dCurrentStyle = 'cartoon';
+
+const PDB_RESIDUE_TO_ONE = {
+    'ALA':'A','ARG':'R','ASN':'N','ASP':'D','CYS':'C','GLN':'Q','GLU':'E','GLY':'G','HIS':'H',
+    'ILE':'I','LEU':'L','LYS':'K','MET':'M','PHE':'F','PRO':'P','SER':'S','THR':'T','TRP':'W',
+    'TYR':'Y','VAL':'V','SEC':'U','PYL':'O','UNK':'X','MSE':'M','HOH':'','WAT':'','NAG':'','CL':''
+};
+
+/** Returns { chains: [ { id, seq } ], flat } — seq per chain and concatenated flat array. */
+function parsePdbSequence(pdbText) {
+    const lines = (pdbText || '').split(/\r?\n/);
+    const byChain = new Map(); // chainId -> [{ resSeq, resName }]
+    for (const line of lines) {
+        if (line.startsWith('ATOM ') || line.startsWith('HETATM ')) {
+            const resName = (line.substring(17, 20) || '').trim();
+            const one = PDB_RESIDUE_TO_ONE[resName];
+            if (one === '') continue; // skip water/ligand
+            const chain = (line.substring(21, 22) || ' ').trim() || 'A';
+            const resSeq = parseInt(line.substring(22, 26), 10) || 0;
+            if (!byChain.has(chain)) byChain.set(chain, []);
+            const arr = byChain.get(chain);
+            const last = arr.length ? arr[arr.length - 1] : null;
+            if (!last || last.resSeq !== resSeq) arr.push({ resSeq, resName: one || 'X' });
+        }
+    }
+    const chainIds = Array.from(byChain.keys()).sort();
+    const chains = [];
+    const flat = [];
+    for (const c of chainIds) {
+        const arr = byChain.get(c).sort((a, b) => a.resSeq - b.resSeq);
+        const seq = arr.map(r => r.resName);
+        chains.push({ id: c, seq });
+        flat.push(...seq);
+    }
+    return { chains, flat };
+}
+
+/** Detect if structure text is CIF (mmCIF). */
+function isCifStructure(text) {
+    var t = (text || '').trim();
+    return t.startsWith('data_') || (t.indexOf('loop_') !== -1 && t.indexOf('_atom_site') !== -1);
+}
+
+/** Parse mmCIF _atom_site loop; return same shape as parsePdbSequence: { chains, flat }. */
+function parseCifSequence(cifText) {
+    var lines = (cifText || '').split(/\r?\n/);
+    var byChain = new Map();
+    var chainOrder = [];
+    var colChain = -1, colSeq = -1, colComp = -1;
+    var inAtomSite = false;
+    var columns = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var trimmed = line.trim();
+        if (trimmed.startsWith('loop_')) {
+            inAtomSite = false;
+            columns = [];
+            colChain = colSeq = colComp = -1;
+            continue;
+        }
+        if (trimmed.startsWith('_atom_site.')) {
+            var name = trimmed.slice(11).split(/\s/)[0];
+            columns.push(name);
+            if (name === 'label_asym_id' || name === 'auth_asym_id') colChain = columns.length - 1;
+            if (name === 'label_seq_id' || name === 'auth_seq_id') colSeq = columns.length - 1;
+            if (name === 'label_comp_id' || name === 'auth_comp_id') colComp = columns.length - 1;
+            inAtomSite = true;
+            continue;
+        }
+        if (inAtomSite && columns.length > 0 && colChain >= 0 && colSeq >= 0 && colComp >= 0) {
+            if (trimmed.startsWith('_') || trimmed === '' || trimmed.startsWith('#')) {
+                inAtomSite = false;
+                continue;
+            }
+            var parts = line.split(/\s+/);
+            if (parts.length < columns.length) continue;
+            var resName = (parts[colComp] || '').trim().slice(0, 3);
+            var one = PDB_RESIDUE_TO_ONE[resName];
+            if (one === '') continue;
+            var chain = (parts[colChain] || 'A').trim() || 'A';
+            var resSeq = parseInt(parts[colSeq], 10) || 0;
+            if (!byChain.has(chain)) {
+                byChain.set(chain, []);
+                chainOrder.push(chain);
+            }
+            var arr = byChain.get(chain);
+            var last = arr.length ? arr[arr.length - 1] : null;
+            if (!last || last.resSeq !== resSeq) arr.push({ resSeq: resSeq, resName: one || 'X' });
+        }
+    }
+    var chainIds = chainOrder.length ? chainOrder : Array.from(byChain.keys()).sort();
+    var chains = [];
+    var flat = [];
+    for (var c = 0; c < chainIds.length; c++) {
+        var id = chainIds[c];
+        var arr = (byChain.get(id) || []).sort(function (a, b) { return a.resSeq - b.resSeq; });
+        var seq = arr.map(function (r) { return r.resName; });
+        chains.push({ id: id, seq: seq });
+        flat.push.apply(flat, seq);
+    }
+    return { chains: chains, flat: flat };
+}
+
+/** Get structure code from PDB HEADER or CIF data_/ _entry.id. */
+function structureCodeFromContent(text) {
+    if (isCifStructure(text)) {
+        var lines = (text || '').split(/\r?\n/);
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (line.startsWith('data_')) {
+                var code = line.slice(5).trim().split(/\s/)[0];
+                if (code && code.length >= 4) return code.slice(0, 4).toUpperCase();
+            }
+            if (line === '_entry.id' && i + 1 < lines.length) {
+                var val = lines[i + 1].trim().split(/\s/)[0];
+                if (val && val.length >= 4) return val.slice(0, 4).toUpperCase();
+            }
+        }
+        return 'UNKN';
+    }
+    return pdbCodeFromHeader(text);
+}
+
+function parseFastaToSeqs(text) {
+    const lines = (text || '').split(/\r?\n/);
+    const seqs = [];
+    let name = null, buf = [];
+    for (const line of lines) {
+        const t = line.trim();
+        if (!t) continue;
+        if (t.startsWith('>')) {
+            if (name) seqs.push({ name, seq: buf.join('').toUpperCase().replace(/[^A-Z.-]/g, '').split('') });
+            name = t.substring(1).trim();
+            buf = [];
+        } else {
+            buf.push(t.toUpperCase().replace(/[^A-Z.-]/g, ''));
+        }
+    }
+    if (name) seqs.push({ name, seq: buf.join('').toUpperCase().replace(/[^A-Z.-]/g, '').split('') });
+    return seqs;
+}
+
+/** Smith-Waterman local alignment. Returns { alignedRef, alignedChain, refStart, refEnd } (refStart/refEnd are 0-based in refNoGaps). */
+function smithWatermanLocal(refStr, chainStr, gapOpen, gapExtend, matchCost, mismatchCost) {
+    const r = refStr.split('');
+    const c = chainStr.split('');
+    const R = r.length, C = c.length;
+    const H = Array(R + 1).fill(0).map(() => Array(C + 1).fill(0));
+    const ptr = Array(R + 1).fill(0).map(() => Array(C + 1).fill(0)); // 1=diag, 2=up, 3=left
+    let bestScore = 0, bestI = 0, bestJ = 0;
+    for (let i = 1; i <= R; i++) {
+        for (let j = 1; j <= C; j++) {
+            const match = (r[i - 1] === c[j - 1]) ? matchCost : mismatchCost;
+            const diag = H[i - 1][j - 1] + match;
+            const up = H[i - 1][j] + (ptr[i - 1][j] === 2 ? gapExtend : gapOpen);
+            const left = H[i][j - 1] + (ptr[i][j - 1] === 3 ? gapExtend : gapOpen);
+            const max = Math.max(0, diag, up, left);
+            H[i][j] = max;
+            if (max === diag) ptr[i][j] = 1;
+            else if (max === up) ptr[i][j] = 2;
+            else if (max === left) ptr[i][j] = 3;
+            if (max > bestScore) { bestScore = max; bestI = i; bestJ = j; }
+        }
+    }
+    if (bestScore <= 0) return { alignedRef: '', alignedChain: '', refStart: -1, refEnd: -1, chainStart: -1, chainEnd: -1 };
+    const outR = [], outC = [];
+    let i = bestI, j = bestJ;
+    let refStart = R, refEnd = -1;
+    let chainStart = Infinity, chainEnd = -1;
+    while (i > 0 && j > 0 && H[i][j] > 0) {
+        const refIdx = i - 1;
+        if (ptr[i][j] === 1) {
+            outR.push(r[refIdx]); outC.push(c[j - 1]);
+            refStart = Math.min(refStart, refIdx); refEnd = Math.max(refEnd, refIdx);
+            chainStart = Math.min(chainStart, j - 1); chainEnd = Math.max(chainEnd, j - 1);
+            i--; j--;
+        } else if (ptr[i][j] === 2) {
+            outR.push(r[refIdx]); outC.push('-');
+            refStart = Math.min(refStart, refIdx); refEnd = Math.max(refEnd, refIdx);
+            i--;
+        } else {
+            outR.push('-'); outC.push(c[j - 1]);
+            chainStart = Math.min(chainStart, j - 1); chainEnd = Math.max(chainEnd, j - 1);
+            j--;
+        }
+    }
+    outR.reverse(); outC.reverse();
+    if (chainStart === Infinity) chainStart = -1;
+    return { alignedRef: outR.join(''), alignedChain: outC.join(''), refStart: refStart <= refEnd ? refStart : -1, refEnd, chainStart, chainEnd };
+}
+
+/** Align one chain to reference using local alignment; returns { row, minCol, maxCol } (row length = refSeqArr.length). */
+function alignOneChainToRef(refSeqArr, chainSeq) {
+    const refNoGaps = refSeqArr.filter(c => c !== '-' && c !== '.').join('');
+    const row = Array(refSeqArr.length).fill('-');
+    if (!refNoGaps.length || !chainSeq.length) return { row, minCol: -1, maxCol: -1 };
+    const chainStr = (typeof chainSeq === 'string') ? chainSeq : chainSeq.join('');
+    const gapOpen = -10, gapExtend = -0.5, matchCost = 1, mismatchCost = -0.7;
+    const local = smithWatermanLocal(refNoGaps, chainStr, gapOpen, gapExtend, matchCost, mismatchCost);
+    if (local.refStart < 0 || local.refEnd < 0) return { row, minCol: -1, maxCol: -1, chainStart: 0 };
+    const { alignedRef, alignedChain, refStart, refEnd, chainStart } = local;
+    const outR = alignedRef.split('');
+    const outC = alignedChain.split('');
+    const refIdxToCol = [];
+    let refIdx = 0;
+    for (let i = 0; i < refSeqArr.length; i++) {
+        if (refSeqArr[i] !== '-' && refSeqArr[i] !== '.') {
+            refIdxToCol[refIdx] = i;
+            refIdx++;
+        }
+    }
+    let j = 0;
+    let minCol = -1, maxCol = -1;
+    for (let k = 0; k < outR.length; k++) {
+        if (outR[k] !== '-') {
+            const col = refIdxToCol[refStart + j];
+            if (col !== undefined && outC[k] !== '-') {
+                row[col] = outC[k];
+                if (minCol < 0) minCol = col;
+                maxCol = col;
+            }
+            j++;
+        }
+    }
+    return { row, minCol, maxCol, chainStart: chainStart >= 0 ? chainStart : 0 };
+}
+
+/** 1-based reference coordinate at alignment column col (count of non-gap ref residues up to col inclusive). */
+function refCoordAtCol(refSeqArr, col) {
+    let c = 0;
+    for (let i = 0; i <= col && i < refSeqArr.length; i++) {
+        if (refSeqArr[i] !== '-' && refSeqArr[i] !== '.') c++;
+    }
+    return c;
+}
+
+/** Extract 4-character PDB code from HEADER record in PDB file contents (columns 63-66). */
+function pdbCodeFromHeader(pdbText) {
+    const lines = (pdbText || '').split(/\r?\n/);
+    for (const line of lines) {
+        if (line.startsWith('HEADER')) {
+            const code = (line.substring(62, 66) || '').trim().toUpperCase();
+            if (code.length === 4 && /^[A-Z0-9]{4}$/.test(code)) {
+                return code;
+            }
+            const padded = (code + '____').slice(0, 4).replace(/[^A-Z0-9]/g, '_');
+            return padded;
+        }
+    }
+    return 'UNKN';
+}
+
+/** True if the argument is a PDB chain sequence (name string or seq object with isPdbChain). These are for 3D only; exclude from sort/group/tree. */
+function isPdbChainSequence(nameOrSeq) {
+    if (nameOrSeq && typeof nameOrSeq === 'object' && nameOrSeq.isPdbChain === true) return true;
+    return typeof nameOrSeq === 'string' && /^[A-Za-z0-9]+_Chain_[A-Za-z0-9]+$/.test(nameOrSeq);
+}
+
+/** Display label for a PDB chain sequence: "xxxx_Chain_y [PDB_y]". For non-PDB names returns the name unchanged. */
+function getPdbChainDisplayLabel(name) {
+    if (typeof name !== 'string') return name;
+    var m = name.match(/^(.+)_Chain_(.+)$/);
+    return m ? name + ' [PDB_' + m[2] + ']' : name;
+}
+
+/** Align each PDB chain to reference with local alignment; return array of { name, seq, chainStart, isPdbChain } (one per chain), names xxxx_Chain_y. */
+function alignChainsToReferenceSequences(refSeqArr, chains, pdbCode) {
+    if (!refSeqArr.length) return [];
+    const refLen = refSeqArr.length;
+    const aligned = [];
+    for (const ch of chains) {
+        if (!ch.seq || !ch.seq.length) continue;
+        const { row, minCol, maxCol, chainStart } = alignOneChainToRef(refSeqArr, ch.seq);
+        if (minCol >= 0) {
+            const startRefCoord = refCoordAtCol(refSeqArr, minCol);
+            const endRefCoord = refCoordAtCol(refSeqArr, maxCol);
+            console.log('PDB chain local alignment: chain=', ch.id, 'startRefCoord=', startRefCoord, 'endRefCoord=', endRefCoord, 'chainStart_0based=', chainStart);
+            aligned.push({ id: ch.id, row, minCol, maxCol, chainStart: chainStart >= 0 ? chainStart : 0 });
+        }
+    }
+    aligned.sort((a, b) => a.minCol - b.minCol);
+    return aligned.map(a => ({
+        name: pdbCode + '_Chain_' + a.id,
+        seq: a.row,
+        chainStart: a.chainStart,
+        isPdbChain: true
+    }));
+}
+
+function applyStructureContent(text, fileName, format) {
+    var isCif = format === 'cif' || isCifStructure(text);
+    var chains, flat;
+    if (isCif) {
+        var parsed = parseCifSequence(text);
+        chains = parsed.chains;
+        flat = parsed.flat;
+    } else {
+        var p = parsePdbSequence(text);
+        chains = p.chains;
+        flat = p.flat;
+    }
+    if (!flat || !flat.length) {
+        alert('No amino acid sequence found in the structure file.');
+        return false;
+    }
+    state.pdbFileContent = text;
+    state.pdbFileName = fileName || 'structure.pdb';
+    state.pdbFormat = isCif ? 'cif' : 'pdb';
+    setMode('AA', state.isAASequence);
+    var subtypeName = state.rawSequences[state.subtypeIndex] ? state.rawSequences[state.subtypeIndex].name : null;
+    var pdbCode = structureCodeFromContent(text);
+    var raw = state.rawSequences.filter(function (s) { return !isPdbChainSequence(s); });
+    if (raw.length === 0) {
+        var maxLen = Math.max.apply(null, chains.map(function (ch) { return (ch.seq && ch.seq.length) || 0; }));
+        var pdbSeqs = chains.map(function (ch) {
+            var seq = (ch.seq || []).slice();
+            while (seq.length < maxLen) seq.push('-');
+            return { name: pdbCode + '_Chain_' + ch.id, seq: seq, isPdbChain: true };
+        });
+        state.rawSequences = pdbSeqs.length ? pdbSeqs : [{ name: pdbCode + '_Chain_?', seq: flat, isPdbChain: true }];
+        state.refIndex = 0;
+        state.subtypeIndex = 0;
+    } else {
+        showOverlay(true);
+        if (dom.overlayMsg) dom.overlayMsg.textContent = 'Aligning structure chains to reference...';
+        if (dom.overlaySub) dom.overlaySub.textContent = '';
+        var refSeq = (raw[0] && raw[0].seq) ? raw[0].seq : [];
+        var pdbEntries = alignChainsToReferenceSequences(refSeq, chains, pdbCode);
+        for (var i = 0; i < pdbEntries.length; i++) {
+            raw.splice(1 + i, 0, pdbEntries[i]);
+        }
+        state.rawSequences = raw;
+        state.refIndex = 0;
+        var newSubtypeIdx = raw.findIndex(function (s) { return s.name === subtypeName; });
+        state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : 0;
+        showOverlay(false);
+    }
+    state.viewSequences = state.rawSequences.slice();
+    state.selection = null;
+    calculateNamesWidth();
+    recalc();
+    return true;
+}
+
+function loadPdbFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+        var text = reader.result;
+        var format = (file.name || '').toLowerCase().endsWith('.cif') ? 'cif' : 'pdb';
+        if (applyStructureContent(text, file.name || 'structure.pdb', format)) {
+            if (dom.inpPdb) dom.inpPdb.value = '';
+        }
+    };
+    reader.onerror = function () {
+        alert('Could not read the structure file.');
+        if (dom.inpPdb) dom.inpPdb.value = '';
+    };
+    reader.readAsText(file);
+}
+
+function loadPdbById(code) {
+    code = (code || '').trim().toUpperCase().slice(0, 4);
+    if (!/^[A-Z0-9]{4}$/.test(code)) return;
+    showOverlay(true);
+    if (dom.overlayMsg) dom.overlayMsg.textContent = 'Fetching from RCSB PDB...';
+    if (dom.overlaySub) dom.overlaySub.textContent = code;
+    function tryFormat(ext, format) {
+        return fetch('https://files.rcsb.org/download/' + code + ext)
+            .then(function (r) { return r.ok ? r.text() : null; })
+            .then(function (text) {
+                if (text && applyStructureContent(text, code + ext, format)) {
+                    if (dom.inpPdbId) dom.inpPdbId.value = code;
+                    return true;
+                }
+                return false;
+            });
+    }
+    tryFormat('.cif', 'cif').then(function (ok) {
+        if (ok) { showOverlay(false); return; }
+        return tryFormat('.pdb', 'pdb').then(function (ok2) {
+            if (ok2) { showOverlay(false); return; }
+            if (dom.overlayMsg) dom.overlayMsg.textContent = 'Structure not found.';
+            if (dom.overlaySub) dom.overlaySub.textContent = 'Check the PDB ID or try again.';
+            setTimeout(function () { showOverlay(false); }, 2000);
+        });
+    }).catch(function () {
+        if (dom.overlayMsg) dom.overlayMsg.textContent = 'Fetch failed.';
+        if (dom.overlaySub) dom.overlaySub.textContent = 'Check your connection.';
+        setTimeout(function () { showOverlay(false); }, 2000);
+    });
+}
+
+function closePdbViewer() {
+    if (!dom.pdbOverlay) return;
+    dom.pdbOverlay.style.display = 'none';
+    if (pdb3dViewerInstance && dom.pdbViewerContainer) {
+        if (typeof pdb3dViewerInstance.destroy === 'function') pdb3dViewerInstance.destroy();
+        else if (typeof pdb3dViewerInstance.dispose === 'function') pdb3dViewerInstance.dispose();
+        dom.pdbViewerContainer.innerHTML = '';
+        pdb3dViewerInstance = null;
+    }
+}
+
+/** Make element draggable by its handle. Element must have position: fixed and initial left/top set. */
+function makeDraggable(element, handle) {
+    if (!element || !handle) return;
+    handle.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const rect = element.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+        function onMove(ev) {
+            element.style.left = (ev.clientX - offsetX) + 'px';
+            element.style.top = (ev.clientY - offsetY) + 'px';
+        }
+        function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+}
+
+/** Return sorted list of chain IDs that contain at least one amino-acid residue (same logic as sequence extraction). */
+function getPdbChainIds(pdbText) {
+    const seen = new Set();
+    const lines = (pdbText || '').split(/\r?\n/);
+    for (const line of lines) {
+        if (line.startsWith('ATOM ') || line.startsWith('HETATM ')) {
+            const resName = (line.substring(17, 20) || '').trim();
+            const one = PDB_RESIDUE_TO_ONE[resName];
+            if (one === '') continue; // skip water/ligand so list matches sequence chains
+            const ch = (line.substring(21, 22) || ' ').trim() || 'A';
+            seen.add(ch);
+        }
+    }
+    return Array.from(seen).sort();
+}
+
+/** Return chain IDs from CIF (same order as parseCifSequence). */
+function getCifChainIds(cifText) {
+    var result = parseCifSequence(cifText);
+    return result.chains.map(function (ch) { return ch.id; });
+}
+
+/** Return per-chain resSeq lists from CIF (same order as parseCifSequence). */
+function getCifChainResSeqLists(cifText) {
+    var lines = (cifText || '').split(/\r?\n/);
+    var byChain = new Map();
+    var chainOrder = [];
+    var colChain = -1, colSeq = -1, colComp = -1;
+    var inAtomSite = false;
+    var columns = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var trimmed = line.trim();
+        if (trimmed.startsWith('loop_')) {
+            inAtomSite = false;
+            columns = [];
+            colChain = colSeq = colComp = -1;
+            continue;
+        }
+        if (trimmed.startsWith('_atom_site.')) {
+            var name = trimmed.slice(11).split(/\s/)[0];
+            columns.push(name);
+            if (name === 'label_asym_id' || name === 'auth_asym_id') colChain = columns.length - 1;
+            if (name === 'label_seq_id' || name === 'auth_seq_id') colSeq = columns.length - 1;
+            if (name === 'label_comp_id' || name === 'auth_comp_id') colComp = columns.length - 1;
+            inAtomSite = true;
+            continue;
+        }
+        if (inAtomSite && columns.length > 0 && colChain >= 0 && colSeq >= 0 && colComp >= 0) {
+            if (trimmed.startsWith('_') || trimmed === '' || trimmed.startsWith('#')) {
+                inAtomSite = false;
+                continue;
+            }
+            var parts = line.split(/\s+/);
+            if (parts.length < columns.length) continue;
+            var resName = (parts[colComp] || '').trim().slice(0, 3);
+            if (PDB_RESIDUE_TO_ONE[resName] === '') continue;
+            var chain = (parts[colChain] || 'A').trim() || 'A';
+            var resSeq = parseInt(parts[colSeq], 10) || 0;
+            if (!byChain.has(chain)) {
+                byChain.set(chain, []);
+                chainOrder.push(chain);
+            }
+            var arr = byChain.get(chain);
+            var last = arr.length ? arr[arr.length - 1] : null;
+            if (!last || last !== resSeq) arr.push(resSeq);
+        }
+    }
+    var out = new Map();
+    for (var c = 0; c < chainOrder.length; c++) {
+        var id = chainOrder[c];
+        var arr = (byChain.get(id) || []).sort(function (a, b) { return a - b; });
+        out.set(id, arr);
+    }
+    return out;
+}
+
+/** Filter CIF _atom_site rows to only include given chain IDs; output valid CIF. */
+function filterCifByChains(cifText, chainIds) {
+    var set = new Set(chainIds);
+    var lines = (cifText || '').split(/\r?\n/);
+    var colChain = -1;
+    var inAtomSite = false;
+    var columns = [];
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var trimmed = line.trim();
+        if (trimmed.startsWith('loop_')) {
+            inAtomSite = false;
+            columns = [];
+            colChain = -1;
+            out.push(line);
+            continue;
+        }
+        if (trimmed.startsWith('_atom_site.')) {
+            var name = trimmed.slice(11).split(/\s/)[0];
+            columns.push(name);
+            if (name === 'label_asym_id' || name === 'auth_asym_id') colChain = columns.length - 1;
+            inAtomSite = true;
+            out.push(line);
+            continue;
+        }
+        if (inAtomSite && columns.length > 0 && colChain >= 0) {
+            if (trimmed.startsWith('_') || trimmed === '' || trimmed.startsWith('#')) {
+                inAtomSite = false;
+                out.push(line);
+                continue;
+            }
+            var parts = line.split(/\s+/);
+            if (parts.length >= columns.length && set.has((parts[colChain] || '').trim())) {
+                out.push(line);
+            }
+            continue;
+        }
+        out.push(line);
+    }
+    return out.join('\n');
+}
+
+/** Return chain IDs from structure (PDB or CIF). */
+function getStructureChainIds(text) {
+    return isCifStructure(text) ? getCifChainIds(text) : getPdbChainIds(text);
+}
+
+/** Per-chain resSeq lists from structure (PDB or CIF). */
+function getStructureChainResSeqLists(text) {
+    return isCifStructure(text) ? getCifChainResSeqLists(text) : getPdbChainResSeqLists(text);
+}
+
+/** Filter structure to given chains (PDB or CIF). */
+function filterStructureByChains(text, chainIds) {
+    return isCifStructure(text) ? filterCifByChains(text, chainIds) : filterPdbByChains(text, chainIds);
+}
+
+/** Filter PDB text to only include ATOM/HETATM lines for the given chain IDs. */
+function filterPdbByChains(pdbText, chainIds) {
+    const set = new Set(chainIds);
+    const lines = (pdbText || '').split(/\r?\n/);
+    const out = [];
+    for (const line of lines) {
+        if (line.startsWith('ATOM ') || line.startsWith('HETATM ')) {
+            const ch = (line.substring(21, 22) || ' ').trim() || 'A';
+            if (set.has(ch)) out.push(line);
+        } else {
+            out.push(line);
+        }
+    }
+    return out.join('\n');
+}
+
+/** Color by amino acid (residue): use CONFIG.colors.AA from alignment view. Atom.resn is 3-letter code. */
+function pdb3dColorByResidue(atom) {
+    const one = (PDB_RESIDUE_TO_ONE[atom.resn] || 'X').toUpperCase();
+    const hex = (CONFIG.colors.AA[one] || CONFIG.colors.AA['default'] || '#ffffff').replace(/^#/, '');
+    return parseInt(hex, 16);
+}
+
+const PDB3D_EPITOPE_GRAY = 0x9e9e9e; // neutral gray for non-epitope residues in sphere mode
+let pdb3dShowAAs = false;
+let pdb3dAALabels = []; // labels for epitope residues when Show AAs is on
+
+/** Reference coordinate for PDB residue (chainId, resSeq), or null if not in alignment. Uses same row→resSeq mapping as getPdb3dEpitopeResidues (chainStart + residue index in row). */
+function getRefCoordForPdbResidue(chainId, resSeq) {
+    if (!state.viewSequences || !state.refMap) return null;
+    const resSeqLists = getStructureChainResSeqLists(state.pdbFileContent);
+    const resSeqs = resSeqLists.get(chainId);
+    if (!resSeqs) return null;
+    const resSeqNum = parseInt(resSeq, 10);
+    for (const view of state.viewSequences) {
+        const m = (view.name || '').match(/^[A-Za-z0-9]+_Chain_(.+)$/);
+        if (!m || m[1] !== chainId) continue;
+        const row = view.seq || [];
+        const chainStart = (view.chainStart != null && view.chainStart >= 0) ? view.chainStart : 0;
+        for (let col = 0; col < row.length && col < state.refMap.length; col++) {
+            if (row[col] === '-' || row[col] === '.') continue;
+            const residueIndexInRow = pdbRowResidueIndexAtColumn(row, col);
+            const fullChainIndex = chainStart + residueIndexInRow;
+            if (fullChainIndex < 0 || fullChainIndex >= resSeqs.length) continue;
+            if (resSeqs[fullChainIndex] === resSeqNum) {
+                return state.refMap[col];
+            }
+        }
+    }
+    return null;
+}
+
+/** Per chain, ordered list of resSeq (same order as parsePdbSequence: sorted by resSeq so alignment row index matches). */
+function getPdbChainResSeqLists(pdbText) {
+    const byChain = new Map(); // chainId -> Set or list of resSeq (we'll sort to match parsePdbSequence)
+    const lines = (pdbText || '').split(/\r?\n/);
+    for (const line of lines) {
+        if (line.startsWith('ATOM ') || line.startsWith('HETATM ')) {
+            const resName = (line.substring(17, 20) || '').trim();
+            const one = PDB_RESIDUE_TO_ONE[resName];
+            if (one === '') continue;
+            const ch = (line.substring(21, 22) || ' ').trim() || 'A';
+            const resSeq = parseInt(line.substring(22, 26), 10) || 0;
+            if (!byChain.has(ch)) byChain.set(ch, []);
+            const arr = byChain.get(ch);
+            const last = arr.length ? arr[arr.length - 1] : null;
+            if (!last || last !== resSeq) arr.push(resSeq);
+        }
+    }
+    // parsePdbSequence sorts each chain by resSeq; alignment row order is that order. Sort so residueIndex matches.
+    const out = new Map();
+    for (const [ch, arr] of byChain) {
+        out.set(ch, arr.slice().sort((a, b) => a - b));
+    }
+    return out;
+}
+
+/** 0-based index of the PDB residue at alignment column col (count of non-gaps in row from 0 to col inclusive, minus 1). */
+function pdbRowResidueIndexAtColumn(row, col) {
+    let count = 0;
+    for (let i = 0; i <= col && i < row.length; i++) {
+        if (row[i] !== '-' && row[i] !== '.') count++;
+    }
+    return count > 0 ? count - 1 : -1;
+}
+
+/** Normalize to 1-letter code for comparison (handles 1-letter or 3-letter in view). */
+function normToOneLetter(c) {
+    if (c == null || c === '-' || c === '.') return null;
+    const s = String(c).trim();
+    if (s.length === 1) return s.toUpperCase();
+    return (PDB_RESIDUE_TO_ONE[s] || '').toUpperCase() || null;
+}
+
+/** Residues in the selected epitope and their reference coordinate. Only consider columns where the REFERENCE has a residue (not a gap) AND this is the first column for that ref coord (refMap[col] !== refMap[col-1]). Add every PDB chain residue at those columns (show residues and labels irrespective of match with reference). Same set is used for sphere coloring and labels. */
+function getPdb3dEpitopeResidues() {
+    if (!state.selectedEpitope || !state.epitopeColumns || state.epitopeColumns.size === 0 || !state.viewSequences || !state.refMap) return null;
+    const refView = state.viewSequences[state.refIndex];
+    const refSeq = refView && refView.seq ? refView.seq : [];
+    const resSeqLists = getStructureChainResSeqLists(state.pdbFileContent);
+    const residues = new Set();
+    const refCoordByKey = new Map();
+    for (const col of state.epitopeColumns) {
+        if (col >= refSeq.length || col >= state.refMap.length) continue;
+        if (refSeq[col] === '-' || refSeq[col] === '.') continue;
+        if (col > 0 && state.refMap[col] === state.refMap[col - 1]) continue;
+        const refCoord = state.refMap[col];
+        for (const view of state.viewSequences) {
+            const name = view.name || '';
+            const m = name.match(/^[A-Za-z0-9]+_Chain_(.+)$/);
+            if (!m) continue;
+            const chainId = m[1];
+            const row = view.seq || [];
+            if (col >= row.length || row[col] === '-' || row[col] === '.') continue;
+            const rowChar = normToOneLetter(row[col]);
+            if (rowChar === null || rowChar === '') continue;
+            const residueIndex = pdbRowResidueIndexAtColumn(row, col);
+            const chainStart = (view.chainStart != null && view.chainStart >= 0) ? view.chainStart : 0;
+            const fullChainIndex = chainStart + residueIndex;
+            const resSeqs = resSeqLists.get(chainId);
+            if (!resSeqs || fullChainIndex < 0 || fullChainIndex >= resSeqs.length) continue;
+            const pdbResSeq = resSeqs[fullChainIndex];
+            const key = chainId + ':' + pdbResSeq;
+            residues.add(key);
+            refCoordByKey.set(key, refCoord);
+        }
+    }
+    return residues.size ? { residues, refCoordByKey } : null;
+}
+
+/** Return 3Dmol style spec. Sphere: if epitope selected, only color epitope residues (amino colors), others gray. */
+function getPdb3dStyleSpec(styleKey, epitopeResidues) {
+    const gray = PDB3D_EPITOPE_GRAY;
+    let style;
+    switch (String(styleKey).toLowerCase()) {
+        case 'sphere': {
+            const resSet = epitopeResidues && epitopeResidues.residues ? epitopeResidues.residues : (epitopeResidues && epitopeResidues.size ? epitopeResidues : null);
+            if (resSet && resSet.size > 0) {
+                style = {
+                    sphere: {
+                        colorfunc: function (atom) {
+                            var ch = (atom.chain || ' ').trim() || 'A';
+                            var key = ch + ':' + String(atom.resi);
+                            return resSet.has(key) ? pdb3dColorByResidue(atom) : gray;
+                        }
+                    }
+                };
+            } else {
+                style = { sphere: { colorfunc: pdb3dColorByResidue } };
+            }
+            break;
+        }
+        case 'stick':
+        case 'line':
+        case 'trace':
+        case 'cross': {
+            var resSetOther = epitopeResidues && epitopeResidues.residues ? epitopeResidues.residues : (epitopeResidues && epitopeResidues.size ? epitopeResidues : null);
+            var subStyle = styleKey === 'stick' ? 'stick' : styleKey === 'line' ? 'line' : styleKey === 'trace' ? 'trace' : 'cross';
+            if (resSetOther && resSetOther.size > 0) {
+                style = {};
+                style[subStyle] = {
+                    colorfunc: function (atom) {
+                        var ch = (atom.chain || ' ').trim() || 'A';
+                        var key = ch + ':' + String(atom.resi);
+                        return resSetOther.has(key) ? pdb3dColorByResidue(atom) : gray;
+                    }
+                };
+            } else {
+                style = {};
+                style[subStyle] = { colorscheme: 'spectrum' };
+            }
+            break;
+        }
+        default: {
+            var resSetDefault = epitopeResidues && epitopeResidues.residues ? epitopeResidues.residues : (epitopeResidues && epitopeResidues.size ? epitopeResidues : null);
+            if (resSetDefault && resSetDefault.size > 0) {
+                style = {
+                    cartoon: {
+                        colorfunc: function (atom) {
+                            var ch = (atom.chain || ' ').trim() || 'A';
+                            var key = ch + ':' + String(atom.resi);
+                            return resSetDefault.has(key) ? pdb3dColorByResidue(atom) : gray;
+                        }
+                    }
+                };
+            } else {
+                style = { cartoon: { color: 'spectrum' } };
+            }
+            break;
+        }
+    }
+    return style;
+}
+
+/** Remove all Show AAs labels and add new ones for epitope residues (one-letter + ref coord). Labels use atom position so they move with the model. No-op for Mol* (different API). */
+function updatePdb3dAALabels(viewer) {
+    if (!viewer) return;
+    if (viewer.plugin && typeof viewer.addLabel !== 'function') return;
+    pdb3dAALabels.forEach(function(lab) {
+        try { viewer.removeLabel(lab); } catch (e) {}
+    });
+    pdb3dAALabels = [];
+    if (!pdb3dShowAAs) return;
+    const epitopeData = (state.selectedEpitope && state.epitopeColumns && state.viewSequences) ? getPdb3dEpitopeResidues() : null;
+    if (!epitopeData || !epitopeData.residues || epitopeData.residues.size === 0) return;
+    if (!viewer.selectedAtoms) return;
+    const labelOpts = { backgroundColor: 0x333333, backgroundOpacity: 0.85, fontColor: 0xffffff, fontSize: 12, showBackground: true };
+    const refCoordByKey = epitopeData.refCoordByKey || new Map();
+    epitopeData.residues.forEach(function(key) {
+        const parts = key.split(':');
+        const chain = parts[0] || 'A';
+        const resi = parseInt(parts[1], 10);
+        if (isNaN(resi)) return;
+        const atoms = viewer.selectedAtoms({ chain: chain, resi: resi });
+        if (!atoms || atoms.length === 0) return;
+        const atom = atoms.find(function(a) { return (a.atom || '').trim() === 'CA'; }) || atoms[0];
+        const resn = atom.resn || '?';
+        const one = (PDB_RESIDUE_TO_ONE[resn] || 'X').toUpperCase();
+        const refCoord = refCoordByKey.get(key);
+        const refStr = (refCoord !== undefined && refCoord !== null) ? String(refCoord) : '—';
+        const text = one + ' ' + refStr;
+        const lab = viewer.addLabel(text, { position: atom, fontColor: labelOpts.fontColor, fontSize: labelOpts.fontSize, showBackground: labelOpts.showBackground, backgroundColor: labelOpts.backgroundColor, backgroundOpacity: labelOpts.backgroundOpacity });
+        pdb3dAALabels.push(lab);
+    });
+    viewer.render();
+}
+
+/** Re-apply current style to the open 3D viewer (no reload). Call when user changes Style dropdown. */
+function applyPdb3dStyleToViewer() {
+    if (!pdb3dViewerInstance) return;
+    var epitopeData = (state.selectedEpitope && state.epitopeColumns && state.viewSequences) ? getPdb3dEpitopeResidues() : null;
+    pdb3dViewerInstance.setStyle({}, getPdb3dStyleSpec(pdb3dCurrentStyle, epitopeData));
+    pdb3dViewerInstance.render();
+}
+
+function renderPdb3dWithChains(selectedChainIds) {
+    if (!state.pdbFileContent || !dom.pdbViewerContainer) return;
+    var filtered = (selectedChainIds && selectedChainIds.length > 0)
+        ? filterStructureByChains(state.pdbFileContent, selectedChainIds)
+        : state.pdbFileContent;
+    var format = state.pdbFormat || (isCifStructure(state.pdbFileContent) ? 'cif' : 'pdb');
+    if (typeof $3Dmol === 'undefined') {
+        dom.pdbViewerContainer.innerHTML = '<p style="padding:20px;">3Dmol.js failed to load. Check your connection.</p>';
+        return;
+    }
+    if (pdb3dViewerInstance) {
+        try {
+            var canvas = pdb3dViewerInstance.canvas || (dom.pdbViewerContainer && dom.pdbViewerContainer.querySelector && dom.pdbViewerContainer.querySelector('canvas'));
+            if (canvas) {
+                var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (gl) {
+                    var ext = gl.getExtension && gl.getExtension('WEBGL_lose_context');
+                    if (ext && ext.loseContext) ext.loseContext();
+                }
+            }
+        } catch (e) { /* ignore */ }
+        if (typeof pdb3dViewerInstance.destroy === 'function') pdb3dViewerInstance.destroy();
+        else if (typeof pdb3dViewerInstance.dispose === 'function') pdb3dViewerInstance.dispose();
+        pdb3dViewerInstance = null;
+    }
+    dom.pdbViewerContainer.innerHTML = '';
+    var viewer = $3Dmol.createViewer(dom.pdbViewerContainer, { backgroundColor: 'white' });
+    pdb3dViewerInstance = viewer;
+    viewer.addModel(filtered, format);
+    var styleSelect = document.getElementById('pdb3d-style-select');
+    if (styleSelect) {
+        pdb3dCurrentStyle = styleSelect.value || pdb3dCurrentStyle;
+        styleSelect.value = pdb3dCurrentStyle;
+    }
+    var epitopeData = (state.selectedEpitope && state.epitopeColumns && state.viewSequences) ? getPdb3dEpitopeResidues() : null;
+    viewer.setStyle({}, getPdb3dStyleSpec(pdb3dCurrentStyle, epitopeData));
+    viewer.zoomTo();
+    viewer.render();
+
+    var hoverEl = document.createElement('div');
+    hoverEl.id = 'pdb3d-hover-info';
+    hoverEl.setAttribute('style', 'position:absolute;bottom:10px;left:10px;padding:6px 10px;font-size:12px;font-family:monospace;background:rgba(0,0,0,0.75);color:#fff;border-radius:4px;pointer-events:none;z-index:5;max-width:90%;');
+    dom.pdbViewerContainer.appendChild(hoverEl);
+
+    var clickPopup = document.createElement('div');
+    clickPopup.id = 'pdb3d-click-popup';
+    clickPopup.setAttribute('style', 'display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);min-width:280px;max-width:90%;max-height:85%;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:20;overflow:hidden;flex-direction:column;');
+    var clickPopupHeading = document.createElement('div');
+    clickPopupHeading.setAttribute('style', 'padding:12px 36px 12px 14px;font-size:13px;font-family:monospace;font-weight:600;color:#111;word-break:break-word;cursor:move;flex-shrink:0;border-bottom:1px solid #e5e7eb;');
+    var clickPopupLogoContainer = document.createElement('div');
+    clickPopupLogoContainer.setAttribute('style', 'padding:10px;overflow:auto;flex:1;min-height:0;');
+    var clickPopupClose = document.createElement('button');
+    clickPopupClose.setAttribute('type', 'button');
+    clickPopupClose.setAttribute('style', 'position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:none;background:#f3f4f6;color:#6b7280;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;');
+    clickPopupClose.textContent = '\u00D7';
+    clickPopupClose.title = 'Close';
+    clickPopupClose.onclick = function () { clickPopup.style.display = 'none'; };
+    clickPopup.appendChild(clickPopupHeading);
+    clickPopup.appendChild(clickPopupLogoContainer);
+    clickPopup.appendChild(clickPopupClose);
+    dom.pdbViewerContainer.appendChild(clickPopup);
+    (function makePopupDraggable() {
+        var container = dom.pdbViewerContainer;
+        clickPopupHeading.addEventListener('mousedown', function (e) {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            var popupRect = clickPopup.getBoundingClientRect();
+            var contRect = container.getBoundingClientRect();
+            var style = clickPopup.style;
+            if (style.transform) {
+                var leftPx = popupRect.left - contRect.left + container.scrollLeft;
+                var topPx = popupRect.top - contRect.top + container.scrollTop;
+                style.left = leftPx + 'px';
+                style.top = topPx + 'px';
+                style.transform = 'none';
+            }
+            var offsetX = e.clientX - popupRect.left;
+            var offsetY = e.clientY - popupRect.top;
+            function onMove(ev) {
+                var cr = container.getBoundingClientRect();
+                var newLeft = ev.clientX - cr.left - offsetX + container.scrollLeft;
+                var newTop = ev.clientY - cr.top - offsetY + container.scrollTop;
+                clickPopup.style.left = Math.max(0, newLeft) + 'px';
+                clickPopup.style.top = Math.max(0, newTop) + 'px';
+            }
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    })();
+
+    function formatResidue(atom) {
+        if (!atom) return '';
+        var ch = (atom.chain || ' ').trim() || 'A';
+        var resn = (atom.resn || '').trim() || '?';
+        var one = (PDB_RESIDUE_TO_ONE[resn] || 'X').toUpperCase();
+        return one + ' ' + resn + ' ' + ch + ' ' + atom.resi;
+    }
+    function showClickPopup(msg, clearLogo) {
+        clickPopupHeading.textContent = msg;
+        if (clearLogo !== false) clickPopupLogoContainer.innerHTML = '';
+        clickPopup.style.display = 'flex';
+    }
+    function showRegionLogoSelector(epitope, region, onOk) {
+        var selectorOverlay = document.createElement('div');
+        selectorOverlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10003;';
+        var selectorModal = document.createElement('div');
+        selectorModal.style.cssText = 'background: white; padding: 20px; border-radius: 8px; min-width: 300px;';
+        var title = document.createElement('h3');
+        title.textContent = 'Select Escape Start Sequence';
+        title.style.margin = '0 0 15px 0';
+        selectorModal.appendChild(title);
+        var select = document.createElement('select');
+        select.style.cssText = 'width: 100%; padding: 8px; margin-bottom: 15px; font-size: 14px;';
+        var hasReference = state.refIndex >= 0 && state.refIndex < state.rawSequences.length;
+        var hasSubtype = state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length;
+        var founderIndex = state.rawSequences.findIndex(function (seq) { return seq.name && seq.name.startsWith('consensus_of_'); });
+        var hasFounder = founderIndex !== -1;
+        var pdbChains = state.rawSequences.filter(function (seq) { return isPdbChainSequence(seq); });
+        if (hasReference) {
+            var o = document.createElement('option');
+            o.value = 'reference';
+            o.textContent = 'Reference';
+            select.appendChild(o);
+        }
+        if (hasSubtype) {
+            o = document.createElement('option');
+            o.value = 'subtype';
+            o.textContent = 'Subtype';
+            select.appendChild(o);
+        }
+        if (hasFounder) {
+            o = document.createElement('option');
+            o.value = 'founder';
+            o.textContent = 'Founder';
+            o.selected = true;
+            select.appendChild(o);
+        }
+        pdbChains.forEach(function (seq) {
+            o = document.createElement('option');
+            o.value = seq.name;
+            o.textContent = getPdbChainDisplayLabel(seq.name);
+            select.appendChild(o);
+        });
+        o = document.createElement('option');
+        o.value = 'none';
+        o.textContent = 'None';
+        select.appendChild(o);
+        selectorModal.appendChild(select);
+        var buttonDiv = document.createElement('div');
+        buttonDiv.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end;';
+        var cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #ccc; background: white; cursor: pointer;';
+        cancelBtn.onclick = function () { selectorOverlay.remove(); };
+        buttonDiv.appendChild(cancelBtn);
+        var okBtn = document.createElement('button');
+        okBtn.textContent = 'OK';
+        okBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: white; cursor: pointer;';
+        okBtn.onclick = function () {
+            var selectedType = select.value;
+            selectorOverlay.remove();
+            var bottomSeq = null, bottomIndex = -1, bottomLabel = '';
+            if (selectedType === 'reference' && hasReference) {
+                bottomIndex = state.refIndex;
+                bottomSeq = state.rawSequences[bottomIndex];
+                bottomLabel = 'Reference (' + bottomSeq.name + ')';
+            } else if (selectedType === 'subtype' && hasSubtype) {
+                bottomIndex = state.subtypeIndex;
+                bottomSeq = state.rawSequences[bottomIndex];
+                bottomLabel = 'Subtype (' + bottomSeq.name + ')';
+            } else if (selectedType === 'founder' && hasFounder) {
+                bottomIndex = founderIndex;
+                bottomSeq = state.rawSequences[bottomIndex];
+                bottomLabel = 'Founder (' + bottomSeq.name + ')';
+            } else if (selectedType === 'none') {
+                var maxLength = Math.max.apply(null, state.rawSequences.map(function (seq) { return seq.seq ? seq.seq.length : 0; }));
+                bottomSeq = { name: 'None', seq: '.'.repeat(maxLength) };
+                bottomIndex = -1;
+                bottomLabel = null;
+            } else {
+                var pdbIdx = state.rawSequences.findIndex(function (s) { return s.name === selectedType; });
+                if (pdbIdx !== -1 && isPdbChainSequence(state.rawSequences[pdbIdx])) {
+                    bottomIndex = pdbIdx;
+                    bottomSeq = state.rawSequences[pdbIdx];
+                    bottomLabel = getPdbChainDisplayLabel(bottomSeq.name);
+                }
+            }
+            if (bottomSeq) {
+                var groupIds = Array.from(state.groupNames.keys()).sort(function (a, b) { return a - b; });
+                if (groupIds.length > 0) onOk(bottomSeq, bottomIndex, bottomLabel, groupIds);
+            }
+        };
+        buttonDiv.appendChild(okBtn);
+        selectorModal.appendChild(buttonDiv);
+        selectorOverlay.appendChild(selectorModal);
+        document.body.appendChild(selectorOverlay);
+    }
+    function attachHoverAndClick() {
+        try {
+            viewer.setHoverable({}, true,
+                function (atom, viewer, event, container) {
+                    hoverEl.textContent = atom ? formatResidue(atom) : '';
+                },
+                function (atom) {
+                    hoverEl.textContent = '';
+                }
+            );
+        } catch (e) { /* 3Dmol version may not support setHoverable */ }
+        try {
+            viewer.setClickable({}, true, function (atom, viewer, event, container) {
+                if (!atom) return;
+                var info = formatResidue(atom);
+                var msg;
+                if (!state.selectedEpitope || !state.epitopes || state.epitopes.length === 0) {
+                    msg = info + ' — No epitope selected. Load epitopes and use Select Epitope to choose one.';
+                    console.log('[PDB 3D click]', msg);
+                    showClickPopup(msg);
+                    return;
+                }
+                var ch = (atom.chain || ' ').trim() || 'A';
+                var refCoord = getRefCoordForPdbResidue(ch, atom.resi);
+                if (refCoord === null || refCoord === undefined) {
+                    msg = info + ' — Residue not in alignment (or could not map to reference).';
+                    console.log('[PDB 3D click]', msg);
+                    showClickPopup(msg);
+                    return;
+                }
+                var epitope = state.epitopes.find(function (e) { return e.name === state.selectedEpitope; });
+                if (!epitope || !epitope.regions || epitope.regions.length === 0) {
+                    msg = info + ' — Ref coord ' + refCoord + ' (no regions defined for selected epitope).';
+                    console.log('[PDB 3D click]', msg);
+                    showClickPopup(msg);
+                    return;
+                }
+                var region = null;
+                for (var i = 0; i < epitope.regions.length; i++) {
+                    var r = epitope.regions[i];
+                    if (refCoord >= r.start && refCoord <= r.end) {
+                        region = r;
+                        break;
+                    }
+                }
+                if (region) {
+                    msg = info + ' — Epitope region: ' + region.start + ' - ' + region.end;
+                    console.log('[PDB 3D click]', msg);
+                    showClickPopup(msg);
+                    if (state.sequenceGroups && state.groupNames && state.groupNames.size > 0) {
+                        showRegionLogoSelector(epitope, region, function (bottomSeq, bottomIndex, bottomLabel, groupIds) {
+                            var epitopeRegion = { name: epitope.name, regions: [region] };
+                            var powerValue = 1.0;
+                            var sliderContainer = document.createElement('div');
+                            sliderContainer.style.cssText = 'margin-bottom:10px;padding:8px;background:#f5f5f5;border-radius:4px;';
+                            var sliderLabel = document.createElement('label');
+                            sliderLabel.textContent = 'Power: ';
+                            sliderLabel.style.cssText = 'margin-right:8px;font-size:12px;';
+                            var slider = document.createElement('input');
+                            slider.type = 'range';
+                            slider.min = '0';
+                            slider.max = '2';
+                            slider.step = '0.05';
+                            slider.value = '1.0';
+                            slider.style.cssText = 'width:120px;margin-right:6px;vertical-align:middle;';
+                            var sliderValue = document.createElement('span');
+                            sliderValue.textContent = '1.00';
+                            sliderValue.style.cssText = 'font-size:12px;';
+                            function renderRegionLogo() {
+                                var oldSvg = clickPopupLogoContainer.querySelector('svg');
+                                if (oldSvg) oldSvg.remove();
+                                var svg = generateSequenceLogo(epitopeRegion, bottomSeq, groupIds, bottomIndex, bottomLabel, powerValue);
+                                clickPopupLogoContainer.appendChild(svg);
+                            }
+                            slider.addEventListener('input', function (e) {
+                                powerValue = parseFloat(e.target.value);
+                                sliderValue.textContent = powerValue.toFixed(2);
+                                renderRegionLogo();
+                            });
+                            sliderContainer.appendChild(sliderLabel);
+                            sliderContainer.appendChild(slider);
+                            sliderContainer.appendChild(sliderValue);
+                            clickPopupLogoContainer.innerHTML = '';
+                            clickPopupLogoContainer.appendChild(sliderContainer);
+                            renderRegionLogo();
+                        });
+                    } else {
+                        clickPopupLogoContainer.textContent = 'Group sequences to see region logo.';
+                    }
+                } else {
+                    msg = info + ' — Ref coord ' + refCoord + ' not in any epitope region.';
+                    console.log('[PDB 3D click]', msg);
+                    showClickPopup(msg);
+                }
+            });
+        } catch (e) { /* 3Dmol version may not support setClickable */ }
+        viewer.render();
+    }
+    attachHoverAndClick();
+    requestAnimationFrame(function () { attachHoverAndClick(); });
+    updatePdb3dAALabels(viewer);
+}
+
+function openPdbViewerFromState() {
+    if (!state.pdbFileContent || !dom.pdbOverlay || !dom.pdbViewerContainer) {
+        alert('Load a PDB file first (use Load PDB).');
+        return;
+    }
+    closePdbViewer();
+    if (dom.pdbTitle) dom.pdbTitle.textContent = state.pdbFileName || 'PDB 3D Structure';
+    dom.pdbOverlay.style.display = 'flex';
+
+    var chainIds = getStructureChainIds(state.pdbFileContent);
+    var listEl = document.getElementById('pdb3d-chains-list');
+    var btnAll = document.getElementById('pdb3d-select-all');
+    var btnNone = document.getElementById('pdb3d-select-none');
+    var checkboxes = {};
+
+    function getSelected() {
+        return chainIds.filter(function (id) { return checkboxes[id] && checkboxes[id].checked; });
+    }
+    function updateView() {
+        renderPdb3dWithChains(getSelected());
+    }
+
+    var styleSelect = document.getElementById('pdb3d-style-select');
+    if (styleSelect) {
+        styleSelect.value = pdb3dCurrentStyle;
+        styleSelect.onchange = function () {
+            pdb3dCurrentStyle = this.value;
+            applyPdb3dStyleToViewer();
+        };
+    }
+
+    if (listEl && chainIds.length > 0) {
+        listEl.innerHTML = '';
+        chainIds.forEach(function (id) {
+            var label = document.createElement('label');
+            label.style.cssText = 'display: inline-flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer;';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            cb.dataset.chain = id;
+            cb.addEventListener('change', updateView);
+            checkboxes[id] = cb;
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(id));
+            listEl.appendChild(label);
+        });
+        if (btnAll) btnAll.onclick = function () { chainIds.forEach(function (id) { checkboxes[id].checked = true; }); updateView(); };
+        if (btnNone) btnNone.onclick = function () { chainIds.forEach(function (id) { checkboxes[id].checked = false; }); updateView(); };
+    } else {
+        if (listEl) listEl.textContent = '(no chains)';
+        if (btnAll) btnAll.style.display = 'none';
+        if (btnNone) btnNone.style.display = 'none';
+    }
+
+    updateView();
+
+    var win = document.getElementById('pdb3d-window');
+    var titleBar = document.getElementById('pdb3d-title-bar');
+    if (win && titleBar) makeDraggable(win, titleBar);
+}
+
 // --- Sequence Logo Generation ---
 function showSequenceLogo() {
     if (!state.selectedEpitope) {
@@ -5988,6 +7456,7 @@ function showSequenceLogo() {
         seq.name && seq.name.startsWith('consensus_of_')
     );
     const hasFounder = founderIndex !== -1;
+    const pdbChains = state.rawSequences.filter(seq => isPdbChainSequence(seq));
     
     if (hasReference) {
         const opt = document.createElement('option');
@@ -6011,10 +7480,21 @@ function showSequenceLogo() {
         select.appendChild(opt);
     }
     
-    if (!hasReference && !hasSubtype && !hasFounder) {
-        alert("No reference, subtype, or founder sequence available.");
-        selectorOverlay.remove();
-        return;
+    pdbChains.forEach(seq => {
+        const opt = document.createElement('option');
+        opt.value = seq.name;
+        opt.textContent = getPdbChainDisplayLabel(seq.name);
+        select.appendChild(opt);
+    });
+    
+    // Always add None option
+    const optNone = document.createElement('option');
+    optNone.value = 'none';
+    optNone.textContent = 'None';
+    select.appendChild(optNone);
+    
+    if (!hasReference && !hasSubtype && !hasFounder && pdbChains.length === 0) {
+        // Even if no other sequences, AllGaps is always available
     }
     
     selectorModal.appendChild(select);
@@ -6052,6 +7532,23 @@ function showSequenceLogo() {
             bottomIndex = founderIndex;
             bottomSeq = state.rawSequences[bottomIndex];
             bottomLabel = `Founder (${bottomSeq.name})`;
+        } else if (selectedType === 'none') {
+            // Create a sequence consisting entirely of dots
+            // Use the length of the reference sequence or the longest sequence
+            const maxLength = Math.max(...state.rawSequences.map(seq => seq.seq ? seq.seq.length : 0));
+            bottomSeq = {
+                name: 'None',
+                seq: '.'.repeat(maxLength)
+            };
+            bottomIndex = -1; // Not a real sequence index
+            bottomLabel = null; // No label for None option
+        } else {
+            const pdbIdx = state.rawSequences.findIndex(s => s.name === selectedType);
+            if (pdbIdx !== -1 && isPdbChainSequence(state.rawSequences[pdbIdx])) {
+                bottomIndex = pdbIdx;
+                bottomSeq = state.rawSequences[pdbIdx];
+                bottomLabel = getPdbChainDisplayLabel(bottomSeq.name);
+            }
         }
         
         if (!bottomSeq) {
@@ -6066,9 +7563,6 @@ function showSequenceLogo() {
             return;
         }
         
-        // Generate the logo
-        const svg = generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel);
-        
         // Show in a modal
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;';
@@ -6080,26 +7574,75 @@ function showSequenceLogo() {
         const fileName = state.currentFileName || dom.file?.files?.[0]?.name || 'Unknown';
         const epitopeName = epitope.name; // Capture epitope name for export closure
         
+        // Power transformation slider
+        let powerValue = 1.0; // Initialize to 1 (no transformation)
+        const sliderContainer = document.createElement('div');
+        sliderContainer.style.cssText = 'margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;';
+        
+        const sliderLabel = document.createElement('label');
+        sliderLabel.textContent = 'Power Transform: ';
+        sliderLabel.style.cssText = 'display: inline-block; margin-right: 10px; font-weight: bold;';
+        
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '2';
+        slider.step = '0.05';
+        slider.value = '1.0';
+        slider.style.cssText = 'width: 200px; margin-right: 10px;';
+        
+        const sliderValue = document.createElement('span');
+        sliderValue.textContent = '1.00';
+        sliderValue.style.cssText = 'display: inline-block; min-width: 50px; font-weight: bold;';
+        
+        slider.addEventListener('input', (e) => {
+            powerValue = parseFloat(e.target.value);
+            sliderValue.textContent = powerValue.toFixed(2);
+            // Regenerate logo with new power value
+            const oldSvg = modal.querySelector('svg');
+            if (oldSvg) oldSvg.remove();
+            const newSvg = generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel, powerValue);
+            modal.insertBefore(newSvg, sliderContainer.nextSibling);
+        });
+        
+        sliderContainer.appendChild(sliderLabel);
+        sliderContainer.appendChild(slider);
+        sliderContainer.appendChild(sliderValue);
+        modal.appendChild(sliderContainer);
+        
+        // Generate the logo with initial power value
+        const svg = generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel, powerValue);
         modal.appendChild(svg);
         
         // Create button container
         const buttonContainer = document.createElement('div');
         buttonContainer.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end; margin-top: 15px;';
         
-        // Export SVG button
+        // Export SVG button - get current SVG from modal
         const exportSvgBtn = document.createElement('button');
         exportSvgBtn.textContent = 'Export SVG';
         exportSvgBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: white; cursor: pointer; border-radius: 4px;';
         exportSvgBtn.onclick = () => {
-            exportLogoAsSVG(svg, epitopeName, fileName);
+            const currentSvg = modal.querySelector('svg');
+            if (currentSvg) exportLogoAsSVG(currentSvg, epitopeName, fileName);
         };
         
-        // Export PDF button
+        // Export PDF button - get current SVG from modal
         const exportPdfBtn = document.createElement('button');
         exportPdfBtn.textContent = 'Export PDF';
         exportPdfBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: white; cursor: pointer; border-radius: 4px;';
         exportPdfBtn.onclick = () => {
-            exportLogoAsPDF(svg, epitopeName, fileName);
+            const currentSvg = modal.querySelector('svg');
+            if (currentSvg) exportLogoAsPDF(currentSvg, epitopeName, fileName);
+        };
+        
+        // Export PNG button - get current SVG from modal
+        const exportPngBtn = document.createElement('button');
+        exportPngBtn.textContent = 'Export PNG';
+        exportPngBtn.style.cssText = 'padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: white; cursor: pointer; border-radius: 4px;';
+        exportPngBtn.onclick = () => {
+            const currentSvg = modal.querySelector('svg');
+            if (currentSvg) exportLogoAsPNG(currentSvg, epitopeName, fileName);
         };
         
         // Close button
@@ -6110,6 +7653,7 @@ function showSequenceLogo() {
         
         buttonContainer.appendChild(exportSvgBtn);
         buttonContainer.appendChild(exportPdfBtn);
+        buttonContainer.appendChild(exportPngBtn);
         buttonContainer.appendChild(closeBtn);
         modal.appendChild(buttonContainer);
         
@@ -6126,7 +7670,7 @@ function showSequenceLogo() {
     document.body.appendChild(selectorOverlay);
 }
 
-function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel) {
+function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel, powerTransform = 1.0) {
     // Amino acid color mapping
     const aaColors = {
         'D': '#e74c3c', 'E': '#e74c3c', // Red - acidic
@@ -6145,42 +7689,25 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         return document.createElement('div');
     }
     
-    // For each region, convert start and end coordinates to alignment column indices
-    // Then collect all alignment columns from start to end (inclusive), including gaps
+    // For each region, get alignment columns where ref has a residue and ref coord is in [start,end] (no trailing/leading gaps)
     const regionColumnRanges = [];
     const allColumns = new Set();
     const coordToCol = new Map(); // Map from reference coordinate to alignment column(s)
     
     for (const region of epitope.regions) {
-        // Find first alignment column where refCoord == region.start
-        let startCol = null;
-        for (let col = 0; col < state.refMap.length; col++) {
-            if (state.refMap[col] === region.start) {
-                startCol = col;
-                break;
+        const cols = getAlignmentColumnsForRefRegion(region);
+        if (cols.length === 0) continue;
+        const startCol = Math.min.apply(null, cols);
+        const endCol = Math.max.apply(null, cols);
+        regionColumnRanges.push({ start: startCol, end: endCol, region: region, columnCount: cols.length });
+        for (let i = 0; i < cols.length; i++) {
+            const col = cols[i];
+            allColumns.add(col);
+            const coord = state.refMap[col];
+            if (!coordToCol.has(coord)) {
+                coordToCol.set(coord, []);
             }
-        }
-        
-        // Find last alignment column where refCoord == region.end
-        let endCol = null;
-        for (let col = state.refMap.length - 1; col >= 0; col--) {
-            if (state.refMap[col] === region.end) {
-                endCol = col;
-                break;
-            }
-        }
-        
-        if (startCol !== null && endCol !== null && startCol <= endCol) {
-            regionColumnRanges.push({ start: startCol, end: endCol, region: region });
-            // Add all columns from start to end (inclusive)
-            for (let col = startCol; col <= endCol; col++) {
-                allColumns.add(col);
-                const coord = state.refMap[col];
-                if (!coordToCol.has(coord)) {
-                    coordToCol.set(coord, []);
-                }
-                coordToCol.get(coord).push(col);
-            }
+            coordToCol.get(coord).push(col);
         }
     }
     
@@ -6295,8 +7822,11 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     const charWidth = 18;
     const baseFontSize = 16;
     const baseHeight = baseFontSize; // Base height matches font size
-    const logoHeight = charWidth * 1.5; // Each logo height is 1.5 times the character width (30px)
-    const padding = 40;
+    const capHeightRatio = 0.68; // Typical cap-height to font-size ratio for Courier New monospace font (baseline to top of capital letters)
+    const logoHeight = charWidth * 1.0; // Bottom logo height equals the character width (18px)
+    const groupLogoHeight = logoHeight * 3; // Group logo height is 3x larger to show rare mutations (90px)
+    const padding_horizontal = 40; // Horizontal padding (left and right)
+    const padding_vertical = 40;   // Vertical padding (top and bottom)
     
     // Calculate required label width based on all labels
     // Estimate text width: approximately 6-7 pixels per character for 12px font
@@ -6312,7 +7842,7 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     
     // Check group labels
     for (const groupData of groupFrequencies) {
-        const groupLabel = `Variants at ${groupData.groupValue} (${groupData.count})`;
+        const groupLabel = `${groupData.groupValue} (${groupData.count})`;
         const groupLabelWidth = groupLabel.length * pixelsPerChar;
         maxLabelWidth = Math.max(maxLabelWidth, groupLabelWidth);
     }
@@ -6324,13 +7854,95 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     // Calculate SVG dimensions
     const numGroups = groupFrequencies.length;
     const numLogos = numGroups + 1; // Groups + bottom sequence
-    const svgWidth = sortedColumns.length * charWidth + (regionColumnRanges.length - 1) * regionGap + padding * 2 + leftLabelWidth;
+    const svgWidth = sortedColumns.length * charWidth + (regionColumnRanges.length - 1) * regionGap + padding_horizontal * 2 + leftLabelWidth;
     
-    // Title height: first line (18px) + spacing (5px) + second line (9px) + bottom margin (15px)
-    const titleHeight = 18 + 5 + 9 + 15;
+    // Get file name from state or file input
+    const fileName = state.currentFileName || dom.file?.files?.[0]?.name || 'Unknown';
     
-    // Height = title + (number of logos * logoHeight) + padding top and bottom
-    const svgHeight = titleHeight + numLogos * logoHeight + padding * 2;
+    // Calculate available width for titles (SVG width minus padding and margins)
+    const availableWidth = svgWidth - (padding_horizontal + 10) * 2; // Left padding + margin, and right padding
+    
+    // Calculate power percentage (distance from 1)
+    const powerPercentage = ((powerTransform - 1) * 100);
+    const absPowerPercentage = Math.abs(powerPercentage).toFixed(0);
+    
+    // Build bias text
+    let biasText;
+    if (Math.abs(powerPercentage) < 0.5) {
+        // Effectively zero (within rounding)
+        biasText = 'with zero frequency bias';
+    } else if (powerPercentage < 0) {
+        // Negative bias (towards rare bases)
+        biasText = `with ${absPowerPercentage}% frequency bias towards rare bases`;
+    } else {
+        // Positive bias (towards abundant bases)
+        biasText = `with ${absPowerPercentage}% frequency bias towards abundant bases`;
+    }
+    
+    // Build title based on start sequence selection
+    let titleText;
+    if (bottomLabel && bottomLabel !== 'None') {
+        // Extract sequence type from label (e.g., "Reference (V806_...)" -> "Reference", "Founder (consensus_of_...)" -> "Founder")
+        const sequenceType = bottomLabel.split(' ')[0];
+        titleText = `Logogram for ${epitope.name}, showing escape from ${sequenceType}, ${biasText}`;
+    } else {
+        // None option - omit the middle part
+        titleText = `Logogram for ${epitope.name}, ${biasText}`;
+    }
+    
+    // Calculate font sizes for both title lines before creating SVG
+    // Use temporary SVG elements to measure text width
+    const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    tempSvg.style.position = 'absolute';
+    tempSvg.style.visibility = 'hidden';
+    tempSvg.style.width = '0';
+    tempSvg.style.height = '0';
+    document.body.appendChild(tempSvg);
+    
+    // Find appropriate font size for first line that fits the width
+    let fontSize = 18; // Start with default size
+    const tempText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    tempText.setAttribute('font-family', 'sans-serif');
+    tempText.setAttribute('font-weight', 'bold');
+    tempText.textContent = titleText;
+    tempSvg.appendChild(tempText);
+    
+    // Try different font sizes until text fits
+    while (fontSize > 8) { // Minimum font size of 8px
+        tempText.setAttribute('font-size', fontSize.toString());
+        const textWidth = tempText.getBBox().width;
+        if (textWidth <= availableWidth) {
+            break;
+        }
+        fontSize -= 0.5; // Reduce by 0.5px increments
+    }
+    
+    // Find appropriate font size for second line that fits the width
+    const alignmentText = `Alignment: ${fileName}`;
+    let fontSize2 = fontSize; // Start with same size as first line
+    const tempText2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    tempText2.setAttribute('font-family', 'sans-serif');
+    tempText2.setAttribute('font-weight', 'bold');
+    tempText2.textContent = alignmentText;
+    tempSvg.appendChild(tempText2);
+    
+    // Try different font sizes until text fits
+    while (fontSize2 > 8) { // Minimum font size of 8px
+        tempText2.setAttribute('font-size', fontSize2.toString());
+        const textWidth2 = tempText2.getBBox().width;
+        if (textWidth2 <= availableWidth) {
+            break;
+        }
+        fontSize2 -= 0.5; // Reduce by 0.5px increments
+    }
+    
+    document.body.removeChild(tempSvg);
+    
+    // Calculate title height with actual font sizes
+    const titleHeight = fontSize + 5 + fontSize2 + 15; // First line + spacing (5px) + second line + bottom margin (15px)
+    
+    // Height = title + (number of group logos * groupLogoHeight) + bottom logo height + padding top and bottom
+    const svgHeight = titleHeight + (numGroups * groupLogoHeight) + logoHeight + padding_vertical * 2;
     
     // Create SVG element
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -6339,101 +7951,119 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     svg.style.border = '1px solid #ccc';
     svg.style.background = 'white';
     
-    // Add title lines inside SVG
-    // Get file name from state or file input
-    const fileName = state.currentFileName || dom.file?.files?.[0]?.name || 'Unknown';
-    
-    // First title line: "Epitope: <epitope name>"
+    // First title line: "Logogram for <epitope>, showing escape from <start sequence>, with <power percentage> bias"
     const titleLine1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    titleLine1.setAttribute('x', padding + 10); // Align with logo labels
-    titleLine1.setAttribute('y', padding + 18); // 18px font size, align to baseline
+    titleLine1.setAttribute('x', padding_horizontal + 10); // Align with logo labels
+    titleLine1.setAttribute('y', padding_vertical + fontSize); // Adjust Y position based on font size
     titleLine1.setAttribute('font-family', 'sans-serif');
-    titleLine1.setAttribute('font-size', '18');
+    titleLine1.setAttribute('font-size', fontSize.toString());
     titleLine1.setAttribute('font-weight', 'bold');
     titleLine1.setAttribute('fill', '#000');
-    titleLine1.textContent = `Epitope: ${epitope.name}`;
+    titleLine1.textContent = titleText;
     svg.appendChild(titleLine1);
     
     // Second title line: "Alignment: <file name>"
     const titleLine2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    titleLine2.setAttribute('x', padding + 10); // Align with logo labels
-    titleLine2.setAttribute('y', padding + 18 + 5 + 9); // First line + spacing (5px) + second line font size (9px)
+    titleLine2.setAttribute('x', padding_horizontal + 10); // Align with logo labels
+    titleLine2.setAttribute('y', padding_vertical + fontSize + 5 + fontSize2); // First line + spacing (5px) + second line font size
     titleLine2.setAttribute('font-family', 'sans-serif');
-    titleLine2.setAttribute('font-size', '9');
+    titleLine2.setAttribute('font-size', fontSize2.toString());
     titleLine2.setAttribute('font-weight', 'bold');
     titleLine2.setAttribute('fill', '#000');
-    titleLine2.textContent = `Alignment: ${fileName}`;
+    titleLine2.textContent = alignmentText;
     svg.appendChild(titleLine2);
     
     // Draw horizontal separators: at top of uppermost logo and at bottom of each logo
     const separatorColor = '#d0d0d0'; // Lighter grey for all separators
     
-    // Top separator (at top of uppermost logo)
+    // Top separator (at top of uppermost logo, where the next group's baseline would be)
     if (groupFrequencies.length > 0) {
-        // Topmost logo's bottom is at: svgHeight - padding - logoHeight - ((groupFrequencies.length - 1) * logoHeight)
-        // Top of that logo is at: bottom + logoHeight
-        const topmostLogoBottom = svgHeight - padding - logoHeight - ((groupFrequencies.length - 1) * logoHeight);
-        const topmostLogoTop = topmostLogoBottom + logoHeight;
+        // Topmost logo is at rowIdx = groupFrequencies.length - 1
+        // The separator should be at the top of this logo, which is where rowIdx = groupFrequencies.length's baseline would be
+        // That baseline would be at: svgHeight - padding_vertical - logoHeight - (groupFrequencies.length * groupLogoHeight)
+        const topSeparatorY = svgHeight - padding_vertical - logoHeight - (groupFrequencies.length * groupLogoHeight);
         const topSeparator = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        topSeparator.setAttribute('x1', padding + leftLabelWidth);
-        topSeparator.setAttribute('y1', topmostLogoTop);
-        topSeparator.setAttribute('x2', svgWidth - padding);
-        topSeparator.setAttribute('y2', topmostLogoTop);
+        topSeparator.setAttribute('x1', padding_horizontal + leftLabelWidth);
+        topSeparator.setAttribute('y1', topSeparatorY);
+        topSeparator.setAttribute('x2', svgWidth - padding_horizontal);
+        topSeparator.setAttribute('y2', topSeparatorY);
         topSeparator.setAttribute('stroke', separatorColor);
         topSeparator.setAttribute('stroke-width', '1');
         svg.appendChild(topSeparator);
     }
     
     // Bottom separator for each logo (at the bottom of each logo row)
-    // Bottom logo bottom: svgHeight - padding - logoHeight
-    // Each group logo bottom: svgHeight - padding - logoHeight - (rowIdx * logoHeight)
+    // Bottom logo bottom: svgHeight - padding_vertical - logoHeight
+    // Each group logo bottom: svgHeight - padding_vertical - logoHeight - (rowIdx * groupLogoHeight)
+    // Draw separators from bottom to top
+    // i=0: bottom logo separator
+    // i=1: first group logo bottom separator (rowIdx=0) - use same calculation as yBase
+    // i=2: second group logo bottom separator (rowIdx=1) - use same calculation as yBase
     for (let i = 0; i <= groupFrequencies.length; i++) {
-        const separatorY = svgHeight - padding - logoHeight - (i * logoHeight);
+        const separatorY = i === 0 
+            ? svgHeight - padding_vertical  // Bottom logo separator at the very bottom
+            : svgHeight - padding_vertical - logoHeight - ((i - 1) * groupLogoHeight);  // Group logo separators (i=1 for rowIdx=0, i=2 for rowIdx=1)
         const separator = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        separator.setAttribute('x1', padding + leftLabelWidth);
+        separator.setAttribute('x1', padding_horizontal + leftLabelWidth);
         separator.setAttribute('y1', separatorY);
-        separator.setAttribute('x2', svgWidth - padding);
+        separator.setAttribute('x2', svgWidth - padding_horizontal);
         separator.setAttribute('y2', separatorY);
         separator.setAttribute('stroke', separatorColor);
         separator.setAttribute('stroke-width', '1');
         svg.appendChild(separator);
     }
     
+    // Add top boundary line at the top of the topmost logo (where the next group's baseline would be)
+    if (groupFrequencies.length > 0) {
+        // Topmost logo is at rowIdx = groupFrequencies.length - 1
+        // The separator should be at the top of this logo, which is where rowIdx = groupFrequencies.length's baseline would be
+        // That baseline would be at: svgHeight - padding_vertical - logoHeight - (groupFrequencies.length * groupLogoHeight)
+        const topSeparatorY = svgHeight - padding_vertical - logoHeight - (groupFrequencies.length * groupLogoHeight);
+        const topBoundary = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        topBoundary.setAttribute('x1', padding_horizontal + leftLabelWidth);
+        topBoundary.setAttribute('y1', topSeparatorY);
+        topBoundary.setAttribute('x2', svgWidth - padding_horizontal);
+        topBoundary.setAttribute('y2', topSeparatorY);
+        topBoundary.setAttribute('stroke', separatorColor);
+        topBoundary.setAttribute('stroke-width', '1');
+        svg.appendChild(topBoundary);
+    }
+    
     // Additional horizontal line at the very bottom of the bottom logo (after coordinate labels)
     const bottomLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    bottomLine.setAttribute('x1', padding + leftLabelWidth);
-    bottomLine.setAttribute('y1', svgHeight - padding);
-    bottomLine.setAttribute('x2', svgWidth - padding);
-    bottomLine.setAttribute('y2', svgHeight - padding);
+    bottomLine.setAttribute('x1', padding_horizontal + leftLabelWidth);
+    bottomLine.setAttribute('y1', svgHeight - padding_vertical);
+    bottomLine.setAttribute('x2', svgWidth - padding_horizontal);
+    bottomLine.setAttribute('y2', svgHeight - padding_vertical);
     bottomLine.setAttribute('stroke', separatorColor);
     bottomLine.setAttribute('stroke-width', '1');
     svg.appendChild(bottomLine);
     
     // Draw vertical lines: before first region, between regions, and after last region
-    let xOffset = padding + leftLabelWidth;
+    let xOffset = padding_horizontal + leftLabelWidth;
     
     // Draw line before first region
     const startLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     startLine.setAttribute('x1', xOffset);
-    startLine.setAttribute('y1', titleHeight + padding); // Start after title
+    startLine.setAttribute('y1', titleHeight + padding_vertical); // Start after title
     startLine.setAttribute('x2', xOffset);
-    startLine.setAttribute('y2', svgHeight - padding);
+    startLine.setAttribute('y2', svgHeight - padding_vertical);
     startLine.setAttribute('stroke', separatorColor);
     startLine.setAttribute('stroke-width', '2');
     svg.appendChild(startLine);
     
-    // Draw lines between regions
+    // Draw lines between regions (use columnCount = actual drawn columns per region, not column index span)
     for (let i = 0; i < regionColumnRanges.length - 1; i++) {
         const currentRange = regionColumnRanges[i];
-        const regionColumnCount = currentRange.end - currentRange.start + 1;
+        const regionColumnCount = currentRange.columnCount != null ? currentRange.columnCount : (currentRange.end - currentRange.start + 1);
         xOffset += regionColumnCount * charWidth;
         
         // Draw vertical line (lighter grey)
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', xOffset);
-        line.setAttribute('y1', titleHeight + padding); // Start after title
+        line.setAttribute('y1', titleHeight + padding_vertical); // Start after title
         line.setAttribute('x2', xOffset);
-        line.setAttribute('y2', svgHeight - padding);
+        line.setAttribute('y2', svgHeight - padding_vertical);
         line.setAttribute('stroke', separatorColor);
         line.setAttribute('stroke-width', '2');
         svg.appendChild(line);
@@ -6445,13 +8075,13 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     // Calculate end position: add positions in last region
     if (epitope.regions.length > 0) {
         const lastRange = regionColumnRanges[regionColumnRanges.length - 1];
-        const endX = padding + leftLabelWidth + sortedColumns.length * charWidth + (regionColumnRanges.length - 1) * regionGap;
+        const endX = padding_horizontal + leftLabelWidth + sortedColumns.length * charWidth + (regionColumnRanges.length - 1) * regionGap;
         
         const endLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         endLine.setAttribute('x1', endX);
-        endLine.setAttribute('y1', titleHeight + padding); // Start after title
+        endLine.setAttribute('y1', titleHeight + padding_vertical); // Start after title
         endLine.setAttribute('x2', endX);
-        endLine.setAttribute('y2', svgHeight - padding);
+        endLine.setAttribute('y2', svgHeight - padding_vertical);
         endLine.setAttribute('stroke', separatorColor);
         endLine.setAttribute('stroke-width', '2');
         svg.appendChild(endLine);
@@ -6465,9 +8095,9 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     }
     
     // Draw bottom sequence row
-    // Bottom logo starts at svgHeight - padding - logoHeight
-    const bottomLogoY = svgHeight - padding - logoHeight;
-    xOffset = padding + leftLabelWidth;
+    // Bottom logo starts at svgHeight - padding_vertical - logoHeight
+    const bottomLogoY = svgHeight - padding_vertical;  // Bottom logo characters align with bottom separator
+    xOffset = padding_horizontal + leftLabelWidth;
     let currentRegionRangeIdx = 0;
     
     // Iterate through all selected alignment columns (not just coordinates)
@@ -6488,35 +8118,41 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         // Get amino acid from bottom sequence at this alignment column
         let bottomAA = null;
         let isGap = false;
+        let isDot = false;
         if (col < bottomSeq.seq.length) {
             const aa = bottomSeq.seq[col];
             if (aa === '-') {
                 isGap = true;
+            } else if (aa === '.') {
+                isDot = true;
             } else {
                 bottomAA = aa;
             }
         }
         
-        // Draw bottom sequence character (amino acid or gap)
+        // Draw bottom sequence character (amino acid, gap, or dot)
         // Position text so its bottom aligns with the separator line below (same approach as group logos)
         const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         text.setAttribute('x', xOffset + charWidth / 2);
-        // Position at bottomLogoY + logoHeight (same as separator position) with text-after-edge alignment
-        const textY = bottomLogoY + logoHeight;
+        // Position at bottomLogoY (same as separator position) with text-after-edge alignment
+        const textY = bottomLogoY;
         text.setAttribute('y', textY);
         text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('dominant-baseline', 'text-after-edge'); // Align bottom of text to y position (same as group logos)
-        text.setAttribute('font-family', 'monospace');
+        text.setAttribute('dominant-baseline', 'alphabetic'); // Use alphabetic baseline like labels
+        text.setAttribute('font-family', 'Courier New, Courier, monospace'); // Fixed-width font for consistent character alignment
         text.setAttribute('font-size', '16');
         text.setAttribute('font-weight', 'bold');
         if (isGap) {
             text.setAttribute('fill', '#808080'); // Grey for gaps
             text.textContent = '∇'; // Nabla character for gaps
+        } else if (isDot) {
+            text.setAttribute('fill', '#808080'); // Grey for dots (None option)
+            text.textContent = '.'; // Dot character
         } else if (bottomAA) {
             text.setAttribute('fill', aaColors[bottomAA] || '#000');
             text.textContent = bottomAA;
         }
-        if (isGap || bottomAA) {
+        if (isGap || isDot || bottomAA) {
             svg.appendChild(text);
         }
         
@@ -6540,7 +8176,7 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         if (isBoundary && boundaryCoord !== null) {
             const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             const labelX = xOffset + charWidth / 2;
-            const labelY = svgHeight - padding + 20;
+            const labelY = svgHeight - padding_vertical + 20;
             label.setAttribute('x', labelX);
             label.setAttribute('y', labelY);
             label.setAttribute('text-anchor', 'middle');
@@ -6548,8 +8184,8 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
             label.setAttribute('font-family', 'sans-serif');
             label.setAttribute('font-size', '10');
             label.setAttribute('fill', '#666');
-            // Rotate text 90 degrees counter-clockwise around the center point
-            label.setAttribute('transform', `rotate(-90 ${labelX} ${labelY})`);
+            // Rotate text 90 degrees clockwise around the center point (reads top to bottom)
+            label.setAttribute('transform', `rotate(90 ${labelX} ${labelY})`);
             label.textContent = boundaryCoord.toString();
             svg.appendChild(label);
         }
@@ -6561,10 +8197,22 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     for (let rowIdx = 0; rowIdx < groupFrequencies.length; rowIdx++) {
         const groupData = groupFrequencies[rowIdx];
         // First group (rowIdx=0) is just above bottom logo, second group (rowIdx=1) is above first, etc.
-        // Calculate yBase: start from bottom, go up by bottom logo height, then up by (rowIdx * logoHeight)
-        const yBase = svgHeight - padding - logoHeight - (rowIdx * logoHeight);
+        // Calculate yBase: yBase should align with the bottom separator line for this logo row
+        // Separator i=1 (first group bottom) is at: svgHeight - padding_vertical - logoHeight - (1 * groupLogoHeight)
+        // Separator i=2 (second group bottom) is at: svgHeight - padding_vertical - logoHeight - (2 * groupLogoHeight)
+        // For rowIdx=0, yBase should match separator i=1: svgHeight - padding_vertical - logoHeight - (1 * groupLogoHeight)
+        // For rowIdx=1, yBase should match separator i=2: svgHeight - padding_vertical - logoHeight - (2 * groupLogoHeight)
+        // yBase should align with separator i=(rowIdx+1)
+        // Separator i=1 is at: svgHeight - padding_vertical - logoHeight - (1 * groupLogoHeight)
+        // Separator i=2 is at: svgHeight - padding_vertical - logoHeight - (2 * groupLogoHeight)
+        // yBase should match separator i=(rowIdx+1)
+        // Separator i=1 (rowIdx=0) is at: svgHeight - padding_vertical - logoHeight - (1 * groupLogoHeight)
+        // Separator i=1 (rowIdx=0) is at: svgHeight - padding_vertical - logoHeight - (0 * groupLogoHeight) = svgHeight - padding_vertical - logoHeight
+        // Separator i=2 (rowIdx=1) is at: svgHeight - padding_vertical - logoHeight - (1 * groupLogoHeight)
+        // So yBase = svgHeight - padding_vertical - logoHeight - (rowIdx * groupLogoHeight)
+        const yBase = svgHeight - padding_vertical - logoHeight - (rowIdx * groupLogoHeight);
         
-        xOffset = padding + leftLabelWidth;
+        xOffset = padding_horizontal + leftLabelWidth;
         currentRegionRangeIdx = 0;
         
         // Iterate through all selected alignment columns (same as bottom row)
@@ -6593,13 +8241,38 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
                 const sortedAAs = Array.from(colFreqMap.entries())
                     .sort((a, b) => b[1] - a[1]);
                 
+                // Calculate raw frequencies for variants
+                const rawFrequencies = sortedAAs.map(([aa, count]) => count / totalGroupSize);
+                
+                // Calculate the sum of variant frequencies
+                const variantSum = rawFrequencies.reduce((a, b) => a + b, 0);
+                
+                // The difference from 1 is the frequency of the bottom sequence character
+                const bottomFreq = 1 - variantSum;
+                
+                // Create complete frequency list including bottom sequence
+                const allFrequencies = [...rawFrequencies, bottomFreq];
+                
+                // Apply power transformation if powerTransform !== 1.0
+                let frequencies = rawFrequencies;
+                if (powerTransform !== 1.0) {
+                    // Transform all frequencies (variants + bottom)
+                    const transformed = allFrequencies.map(f => Math.pow(f, powerTransform));
+                    const sum = transformed.reduce((a, b) => a + b, 0);
+                    const transformedNormalized = transformed.map(f => f / sum);
+                    // Discard the transformed bottom frequency (last element), keep only variants
+                    frequencies = transformedNormalized.slice(0, -1);
+                }
+                
                 // Draw amino acids stacked by frequency (from bottom to top, no gaps)
                 // Start from the bottom (yBase) and stack upward
                 let yCurrentBottom = yBase; // Current bottom position for stacking
-                for (const [aa, count] of sortedAAs) {
-                    // Frequency within the group (count / total group size)
-                    const frequency = count / totalGroupSize;
-                    const charHeight = baseHeight * frequency; // Height proportional to within-group frequency
+                for (let i = 0; i < sortedAAs.length; i++) {
+                    const [aa, count] = sortedAAs[i];
+                    // Use transformed frequency
+                    const frequency = frequencies[i];
+                    // Height proportional to within-group frequency, multiplied by 3 for better visibility of rare mutations
+                    const charHeight = baseHeight * frequency * 3;
                     
                     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     const centerX = xOffset + charWidth / 2;
@@ -6608,8 +8281,8 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
                     text.setAttribute('x', centerX);
                     text.setAttribute('y', yCurrentBottom);
                     text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('dominant-baseline', 'text-after-edge'); // Align to bottom edge
-                    text.setAttribute('font-family', 'monospace');
+                    text.setAttribute('dominant-baseline', 'alphabetic'); // Use alphabetic baseline like labels
+                    text.setAttribute('font-family', 'Courier New, Courier, monospace'); // Fixed-width font for consistent character alignment
                     text.setAttribute('font-size', baseFontSize.toString());
                     text.setAttribute('font-weight', 'bold');
                     // Handle gaps (nabla character) with grey color
@@ -6619,15 +8292,19 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
                         text.setAttribute('fill', aaColors[aa] || '#000');
                     }
                     
-                    // Scale vertically from the bottom edge
-                    // Transform: translate to bottom point, scale upward, translate back
+                    // Scale vertically from the baseline
+                    // Transform: translate to baseline point, scale upward, translate back
                     const scaleY = charHeight / baseHeight;
                     text.setAttribute('transform', `translate(${centerX}, ${yCurrentBottom}) scale(1, ${scaleY}) translate(${-centerX}, ${-yCurrentBottom})`);
                     text.textContent = aa;
                     svg.appendChild(text);
                     
-                    // Move up for next character (no gap - next character starts exactly where this one's top ends)
-                    yCurrentBottom -= charHeight;
+                    // Position next character's baseline = previous character's baseline + previous character's visual height
+                    // Previous character's baseline is at yCurrentBottom
+                    // Previous character's visual height (cap-height) is approximately capHeightRatio * charHeight
+                    // For sans-serif fonts, cap-height (baseline to top of capitals) is typically 0.68-0.72 of font size
+                    // Using 0.72 as a good middle ground for sans-serif fonts
+                    yCurrentBottom = yCurrentBottom - capHeightRatio * charHeight;
                 }
             }
             
@@ -6637,7 +8314,7 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         // Row label with color coding (shifted left out of logo area)
         // Align label bottom with logo bottom (yBase)
         const rowLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        rowLabel.setAttribute('x', padding + 10);
+        rowLabel.setAttribute('x', padding_horizontal + 10);
         rowLabel.setAttribute('y', yBase);
         rowLabel.setAttribute('text-anchor', 'start');
         rowLabel.setAttribute('dominant-baseline', 'text-after-edge'); // Align bottom of text with yBase
@@ -6649,24 +8326,27 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         // Groups sorted alphabetically, use COLOR_PALETTE starting from index 1
         const labelColor = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
         rowLabel.setAttribute('fill', labelColor);
-        rowLabel.textContent = `Variants at ${groupData.groupValue} (${groupData.count})`;
+        rowLabel.textContent = `${groupData.groupValue} (${groupData.count})`;
         svg.appendChild(rowLabel);
     }
     
     // Bottom row label (colored based on sequence type: Cyan for Reference, Magenta for Subtype, Yellow for Founder)
     // Align label bottom with logo bottom (same y as bottom logo characters)
-    const bottomLabelEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    bottomLabelEl.setAttribute('x', padding + 10);
-    bottomLabelEl.setAttribute('y', bottomLogoY + logoHeight); // Align with bottom of bottom logo
-    bottomLabelEl.setAttribute('text-anchor', 'start');
-    bottomLabelEl.setAttribute('dominant-baseline', 'text-after-edge'); // Align bottom of text with logo bottom
-    bottomLabelEl.setAttribute('font-family', 'sans-serif');
-    bottomLabelEl.setAttribute('font-size', '12');
-    bottomLabelEl.setAttribute('font-weight', 'bold');
-    // Use magenta for all special sequences (Reference, Subtype, Founder)
-    bottomLabelEl.setAttribute('fill', '#ff00ff'); // Magenta
-    bottomLabelEl.textContent = bottomLabel;
-    svg.appendChild(bottomLabelEl);
+    // Only show label if bottomLabel is not null (None option has no label)
+    if (bottomLabel) {
+        const bottomLabelEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        bottomLabelEl.setAttribute('x', padding_horizontal + 10);
+        bottomLabelEl.setAttribute('y', bottomLogoY); // Align with bottom of bottom logo (same as separator)
+        bottomLabelEl.setAttribute('text-anchor', 'start');
+        bottomLabelEl.setAttribute('dominant-baseline', 'text-after-edge'); // Align bottom of text with logo bottom
+        bottomLabelEl.setAttribute('font-family', 'sans-serif');
+        bottomLabelEl.setAttribute('font-size', '12');
+        bottomLabelEl.setAttribute('font-weight', 'bold');
+        // Use magenta for all special sequences (Reference, Subtype, Founder)
+        bottomLabelEl.setAttribute('fill', '#ff00ff'); // Magenta
+        bottomLabelEl.textContent = bottomLabel;
+        svg.appendChild(bottomLabelEl);
+    }
     
     return svg;
 }
@@ -6758,6 +8438,69 @@ function exportLogoAsPDF(svgElement, epitopeName, fileName) {
     } catch (error) {
         console.error('Error exporting PDF:', error);
         alert('Error exporting PDF: ' + error.message + '. Please try downloading as SVG instead.');
+    }
+}
+
+function exportLogoAsPNG(svgElement, epitopeName, fileName) {
+    try {
+        // Clone the SVG to avoid modifying the original
+        const clonedSvg = svgElement.cloneNode(true);
+        
+        // Get SVG dimensions
+        const svgWidth = svgElement.width.baseVal.value;
+        const svgHeight = svgElement.height.baseVal.value;
+        
+        // Create filename: escape_from_<epitope name>_<file name>.png
+        const baseFileName = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+        // Sanitize filename
+        const sanitizedEpitope = epitopeName.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const sanitizedFile = baseFileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const pngFileName = `escape_from_${sanitizedEpitope}_${sanitizedFile}.png`;
+        
+        // Convert SVG to string
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(clonedSvg);
+        
+        // Create image from SVG data URL
+        const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        
+        const img = new Image();
+        img.onload = () => {
+            // Create canvas with SVG dimensions
+            const canvas = document.createElement('canvas');
+            canvas.width = svgWidth;
+            canvas.height = svgHeight;
+            
+            // Draw image on canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            
+            // Convert canvas to PNG
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = pngFileName;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                } else {
+                    alert('Error: Failed to create PNG image.');
+                }
+                URL.revokeObjectURL(svgUrl);
+            }, 'image/png');
+        };
+        
+        img.onerror = () => {
+            alert('Error: Failed to load SVG image for PNG conversion.');
+            URL.revokeObjectURL(svgUrl);
+        };
+        
+        img.src = svgUrl;
+    } catch (error) {
+        console.error('Error exporting PNG:', error);
+        alert('Error exporting PNG: ' + error.message + '. Please try downloading as SVG instead.');
     }
 }
 
