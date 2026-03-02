@@ -16,6 +16,8 @@
     <script src="https://biowasm.com/cdn/v3/aioli.js"></script>
      <!-- Included html2pdf.js for PDF export (includes jsPDF and svg2pdf internally) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- html2canvas for molecule viewer PNG export (full window + logo) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- 3Dmol.js for PDB 3D structure viewing (epitope coloring without molstar.lib) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.1/3Dmol-min.js"></script>
     <style>
@@ -221,6 +223,7 @@
             <div style="display:flex; gap:5px; align-items:center;">
                 <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt">
                 <button id="btn-group-sequences" title="Group sequences by name field">Group</button>
+                <button id="btn-prune" title="Remove sequences from selected groups">Prune</button>
                 <button id="btn-subtype" title="Add founder sequence from selected group">Add Founder</button>
                 <button id="btn-sort-sequences" title="Sort sequences by name (REF and SUBTYPE remain first)">Sort</button>
             </div>
@@ -274,6 +277,13 @@
                 <button id="btn-nt" class="active" style="border-top-right-radius:0; border-bottom-right-radius:0;">NT</button>
                 <button id="btn-aa" style="border-top-left-radius:0; border-bottom-left-radius:0; border-left:none;">AA</button>
             </div>
+        </div>
+        <div class="control-group">
+            <label>AA palette</label>
+            <select id="sel-aa-palette" style="min-width: 140px;">
+                <option value="Alignment (IUPAC)" selected>Alignment (IUPAC)</option>
+                <option value="Biochemical">Biochemical</option>
+            </select>
         </div>
 
         <!-- Frame selector commented out but code preserved for potential reinstatement -->
@@ -571,6 +581,22 @@
     </div>
 </div>
 
+<div id="prune-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 400px;">
+        <h2>Prune by Group</h2>
+        <p style="font-size: 13px; color: #374151; margin: 0 0 12px 0;">Select groups to remove. Selected groups will be removed from the alignment.</p>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <button type="button" id="btn-prune-all">All</button>
+            <button type="button" id="btn-prune-none">None</button>
+        </div>
+        <div id="prune-groups-container" style="max-height: 280px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px; margin-bottom: 16px;"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" id="btn-prune-cancel">Cancel</button>
+            <button type="button" id="btn-prune-apply" class="active">Apply</button>
+        </div>
+    </div>
+</div>
+
 <div id="subtype-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="help-box" style="width: 450px;">
         <h2>Add Founder Sequence</h2>
@@ -594,6 +620,7 @@
         <div class="help-row"><span class="help-key">Choose File</span> <span>Load an Alignment with Ref as first seq and SubType as second seq.</span></div>
         <div class="help-row"><span class="help-key">Sort</span> <span>Sort sequences by name (REF and SUBTYPE remain first)</span></div>
         <div class="help-row"><span class="help-key">Group</span> <span>Group sequences using field in Seq names</span></div>
+        <div class="help-row"><span class="help-key">Prune</span> <span>Remove sequences from deselected groups</span></div>
         <div class="help-row"><span class="help-key">Add Founder</span> <span>Set a Founder sequence as consensus of a group</span></div>
         <div class="help-row"><span class="help-key">Infer</span> <span>Infer a phylogeny using FastTree of Neighbor Joining</span></div>
         <div class="help-row"><span class="help-key">Reroot</span> <span>Reroot tree on subtype sequence</span></div>
@@ -625,7 +652,11 @@
     <div id="pdb3d-window" style="position: fixed; left: 5%; top: 5%; width: 90vw; max-width: 1000px; height: 85vh; background: var(--panel-bg, #fff); border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; z-index: 10002;">
         <div id="pdb3d-title-bar" style="flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border-color, #d1d5db); cursor: move; user-select: none; background: #fff; z-index: 10;">
             <span id="pdb3d-title" style="font-weight: 600;">PDB 3D Structure</span>
-            <button id="btn-close-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Close</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btn-fullscreen-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Full screen</button>
+                <button id="btn-export-png-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Export PNG</button>
+                <button id="btn-close-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Close</button>
+            </div>
         </div>
         <div id="pdb3d-hint" style="flex-shrink: 0; margin: 0; padding: 6px 14px; font-size: 11px; color: #374151; background: #f3f4f6; border-bottom: 1px solid var(--border-color, #e5e7eb); z-index: 10;">Epitope residues are colored automatically on intrinsic chains (residue colors, rest gray). <strong>Intrinsic</strong> = in panel, alignment &ge;50%; <strong>Extrinsic</strong> = in panel, &lt;50%; <strong>Superficial</strong> = not in panel. Use checkboxes to show/hide chains; set a different style per group.</div>
         <div id="pdb3d-toolbar" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border-color, #e5e7eb); background: #fff; z-index: 10;">
@@ -697,6 +728,13 @@ const CONFIG = {
         AA: { 'A': '#80a0f0', 'R': '#f01505', 'N': '#00ff00', 'D': '#c048c0', 'C': '#f08080', 'Q': '#00ff00', 'E': '#c048c0', 'G': '#f09048', 'H': '#15a4a4', 'I': '#80a0f0', 'L': '#80a0f0', 'K': '#f01505', 'M': '#80a0f0', 'F': '#80a0f0', 'P': '#ffff00', 'S': '#00ff00', 'T': '#00ff00', 'W': '#80a0f0', 'Y': '#15a4a4', 'V': '#80a0f0', '*': '#999999', '-': '#ffffff', 'default': '#ffffff' }
     }
 };
+
+// Alternative AA color palettes (used app-wide: sequence panel, logos, molecule viewer)
+CONFIG.colorPalettes = {
+    'Alignment (IUPAC)': { 'A': '#80a0f0', 'R': '#f01505', 'N': '#00ff00', 'D': '#c048c0', 'C': '#f08080', 'Q': '#00ff00', 'E': '#c048c0', 'G': '#f09048', 'H': '#15a4a4', 'I': '#80a0f0', 'L': '#80a0f0', 'K': '#f01505', 'M': '#80a0f0', 'F': '#80a0f0', 'P': '#ffff00', 'S': '#00ff00', 'T': '#00ff00', 'W': '#80a0f0', 'Y': '#15a4a4', 'V': '#80a0f0', '*': '#999999', '-': '#ffffff', 'default': '#ffffff' },
+    'Biochemical': { 'D': '#e74c3c', 'E': '#e74c3c', 'K': '#3498db', 'R': '#3498db', 'H': '#3498db', 'S': '#2ecc71', 'N': '#2ecc71', 'T': '#2ecc71', 'G': '#2ecc71', 'Q': '#2ecc71', 'F': '#f39c12', 'A': '#f39c12', 'P': '#f39c12', 'I': '#f39c12', 'L': '#f39c12', 'V': '#f39c12', 'M': '#f39c12', 'W': '#f39c12', 'Y': '#f39c12', 'C': '#95a5a6', '-': '#bdc3c7', '*': '#999999', 'default': '#ffffff' }
+};
+CONFIG.activeAAPalette = 'Alignment (IUPAC)';
 
 // Single color palette for both groups and clusters
 // Index 0 is magenta (for cluster 0), indices 1+ are for groups and clusters 1+
@@ -819,7 +857,8 @@ const state = {
     currentFileName: null, // Store the current alignment file name
     pdbFileContent: null, // Raw PDB/CIF text for 3D viewer (set when Load PDB/CIF or fetch by ID)
     pdbFileName: null,    // PDB/CIF file name for 3D overlay title
-    pdbFormat: 'pdb'     // 'pdb' or 'cif' for 3Dmol addModel
+    pdbFormat: 'pdb',   // 'pdb' or 'cif' for 3Dmol addModel
+    logoCharWidth: 15   // Horizontal gap between logo characters (10–20); used for drawing and region separators
 };
 
 // --- DOM ---
@@ -834,6 +873,7 @@ const dom = {
     btnMds: document.getElementById('btn-mds'),
     btnSortSequences: document.getElementById('btn-sort-sequences'),
     btnGroupSequences: document.getElementById('btn-group-sequences'),
+    btnPrune: document.getElementById('btn-prune'),
     btnSubtype: document.getElementById('btn-subtype'),
     btnClearAlignment: document.getElementById('btn-clear-aln'),
     btnClearTree: document.getElementById('btn-clear-tree'),
@@ -841,6 +881,7 @@ const dom = {
     btnNt: document.getElementById('btn-nt'),
     btnAa: document.getElementById('btn-aa'),
     selHighlight: document.getElementById('sel-highlight'),
+    selAAPalette: document.getElementById('sel-aa-palette'),
     btnDownload: document.getElementById('btn-download'),
     btnCopy: document.getElementById('btn-copy'),
     btnHelp: document.getElementById('btn-help'),
@@ -901,6 +942,7 @@ function disableButtonsOnStartup() {
     // Disable all buttons except the help button and file input
     if (dom.btnSortSequences) dom.btnSortSequences.disabled = true;
     if (dom.btnGroupSequences) dom.btnGroupSequences.disabled = true;
+    if (dom.btnPrune) dom.btnPrune.disabled = true;
     if (dom.btnSubtype) dom.btnSubtype.disabled = true;
     if (dom.btnInferTree) dom.btnInferTree.disabled = true;
     if (dom.btnRerootTree) dom.btnRerootTree.disabled = true;
@@ -923,7 +965,9 @@ function disableButtonsOnStartup() {
 
 function enableButtonsAfterLoad() {
     // Enable buttons that become usable after a file is loaded
-    // Group is enabled, but Add Founder and Sort require a successful grouping first
+    // Mode buttons (NT/AA) are enabled; setMode() will disable NT when alignment is AA-only
+    if (dom.btnNt) dom.btnNt.disabled = false;
+    if (dom.btnAa) dom.btnAa.disabled = false;
     if (dom.btnGroupSequences) dom.btnGroupSequences.disabled = false;
     if (dom.btnInferTree) dom.btnInferTree.disabled = false;
     if (dom.btnDownload) dom.btnDownload.disabled = false;
@@ -935,7 +979,8 @@ function enableButtonsAfterLoad() {
 }
 
 function enableButtonsAfterGrouping() {
-    // Enable Add Founder and Sort after successful grouping
+    // Enable Prune, Add Founder and Sort after successful grouping
+    if (dom.btnPrune) dom.btnPrune.disabled = false;
     if (dom.btnSubtype) dom.btnSubtype.disabled = false;
     if (dom.btnSortSequences) dom.btnSortSequences.disabled = false;
 }
@@ -983,9 +1028,19 @@ async function init() {
     // Disable buttons that require a file to be loaded
     disableButtonsOnStartup();
 
-    dom.file.addEventListener('change', e => loadFile(e.target.files[0]));
+    dom.file.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) {
+            loadFile(e.target.files[0]);
+            e.target.value = '';
+        }
+    });
     if (dom.fileTree) {
-        dom.fileTree.addEventListener('change', e => loadTreeFile(e.target.files[0]));
+        dom.fileTree.addEventListener('change', function (e) {
+            if (e.target.files && e.target.files[0]) {
+                loadTreeFile(e.target.files[0]);
+                e.target.value = '';
+            }
+        });
     }
     if (dom.btnSortSequences) {
         dom.btnSortSequences.addEventListener('click', sortSequencesByName);
@@ -993,6 +1048,23 @@ async function init() {
     if (dom.btnGroupSequences) {
         dom.btnGroupSequences.addEventListener('click', showGroupModal);
     }
+    if (dom.btnPrune) {
+        dom.btnPrune.addEventListener('click', showPruneModal);
+    }
+    const btnPruneCancel = document.getElementById('btn-prune-cancel');
+    if (btnPruneCancel) btnPruneCancel.addEventListener('click', function () { document.getElementById('prune-overlay').style.display = 'none'; });
+    const btnPruneApply = document.getElementById('btn-prune-apply');
+    if (btnPruneApply) btnPruneApply.addEventListener('click', applyPrune);
+    const btnPruneAll = document.getElementById('btn-prune-all');
+    if (btnPruneAll) btnPruneAll.addEventListener('click', function () {
+        const container = document.getElementById('prune-groups-container');
+        if (container) container.querySelectorAll('input[type="checkbox"][data-group-id]').forEach(function (cb) { cb.checked = true; });
+    });
+    const btnPruneNone = document.getElementById('btn-prune-none');
+    if (btnPruneNone) btnPruneNone.addEventListener('click', function () {
+        const container = document.getElementById('prune-groups-container');
+        if (container) container.querySelectorAll('input[type="checkbox"][data-group-id]').forEach(function (cb) { cb.checked = false; });
+    });
     if (dom.btnSubtype) {
         dom.btnSubtype.addEventListener('click', showSubtypeModal);
     }
@@ -1005,7 +1077,12 @@ async function init() {
         dom.btnLoadEpitopes.addEventListener('click', () => dom.inpEpitopes.click());
     }
     if (dom.inpEpitopes) {
-        dom.inpEpitopes.addEventListener('change', e => loadEpitopes(e.target.files[0]));
+        dom.inpEpitopes.addEventListener('change', function (e) {
+            if (e.target.files && e.target.files[0]) {
+                loadEpitopes(e.target.files[0]);
+                e.target.value = '';
+            }
+        });
     }
     if (dom.btnSelectEpitope) {
         dom.btnSelectEpitope.addEventListener('click', showEpitopeSelector);
@@ -1060,6 +1137,123 @@ async function init() {
         btnClosePdb3d.addEventListener('mousedown', e => e.stopPropagation());
         btnClosePdb3d.addEventListener('click', closePdbViewer);
     }
+    var pdb3dWindowEl = document.getElementById('pdb3d-window');
+    var btnFullscreenPdb3d = document.getElementById('btn-fullscreen-pdb3d');
+    if (pdb3dWindowEl && btnFullscreenPdb3d) {
+        btnFullscreenPdb3d.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+        btnFullscreenPdb3d.addEventListener('click', function () {
+            var doc = document;
+            var fullscreen = doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+            if (fullscreen) {
+                if (doc.exitFullscreen) doc.exitFullscreen();
+                else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+                else if (doc.mozCancelFullScreen) doc.mozCancelFullScreen();
+                else if (doc.msExitFullscreen) doc.msExitFullscreen();
+            } else {
+                var el = pdb3dWindowEl;
+                if (el.requestFullscreen) el.requestFullscreen();
+                else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+                else if (el.mozRequestFullScreen) el.mozRequestFullScreen();
+                else if (el.msRequestFullscreen) el.msRequestFullscreen();
+            }
+        });
+        function updateFullscreenButtonLabel() {
+            var fullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+            btnFullscreenPdb3d.textContent = fullscreen ? 'Exit full screen (Esc)' : 'Full screen';
+        }
+        document.addEventListener('fullscreenchange', updateFullscreenButtonLabel);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenButtonLabel);
+        document.addEventListener('mozfullscreenchange', updateFullscreenButtonLabel);
+        document.addEventListener('MSFullscreenChange', updateFullscreenButtonLabel);
+    }
+    var btnExportPngPdb3d = document.getElementById('btn-export-png-pdb3d');
+    if (btnExportPngPdb3d && dom.pdbViewerContainer) {
+        btnExportPngPdb3d.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+        btnExportPngPdb3d.addEventListener('click', function () {
+            var windowEl = document.getElementById('pdb3d-window');
+            var viewerEl = dom.pdbViewerContainer;
+            if (!windowEl || !viewerEl || viewerEl.offsetWidth < 10 || viewerEl.offsetHeight < 10) {
+                alert('Nothing to export. Open a structure and ensure the viewer is visible.');
+                return;
+            }
+            var wWin = windowEl.offsetWidth;
+            var hWin = windowEl.offsetHeight;
+            var windowRect = windowEl.getBoundingClientRect();
+            var viewerRect = viewerEl.getBoundingClientRect();
+            var vw = viewerRect.width;
+            var vh = viewerRect.height;
+            var offsetX = viewerRect.left - windowRect.left;
+            var offsetY = viewerRect.top - windowRect.top;
+            var threeCanvas = null;
+            var connectorCanvas = viewerEl.querySelector('#pdb3d-connector-line');
+            var allCanvases = viewerEl.querySelectorAll('canvas');
+            for (var i = 0; i < allCanvases.length; i++) {
+                if (allCanvases[i] !== connectorCanvas) threeCanvas = allCanvases[i];
+            }
+            function buildViewerComposite(done) {
+                var comp = document.createElement('canvas');
+                comp.width = vw;
+                comp.height = vh;
+                var cctx = comp.getContext('2d');
+                cctx.fillStyle = '#ffffff';
+                cctx.fillRect(0, 0, vw, vh);
+                if (threeCanvas && threeCanvas.width > 0 && threeCanvas.height > 0) {
+                    try { cctx.drawImage(threeCanvas, 0, 0, vw, vh); } catch (e) { /* ignore */ }
+                }
+                if (connectorCanvas && connectorCanvas.width > 0 && connectorCanvas.height > 0) {
+                    try { cctx.drawImage(connectorCanvas, 0, 0, vw, vh); } catch (e) { /* ignore */ }
+                }
+                var popup = document.getElementById('pdb3d-click-popup');
+                if (popup && popup.style.display === 'flex' && typeof html2canvas === 'function') {
+                    html2canvas(popup, { scale: 2, logging: false, useCORS: true }).then(function (popupCanvas) {
+                        var pr = popup.getBoundingClientRect();
+                        var dx = pr.left - viewerRect.left;
+                        var dy = pr.top - viewerRect.top;
+                        cctx.drawImage(popupCanvas, dx, dy, pr.width, pr.height);
+                        done(comp);
+                    }).catch(function () { done(comp); });
+                } else {
+                    done(comp);
+                }
+            }
+            function patchViewerAndDownload(fullWindowCanvas) {
+                buildViewerComposite(function (viewerComposite) {
+                    var out = document.createElement('canvas');
+                    out.width = wWin;
+                    out.height = hWin;
+                    var ctx = out.getContext('2d');
+                    ctx.drawImage(fullWindowCanvas, 0, 0, fullWindowCanvas.width, fullWindowCanvas.height, 0, 0, wWin, hWin);
+                    ctx.drawImage(viewerComposite, offsetX, offsetY, vw, vh);
+                    var dataUrl = out.toDataURL('image/png');
+                    var a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = 'molecule_view.png';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                });
+            }
+            if (typeof html2canvas === 'function') {
+                html2canvas(windowEl, { scale: 2, logging: false, useCORS: true, allowTaint: true })
+                    .then(patchViewerAndDownload)
+                    .catch(function (err) {
+                        alert('Export failed. ' + (err && err.message ? err.message : ''));
+                    });
+            } else {
+                buildViewerComposite(function (comp) {
+                    var dataUrl = comp.toDataURL('image/png');
+                    var a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = 'molecule_view.png';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                });
+            }
+        });
+    }
     if (dom.pdbOverlay) {
         dom.pdbOverlay.addEventListener('click', e => { if (e.target === dom.pdbOverlay) closePdbViewer(); });
     }
@@ -1102,11 +1296,26 @@ async function init() {
         dom.btnUndo.addEventListener('click', undo);
     }
     dom.btnNt.addEventListener('click', () => setMode('NT'));
-    dom.btnAa.addEventListener('click', () => setMode('AA'));
+    dom.btnAa.addEventListener('click', () => setMode('AA', state.isAASequence));
     dom.selHighlight.addEventListener('change', () => {
         state.highlightMatches = dom.selHighlight.value;
         render();
     });
+    if (dom.selAAPalette) {
+        dom.selAAPalette.value = CONFIG.activeAAPalette || 'Alignment (IUPAC)';
+        dom.selAAPalette.addEventListener('change', () => {
+            var name = dom.selAAPalette.value;
+            if (CONFIG.colorPalettes && CONFIG.colorPalettes[name]) {
+                CONFIG.activeAAPalette = name;
+                Object.keys(CONFIG.colors.AA).forEach(function (k) { delete CONFIG.colors.AA[k]; });
+                Object.assign(CONFIG.colors.AA, CONFIG.colorPalettes[name]);
+                render();
+                if (typeof pdb3dViewerInstance !== 'undefined' && pdb3dViewerInstance && typeof applyPdb3dStyleToViewer === 'function') {
+                    applyPdb3dStyleToViewer();
+                }
+            }
+        });
+    }
     if (dom.selFrame) {
         dom.selFrame.addEventListener('change', () => { state.frame = +dom.selFrame.value; recalc(); });
     }
@@ -1705,6 +1914,96 @@ function runGroupTask() {
     
     // Re-render
     recalc();
+}
+
+// --- Prune by Group ---
+function showPruneModal() {
+    if (!state.sequenceGroups || !state.groupNames || state.groupNames.size === 0) {
+        alert("Please group sequences first (Group button) before pruning.");
+        return;
+    }
+    const container = document.getElementById('prune-groups-container');
+    if (!container) return;
+    container.innerHTML = '';
+    const groupEntries = Array.from(state.groupNames.entries()).sort((a, b) => {
+        const va = a[1] || '', vb = b[1] || '';
+        return String(va).localeCompare(String(vb));
+    });
+    groupEntries.forEach(function (entry) {
+        const groupId = entry[0];
+        const groupLabel = entry[1] || ('Group ' + groupId);
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '8px';
+        label.style.padding = '4px 0';
+        label.style.cursor = 'pointer';
+        label.style.fontSize = '13px';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = false;
+        cb.dataset.groupId = String(groupId);
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(groupLabel));
+        label.addEventListener('click', function (e) { if (e.target !== cb) cb.checked = !cb.checked; });
+        container.appendChild(label);
+    });
+    document.getElementById('prune-overlay').style.display = 'flex';
+}
+
+function applyPrune() {
+    const container = document.getElementById('prune-groups-container');
+    if (!container) return;
+    const checkboxes = container.querySelectorAll('input[type="checkbox"][data-group-id]');
+    const groupsToRemove = new Set();
+    checkboxes.forEach(function (cb) {
+        if (cb.checked) groupsToRemove.add(parseInt(cb.dataset.groupId, 10));
+    });
+    if (groupsToRemove.size === 0) {
+        document.getElementById('prune-overlay').style.display = 'none';
+        return;
+    }
+    document.getElementById('prune-overlay').style.display = 'none';
+    saveState();
+    const kept = state.rawSequences.filter(function (seq) {
+        const gid = state.sequenceGroups.get(seq.name);
+        if (gid === undefined) return true;
+        return !groupsToRemove.has(gid);
+    });
+    if (kept.length === 0) {
+        alert("Cannot remove all sequences.");
+        return;
+    }
+    const keptNames = new Set(kept.map(function (s) { return s.name; }));
+    state.rawSequences = kept;
+    const newSequenceGroups = new Map();
+    kept.forEach(function (seq) {
+        const gid = state.sequenceGroups.get(seq.name);
+        if (gid !== undefined) newSequenceGroups.set(seq.name, gid);
+    });
+    // Renumber group IDs to 0, 1, 2, ... so structure matches a fresh Group (logo and legend expect contiguous IDs)
+    const remainingGroupIdsSorted = Array.from(new Set(newSequenceGroups.values())).sort(function (a, b) { return a - b; });
+    const oldToNew = new Map();
+    remainingGroupIdsSorted.forEach(function (oldId, i) { oldToNew.set(oldId, i); });
+    const renumberedSequenceGroups = new Map();
+    newSequenceGroups.forEach(function (gid, name) {
+        const newId = oldToNew.get(gid);
+        if (newId !== undefined) renumberedSequenceGroups.set(name, newId);
+    });
+    const renumberedGroupNames = new Map();
+    remainingGroupIdsSorted.forEach(function (oldId, i) {
+        const label = state.groupNames.get(oldId);
+        renumberedGroupNames.set(i, label != null ? label : 'Group ' + i);
+    });
+    state.sequenceGroups = renumberedSequenceGroups;
+    state.groupNames = renumberedGroupNames;
+    state.refIndex = 0;
+    state.subtypeIndex = (state.rawSequences.length > 1) ? 1 : 0;
+    state.tree = null;
+    state.selection = null;
+    recalc();
+    updateColorLegend();
+    calculateNamesWidth();
 }
 
 // --- Add Founder Sequence ---
@@ -5197,6 +5496,34 @@ function showTemporaryNotification(message, duration) {
     }, duration);
 }
 
+/** Convert state.rawSequences from NT to AA in place (using current frame). Call when loading epitopes or PDB so that all downstream code sees AA only. Sets state.isAASequence = true; no going back to NT. */
+function convertRawSequencesNTtoAA() {
+    if (!state.rawSequences.length || state.isAASequence) return;
+    var offset = state.frame - 1;
+    var converted = state.rawSequences.map(function (s) {
+        var dna = s.seq;
+        var aa = [];
+        for (var i = offset; i < dna.length; i += 3) {
+            if (i + 2 >= dna.length) break;
+            var codon = Array.isArray(dna) ? dna.slice(i, i + 3).join('') : dna.slice(i, i + 3);
+            if (String(codon).indexOf('-') >= 0) aa.push('-');
+            else if (/[^ACGT]/i.test(codon)) aa.push('X');
+            else aa.push(CODON_TABLE[codon] || 'X');
+        }
+        var out = { name: s.name, seq: aa };
+        if (s.chainStart != null && s.chainStart >= 0) out.chainStart = s.chainStart;
+        if (s.isPdbChain) out.isPdbChain = true;
+        if (s.chainLength != null) out.chainLength = s.chainLength;
+        if (s.alignedLength != null) out.alignedLength = s.alignedLength;
+        return out;
+    });
+    var maxLen = 0;
+    converted.forEach(function (s) { if (s.seq.length > maxLen) maxLen = s.seq.length; });
+    converted.forEach(function (s) { while (s.seq.length < maxLen) s.seq.push('-'); });
+    state.rawSequences = converted;
+    state.isAASequence = true;
+}
+
 // --- Epitope Loading and Selection ---
 function loadEpitopes(file) {
     if (!file) return;
@@ -5241,6 +5568,14 @@ function loadEpitopes(file) {
             }
             
             state.epitopes = epitopes;
+            
+            // Epitopes use AA; if currently NT, convert sequences to AA and switch to AA mode (no going back)
+            if (!state.isAASequence && state.rawSequences.length > 0) {
+                convertRawSequencesNTtoAA();
+                setMode('AA', true);
+            } else if (state.mode === 'NT') {
+                setMode('AA', state.isAASequence);
+            }
             
             // Enable Select Epitope button after successful loading
             enableButtonsAfterLoadEpitopes();
@@ -5312,7 +5647,7 @@ function showEpitopeSelector() {
     document.body.appendChild(selector);
 }
 
-/** Convert a ref region (1-based inclusive start/end) to alignment column indices. Only includes columns where the reference has a residue (not a gap), so the region stops at the last coordinate and does not include trailing (or leading) gaps. Used by epitope highlighting, logos, and region logos. */
+/** Convert a ref region (1-based inclusive start/end) to alignment column indices. Only includes columns where the reference has a residue (not a gap). */
 function getAlignmentColumnsForRefRegion(region) {
     var refSeq = state.viewSequences && state.refIndex >= 0 ? state.viewSequences[state.refIndex].seq : null;
     if (!refSeq || !state.refMap) return [];
@@ -5543,8 +5878,6 @@ function recalc() {
             state.refMap[i] = count;
         }
     }
-    
-    
 
     dom.sizer.style.width = (max * CONFIG.charWidth + 200) + 'px';
     dom.sizer.style.height = (state.viewSequences.length * CONFIG.rowHeight) + 'px';
@@ -6292,6 +6625,13 @@ var pdb3dIntrinsicChainIds = [];
 var pdb3dExtrinsicChainIds = [];
 var pdb3dSuperficialChainIds = [];
 var pdb3dSelectedChainIds = [];
+var pdb3dClickAtom = null;
+var pdb3dClickChain = null;
+var pdb3dClickResi = null;
+var pdb3dClickPos = null;
+var pdb3dSavedPopupRestore = null;
+var pdb3dLogoPanStack = [];      // Arrow keys pressed while logo open; on close we apply opposites to recenter
+var pdb3dLogoArrowKeyHandler = null;
 
 const PDB_RESIDUE_TO_ONE = {
     'ALA':'A','ARG':'R','ASN':'N','ASP':'D','CYS':'C','GLN':'Q','GLU':'E','GLY':'G','HIS':'H',
@@ -6646,7 +6986,11 @@ function applyStructureContent(text, fileName, format) {
     state.pdbFileContent = text;
     state.pdbFileName = fileName || 'structure.pdb';
     state.pdbFormat = isCif ? 'cif' : 'pdb';
-    setMode('AA', state.isAASequence);
+    // PDB is AA; if alignment is currently NT, convert to AA in place (no going back)
+    if (!state.isAASequence && state.rawSequences.length > 0) {
+        convertRawSequencesNTtoAA();
+    }
+    setMode('AA', true);
     var subtypeName = state.rawSequences[state.subtypeIndex] ? state.rawSequences[state.subtypeIndex].name : null;
     var pdbCode = structureCodeFromContent(text);
     var raw = state.rawSequences.filter(function (s) { return !isPdbChainSequence(s); });
@@ -7130,6 +7474,10 @@ function updatePdb3dAALabels(viewer) {
 /** Re-apply current style to the open 3D viewer (no reload). Call when user changes Intrinsic, Extrinsic or Superficial style dropdown. */
 function applyPdb3dStyleToViewer() {
     if (!pdb3dViewerInstance) return;
+    var savedView = null;
+    try {
+        if (typeof pdb3dViewerInstance.getView === 'function') savedView = pdb3dViewerInstance.getView();
+    } catch (e) { /* ignore */ }
     var intrinsicSel = document.getElementById('pdb3d-style-intrinsic');
     var extrinsicSel = document.getElementById('pdb3d-style-extrinsic');
     var superficialSel = document.getElementById('pdb3d-style-superficial');
@@ -7153,11 +7501,18 @@ function applyPdb3dStyleToViewer() {
         }
         pdb3dViewerInstance.setStyle({ chain: chainId }, getPdb3dStyleSpec(styleKey, epitopeForChain));
     });
+    if (savedView && typeof pdb3dViewerInstance.setView === 'function') {
+        try { pdb3dViewerInstance.setView(savedView); } catch (e) { /* ignore */ }
+    }
     pdb3dViewerInstance.render();
 }
 
 function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
     if (!state.pdbFileContent || !dom.pdbViewerContainer) return;
+    var savedView = null;
+    if (pdb3dViewerInstance && typeof pdb3dViewerInstance.getView === 'function') {
+        try { savedView = pdb3dViewerInstance.getView(); } catch (e) { /* ignore */ }
+    }
     var filtered = (selectedChainIds && selectedChainIds.length > 0)
         ? filterStructureByChains(state.pdbFileContent, selectedChainIds)
         : state.pdbFileContent;
@@ -7182,6 +7537,14 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
         if (typeof pdb3dViewerInstance.destroy === 'function') pdb3dViewerInstance.destroy();
         else if (typeof pdb3dViewerInstance.dispose === 'function') pdb3dViewerInstance.dispose();
         pdb3dViewerInstance = null;
+    }
+    var popupEl = document.getElementById('pdb3d-click-popup');
+    if (popupEl && popupEl.style.display === 'flex') {
+        pdb3dSavedPopupRestore = {
+            visible: true,
+            heading: (popupEl.children[0] && popupEl.children[0].textContent) ? popupEl.children[0].textContent : '',
+            logoHTML: (popupEl.children[1] && popupEl.children[1].innerHTML) ? popupEl.children[1].innerHTML : ''
+        };
     }
     dom.pdbViewerContainer.innerHTML = '';
     var viewer = $3Dmol.createViewer(dom.pdbViewerContainer, { backgroundColor: 'white' });
@@ -7210,7 +7573,11 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
         }
         viewer.setStyle({ chain: chainId }, getPdb3dStyleSpec(styleKey, epitopeForChain));
     });
-    viewer.zoomTo();
+    if (savedView && typeof viewer.setView === 'function') {
+        try { viewer.setView(savedView); } catch (e) { viewer.zoomTo(); }
+    } else {
+        viewer.zoomTo();
+    }
     viewer.render();
 
     var hoverEl = document.createElement('div');
@@ -7230,11 +7597,196 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
     clickPopupClose.setAttribute('style', 'position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border:none;background:#f3f4f6;color:#6b7280;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;');
     clickPopupClose.textContent = '\u00D7';
     clickPopupClose.title = 'Close';
-    clickPopupClose.onclick = function () { clickPopup.style.display = 'none'; };
+    clickPopupClose.onclick = function () {
+        clickPopup.style.display = 'none';
+        var v = pdb3dViewerInstance;
+        var stack = pdb3dLogoPanStack.slice();
+        pdb3dLogoPanStack = [];
+        if (v && typeof v.translate === 'function' && stack.length > 0) {
+            var panStep = 20;
+            for (var i = stack.length - 1; i >= 0; i--) {
+                var key = stack[i];
+                var dx = 0, dy = 0;
+                if (key === 'ArrowLeft') { dx = panStep; dy = 0; }
+                else if (key === 'ArrowRight') { dx = -panStep; dy = 0; }
+                else if (key === 'ArrowUp') { dy = panStep; }
+                else if (key === 'ArrowDown') { dy = -panStep; }
+                else continue;
+                v.translate(dx, dy);
+            }
+            if (typeof v.render === 'function') v.render();
+        }
+        pdb3dClickAtom = null;
+        pdb3dClickChain = null;
+        pdb3dClickResi = null;
+        pdb3dClickPos = null;
+        if (pdb3dConnectorRafId) { cancelAnimationFrame(pdb3dConnectorRafId); pdb3dConnectorRafId = null; }
+        if (connectorLineCanvas) { var ctx = connectorLineCanvas.getContext('2d'); if (ctx) ctx.clearRect(0, 0, connectorLineCanvas.width, connectorLineCanvas.height); }
+    };
     clickPopup.appendChild(clickPopupHeading);
     clickPopup.appendChild(clickPopupLogoContainer);
     clickPopup.appendChild(clickPopupClose);
     dom.pdbViewerContainer.appendChild(clickPopup);
+    if (!pdb3dLogoArrowKeyHandler) {
+        var panStep = 20;
+        pdb3dLogoArrowKeyHandler = function (e) {
+            var popupEl = document.getElementById('pdb3d-click-popup');
+            if (!popupEl || popupEl.style.display !== 'flex' || !pdb3dViewerInstance || typeof pdb3dViewerInstance.translate !== 'function') return;
+            var dx = 0, dy = 0;
+            if (e.key === 'ArrowLeft') { dx = -panStep; dy = 0; }
+            else if (e.key === 'ArrowRight') { dx = panStep; dy = 0; }
+            else if (e.key === 'ArrowUp') { dx = 0; dy = -panStep; }
+            else if (e.key === 'ArrowDown') { dx = 0; dy = panStep; }
+            else return;
+            e.preventDefault();
+            pdb3dLogoPanStack.push(e.key);
+            pdb3dViewerInstance.translate(dx, dy);
+            pdb3dViewerInstance.render();
+        };
+        document.addEventListener('keydown', pdb3dLogoArrowKeyHandler);
+    }
+    if (pdb3dSavedPopupRestore && pdb3dSavedPopupRestore.visible) {
+        clickPopupHeading.textContent = pdb3dSavedPopupRestore.heading || '';
+        clickPopupLogoContainer.innerHTML = pdb3dSavedPopupRestore.logoHTML || '';
+        clickPopup.style.display = 'flex';
+        pdb3dSavedPopupRestore = null;
+    }
+    var connectorLineCanvas = document.createElement('canvas');
+    connectorLineCanvas.id = 'pdb3d-connector-line';
+    connectorLineCanvas.setAttribute('style', 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:15;');
+    dom.pdbViewerContainer.appendChild(connectorLineCanvas);
+    var pdb3dConnectorRafId = null;
+    function getResidueScreenPos(container) {
+        if (!container || (!pdb3dClickAtom && !pdb3dClickPos)) return null;
+        var rect = container.getBoundingClientRect();
+        if (viewer && pdb3dClickAtom && typeof viewer.project === 'function') {
+            try {
+                var out = viewer.project(pdb3dClickAtom.x, pdb3dClickAtom.y, pdb3dClickAtom.z);
+                if (out && typeof out.x === 'number' && typeof out.y === 'number')
+                    return { x: out.x + rect.left, y: out.y + rect.top };
+            } catch (e) {}
+        }
+        if (pdb3dClickPos) return { x: pdb3dClickPos.x + rect.left, y: pdb3dClickPos.y + rect.top };
+        return null;
+    }
+    /** Get 3D position to use for connector: residue center (chain+resi) so we point at the residue we show, not a possibly wrong hit atom. */
+    function getResidueConnectorPos3D() {
+        if (!viewer) return pdb3dClickAtom;
+        if (pdb3dClickChain != null && pdb3dClickResi != null && typeof viewer.selectedAtoms === 'function') {
+            var atoms = viewer.selectedAtoms({ chain: pdb3dClickChain, resi: pdb3dClickResi + 1 });
+            if (atoms && atoms.length > 0) {
+                var cx = 0, cy = 0, cz = 0;
+                for (var i = 0; i < atoms.length; i++) {
+                    cx += atoms[i].x; cy += atoms[i].y; cz += atoms[i].z;
+                }
+                return { x: cx / atoms.length, y: cy / atoms.length, z: cz / atoms.length };
+            }
+        }
+        return pdb3dClickAtom;
+    }
+    function getResidueScreenPosInContainer(container) {
+        if (!container || (!pdb3dClickAtom && !pdb3dClickPos)) return null;
+        var a = getResidueConnectorPos3D();
+        if (viewer && a) {
+            try {
+                // 3Dmol GLViewer.modelToScreen(coords) — document coords; convert to container-relative
+                if (typeof viewer.modelToScreen === 'function') {
+                    var screen = viewer.modelToScreen({ x: a.x, y: a.y, z: a.z });
+                    if (screen && typeof screen.x === 'number' && typeof screen.y === 'number') {
+                        var rect = container.getBoundingClientRect();
+                        var scrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
+                        var scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
+                        var viewportX = screen.x - scrollX;
+                        var viewportY = screen.y - scrollY;
+                        return { x: viewportX - rect.left, y: viewportY - rect.top };
+                    }
+                }
+                var out = null;
+                if (typeof viewer.project === 'function')
+                    out = viewer.project(a.x, a.y, a.z);
+                else if (viewer.glviewer && typeof viewer.glviewer.project === 'function')
+                    out = viewer.glviewer.project(a.x, a.y, a.z);
+                if (out && typeof out.x === 'number' && typeof out.y === 'number') {
+                    var rect = container.getBoundingClientRect();
+                    var canvas = container.querySelector('canvas');
+                    if (canvas && (canvas.width || canvas.height)) {
+                        var cr = canvas.getBoundingClientRect();
+                        var cw = canvas.width || 1, ch = canvas.height || 1;
+                        return { x: (cr.left - rect.left) + out.x * (cr.width / cw), y: (cr.top - rect.top) + out.y * (cr.height / ch) };
+                    }
+                    return { x: out.x, y: out.y };
+                }
+                var cam = viewer.camera || (viewer.glviewer && viewer.glviewer.camera);
+                if (typeof $3Dmol !== 'undefined' && $3Dmol.Vector3 && cam) {
+                    var v = new $3Dmol.Vector3(a.x, a.y, a.z);
+                    if (typeof v.project === 'function') {
+                        v.project(cam);
+                        var rect = container.getBoundingClientRect();
+                        var canvas = container.querySelector('canvas');
+                        if (canvas && (canvas.width || canvas.height)) {
+                            var cr = canvas.getBoundingClientRect();
+                            var ndcX = (v.x + 1) * 0.5;
+                            var ndcY = 1 - (v.y + 1) * 0.5;
+                            return { x: (cr.left - rect.left) + ndcX * cr.width, y: (cr.top - rect.top) + ndcY * cr.height };
+                        }
+                    }
+                }
+            } catch (e) { /* projection failed, fall back to click pos */ }
+        }
+        if (pdb3dClickPos) return { x: pdb3dClickPos.x, y: pdb3dClickPos.y };
+        return null;
+    }
+    function nearestPopupCorner(container, popupRect, containerRect) {
+        var residue = getResidueScreenPosInContainer(container);
+        if (!residue) return { x: popupRect.left - containerRect.left, y: popupRect.top - containerRect.top };
+        var rx = residue.x, ry = residue.y;
+        var corners = [
+            { x: popupRect.left - containerRect.left, y: popupRect.top - containerRect.top },
+            { x: popupRect.right - containerRect.left, y: popupRect.top - containerRect.top },
+            { x: popupRect.right - containerRect.left, y: popupRect.bottom - containerRect.top },
+            { x: popupRect.left - containerRect.left, y: popupRect.bottom - containerRect.top }
+        ];
+        var best = corners[0];
+        var bestD = (corners[0].x - rx) * (corners[0].x - rx) + (corners[0].y - ry) * (corners[0].y - ry);
+        for (var i = 1; i < corners.length; i++) {
+            var d = (corners[i].x - rx) * (corners[i].x - rx) + (corners[i].y - ry) * (corners[i].y - ry);
+            if (d < bestD) { bestD = d; best = corners[i]; }
+        }
+        return best;
+    }
+    function drawConnectorLine() {
+        var container = dom.pdbViewerContainer;
+        if (!container || !connectorLineCanvas || clickPopup.style.display !== 'flex') return;
+        var containerRect = container.getBoundingClientRect();
+        var w = Math.max(1, Math.round(containerRect.width));
+        var h = Math.max(1, Math.round(containerRect.height));
+        if (connectorLineCanvas.width !== w || connectorLineCanvas.height !== h) {
+            connectorLineCanvas.width = w;
+            connectorLineCanvas.height = h;
+        }
+        var ctx = connectorLineCanvas.getContext('2d');
+        ctx.clearRect(0, 0, w, h);
+        var popupRect = clickPopup.getBoundingClientRect();
+        var residue = getResidueScreenPosInContainer(container);
+        if (!residue) return;
+        var corner = nearestPopupCorner(container, popupRect, containerRect);
+        ctx.strokeStyle = 'cyan';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(residue.x, residue.y);
+        ctx.lineTo(corner.x, corner.y);
+        ctx.stroke();
+    }
+    function scheduleConnectorDraw() {
+        if (pdb3dConnectorRafId) cancelAnimationFrame(pdb3dConnectorRafId);
+        function tick() {
+            drawConnectorLine();
+            if (clickPopup.style.display === 'flex' && (pdb3dClickAtom || pdb3dClickPos))
+                pdb3dConnectorRafId = requestAnimationFrame(tick);
+            else pdb3dConnectorRafId = null;
+        }
+        pdb3dConnectorRafId = requestAnimationFrame(tick);
+    }
     (function makePopupDraggable() {
         var container = dom.pdbViewerContainer;
         clickPopupHeading.addEventListener('mousedown', function (e) {
@@ -7258,6 +7810,7 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
                 var newTop = ev.clientY - cr.top - offsetY + container.scrollTop;
                 clickPopup.style.left = Math.max(0, newLeft) + 'px';
                 clickPopup.style.top = Math.max(0, newTop) + 'px';
+                drawConnectorLine();
             }
             function onUp() {
                 document.removeEventListener('mousemove', onMove);
@@ -7279,6 +7832,7 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
         clickPopupHeading.textContent = msg;
         if (clearLogo !== false) clickPopupLogoContainer.innerHTML = '';
         clickPopup.style.display = 'flex';
+        pdb3dLogoPanStack = [];
     }
     function showRegionLogoSelector(epitope, region, onOk) {
         var selectorOverlay = document.createElement('div');
@@ -7373,7 +7927,9 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
         buttonDiv.appendChild(okBtn);
         selectorModal.appendChild(buttonDiv);
         selectorOverlay.appendChild(selectorModal);
-        document.body.appendChild(selectorOverlay);
+        var fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+        var parent = (fsEl && fsEl.id === 'pdb3d-window') ? fsEl : document.body;
+        parent.appendChild(selectorOverlay);
     }
     function attachHoverAndClick() {
         try {
@@ -7393,7 +7949,10 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
                 var msg;
                 if (!state.selectedEpitope || !state.epitopes || state.epitopes.length === 0) {
                     msg = info + ' — No epitope selected. Load epitopes and use Select Epitope to choose one.';
-                    console.log('[PDB 3D click]', msg);
+                    pdb3dClickAtom = null;
+                    pdb3dClickChain = null;
+                    pdb3dClickResi = null;
+                    pdb3dClickPos = null;
                     showClickPopup(msg);
                     return;
                 }
@@ -7401,14 +7960,16 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
                 var refCoord = getRefCoordForPdbResidue(ch, atom.resi);
                 if (refCoord === null || refCoord === undefined) {
                     msg = info + ' — Residue not in alignment (or could not map to reference).';
-                    console.log('[PDB 3D click]', msg);
+                    pdb3dClickAtom = null;
+                    pdb3dClickChain = null;
+                    pdb3dClickResi = null;
+                    pdb3dClickPos = null;
                     showClickPopup(msg);
                     return;
                 }
                 var epitope = state.epitopes.find(function (e) { return e.name === state.selectedEpitope; });
                 if (!epitope || !epitope.regions || epitope.regions.length === 0) {
                     msg = info + ' — Ref coord ' + refCoord + ' (no regions defined for selected epitope).';
-                    console.log('[PDB 3D click]', msg);
                     showClickPopup(msg);
                     return;
                 }
@@ -7422,7 +7983,12 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
                 }
                 if (region) {
                     msg = info + ' — Epitope region: ' + region.start + ' - ' + region.end;
-                    console.log('[PDB 3D click]', msg);
+                    // console.log('[Connector] endpoint: ' + info + ' ref ' + refCoord);
+                    var cr = container.getBoundingClientRect();
+                    pdb3dClickAtom = { x: atom.x, y: atom.y, z: atom.z };
+                    pdb3dClickChain = (atom.chain || ' ').trim() || 'A';
+                    pdb3dClickResi = atom.resi;
+                    pdb3dClickPos = { x: event.clientX - cr.left, y: event.clientY - cr.top };
                     showClickPopup(msg);
                     if (state.sequenceGroups && state.groupNames && state.groupNames.size > 0) {
                         showRegionLogoSelector(epitope, region, function (bottomSeq, bottomIndex, bottomLabel, groupIds) {
@@ -7443,6 +8009,19 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
                             var sliderValue = document.createElement('span');
                             sliderValue.textContent = '1.00';
                             sliderValue.style.cssText = 'font-size:12px;';
+                            var gapLabel = document.createElement('label');
+                            gapLabel.textContent = 'GAP: ';
+                            gapLabel.style.cssText = 'margin-right:8px;font-size:12px;margin-left:12px;';
+                            var gapSlider = document.createElement('input');
+                            gapSlider.type = 'range';
+                            gapSlider.min = '10';
+                            gapSlider.max = '20';
+                            gapSlider.step = '1';
+                            gapSlider.value = String(state.logoCharWidth != null ? state.logoCharWidth : 15);
+                            gapSlider.style.cssText = 'width:120px;margin-right:6px;vertical-align:middle;';
+                            var gapValue = document.createElement('span');
+                            gapValue.textContent = String(state.logoCharWidth != null ? state.logoCharWidth : 15);
+                            gapValue.style.cssText = 'font-size:12px;';
                             function renderRegionLogo() {
                                 var oldSvg = clickPopupLogoContainer.querySelector('svg');
                                 if (oldSvg) oldSvg.remove();
@@ -7454,19 +8033,31 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
                                 sliderValue.textContent = powerValue.toFixed(2);
                                 renderRegionLogo();
                             });
+                            gapSlider.addEventListener('input', function (e) {
+                                state.logoCharWidth = parseFloat(e.target.value);
+                                gapValue.textContent = String(Math.round(state.logoCharWidth));
+                                renderRegionLogo();
+                            });
                             sliderContainer.appendChild(sliderLabel);
                             sliderContainer.appendChild(slider);
                             sliderContainer.appendChild(sliderValue);
+                            sliderContainer.appendChild(gapLabel);
+                            sliderContainer.appendChild(gapSlider);
+                            sliderContainer.appendChild(gapValue);
                             clickPopupLogoContainer.innerHTML = '';
                             clickPopupLogoContainer.appendChild(sliderContainer);
                             renderRegionLogo();
+                            scheduleConnectorDraw();
                         });
                     } else {
                         clickPopupLogoContainer.textContent = 'Group sequences to see region logo.';
                     }
                 } else {
                     msg = info + ' — Ref coord ' + refCoord + ' not in any epitope region.';
-                    console.log('[PDB 3D click]', msg);
+                    pdb3dClickAtom = null;
+                    pdb3dClickChain = null;
+                    pdb3dClickResi = null;
+                    pdb3dClickPos = null;
                     showClickPopup(msg);
                 }
             });
@@ -7747,8 +8338,8 @@ function showSequenceLogo() {
         const fileName = state.currentFileName || dom.file?.files?.[0]?.name || 'Unknown';
         const epitopeName = epitope.name; // Capture epitope name for export closure
         
-        // Power transformation slider
-        let powerValue = 1.0; // Initialize to 1 (no transformation)
+        // Power and horizontal gap sliders
+        let powerValue = 1.0;
         const sliderContainer = document.createElement('div');
         sliderContainer.style.cssText = 'margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;';
         
@@ -7768,22 +8359,50 @@ function showSequenceLogo() {
         sliderValue.textContent = '1.00';
         sliderValue.style.cssText = 'display: inline-block; min-width: 50px; font-weight: bold;';
         
-        slider.addEventListener('input', (e) => {
-            powerValue = parseFloat(e.target.value);
-            sliderValue.textContent = powerValue.toFixed(2);
-            // Regenerate logo with new power value
+        const gapLabel = document.createElement('label');
+        gapLabel.textContent = 'GAP: ';
+        gapLabel.style.cssText = 'display: inline-block; margin: 0 10px 0 20px; font-weight: bold;';
+        
+        const gapSlider = document.createElement('input');
+        gapSlider.type = 'range';
+        gapSlider.min = '10';
+        gapSlider.max = '20';
+        gapSlider.step = '1';
+        gapSlider.value = String(state.logoCharWidth != null ? state.logoCharWidth : 15);
+        gapSlider.style.cssText = 'width: 120px; margin-right: 10px;';
+        
+        const gapValue = document.createElement('span');
+        gapValue.textContent = String(state.logoCharWidth != null ? state.logoCharWidth : 15);
+        gapValue.style.cssText = 'display: inline-block; min-width: 24px; font-weight: bold;';
+        
+        function regenerateLogo() {
             const oldSvg = modal.querySelector('svg');
             if (oldSvg) oldSvg.remove();
             const newSvg = generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel, powerValue);
             modal.insertBefore(newSvg, sliderContainer.nextSibling);
+        }
+        
+        slider.addEventListener('input', (e) => {
+            powerValue = parseFloat(e.target.value);
+            sliderValue.textContent = powerValue.toFixed(2);
+            regenerateLogo();
+        });
+        
+        gapSlider.addEventListener('input', (e) => {
+            state.logoCharWidth = parseFloat(e.target.value);
+            gapValue.textContent = String(Math.round(state.logoCharWidth));
+            regenerateLogo();
         });
         
         sliderContainer.appendChild(sliderLabel);
         sliderContainer.appendChild(slider);
         sliderContainer.appendChild(sliderValue);
+        sliderContainer.appendChild(gapLabel);
+        sliderContainer.appendChild(gapSlider);
+        sliderContainer.appendChild(gapValue);
         modal.appendChild(sliderContainer);
         
-        // Generate the logo with initial power value
+        // Generate the logo with initial power and gap values
         const svg = generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel, powerValue);
         modal.appendChild(svg);
         
@@ -7844,28 +8463,20 @@ function showSequenceLogo() {
 }
 
 function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomLabel, powerTransform = 1.0) {
-    // Amino acid color mapping
-    const aaColors = {
-        'D': '#e74c3c', 'E': '#e74c3c', // Red - acidic
-        'K': '#3498db', 'R': '#3498db', 'H': '#3498db', // Blue - basic
-        'S': '#2ecc71', 'N': '#2ecc71', 'T': '#2ecc71', 'G': '#2ecc71', 'Q': '#2ecc71', // Green - polar
-        'F': '#f39c12', 'A': '#f39c12', 'P': '#f39c12', 'I': '#f39c12', 
-        'L': '#f39c12', 'V': '#f39c12', 'M': '#f39c12', 'W': '#f39c12', 'Y': '#f39c12', // Orange - hydrophobic
-        'C': '#95a5a6', // Gray
-        '-': '#bdc3c7' // Light gray for gaps
-    };
-    
-    // Get reference sequence for coordinate mapping
+    // Use CONFIG.colors.AA (app-wide palette) so logo matches sequence panel and molecule viewer
+    function aaFill(letter) {
+        return (CONFIG.colors.AA[letter] || CONFIG.colors.AA['default'] || '#000000');
+    }
+
     const refSeq = state.viewSequences[state.refIndex]?.seq;
     if (!refSeq || !state.refMap) {
         alert("Reference sequence or coordinate map not available.");
         return document.createElement('div');
     }
     
-    // For each region, get alignment columns where ref has a residue and ref coord is in [start,end] (no trailing/leading gaps)
     const regionColumnRanges = [];
     const allColumns = new Set();
-    const coordToCol = new Map(); // Map from reference coordinate to alignment column(s)
+    const coordToCol = new Map();
     
     for (const region of epitope.regions) {
         const cols = getAlignmentColumnsForRefRegion(region);
@@ -7884,50 +8495,39 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         }
     }
     
-    // Create sorted list of unique coordinates that appear in the selected columns
     const positions = Array.from(new Set(Array.from(allColumns).map(col => state.refMap[col]))).sort((a, b) => a - b);
-    
-    // Create sorted list of all selected alignment columns
     const sortedColumns = Array.from(allColumns).sort((a, b) => a - b);
     
-    // Get bottom sequence amino acids for all selected columns
-    // Store by coordinate for compatibility, but we'll access by column when drawing
     const bottomAAs = new Map();
     for (const col of allColumns) {
         const coord = state.refMap[col];
         if (col < bottomSeq.seq.length) {
             const aa = bottomSeq.seq[col];
             if (aa !== '-') {
-                // Store by coordinate (may overwrite if same coord appears in multiple columns)
                 bottomAAs.set(coord, aa);
             }
         }
     }
     
-    // Calculate frequencies for each group
     const groupFrequencies = [];
     for (const groupId of groupIds) {
         const groupValue = state.groupNames.get(groupId);
-        const frequencies = new Map(); // coord -> Map(aa -> count)
+        const frequencies = new Map();
         
-        // Get all sequences in this group
         const groupSeqs = [];
         for (let i = 0; i < state.rawSequences.length; i++) {
             const seq = state.rawSequences[i];
-            if (i === bottomIndex) continue; // Skip bottom sequence
+            if (i === bottomIndex) continue;
             if (seq.name && state.sequenceGroups.get(seq.name) === groupId) {
                 groupSeqs.push(seq);
             }
         }
         
-        // Count amino acids at each alignment column (only those different from bottom sequence)
-        // Store frequencies per column, not per coordinate, to handle gaps correctly
-        const columnFrequencies = new Map(); // col -> Map(aa -> count)
+        const columnFrequencies = new Map();
         
         for (const col of allColumns) {
             const freqMap = new Map();
             
-            // Get bottom AA for this specific alignment column
             let bottomAA = null;
             let bottomIsGap = false;
             if (col < bottomSeq.seq.length) {
@@ -7965,7 +8565,6 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         }
         
         // Convert column frequencies to coordinate-based frequencies for display
-        // (group columns by coordinate for the logo display)
         for (const col of allColumns) {
             const coord = state.refMap[col];
             if (!frequencies.has(coord)) {
@@ -7991,13 +8590,14 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         });
     }
     
-    // SVG parameters
-    const charWidth = 18;
+    // SVG parameters: charWidth = horizontal gap only (slider); logoCellHeight = fixed vertical cell height
+    const charWidth = (state.logoCharWidth != null && typeof state.logoCharWidth === 'number') ? Math.max(10, Math.min(20, state.logoCharWidth)) : 15;
+    const logoCellHeight = 18; // Fixed vertical cell height (not affected by horizontal gap slider)
     const baseFontSize = 16;
     const baseHeight = baseFontSize; // Base height matches font size
     const capHeightRatio = 0.68; // Typical cap-height to font-size ratio for Courier New monospace font (baseline to top of capital letters)
-    const logoHeight = charWidth * 1.0; // Bottom logo height equals the character width (18px)
-    const groupLogoHeight = logoHeight * 3; // Group logo height is 3x larger to show rare mutations (90px)
+    const logoHeight = logoCellHeight * 1.0; // Bottom logo row height (fixed)
+    const groupLogoHeight = logoHeight * 3; // Group logo height is 3x larger to show rare mutations (fixed)
     const padding_horizontal = 40; // Horizontal padding (left and right)
     const padding_vertical = 40;   // Vertical padding (top and bottom)
     
@@ -8316,13 +8916,13 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         text.setAttribute('font-size', '16');
         text.setAttribute('font-weight', 'bold');
         if (isGap) {
-            text.setAttribute('fill', '#808080'); // Grey for gaps
+            text.setAttribute('fill', aaFill('-'));
             text.textContent = '∇'; // Nabla character for gaps
         } else if (isDot) {
-            text.setAttribute('fill', '#808080'); // Grey for dots (None option)
+            text.setAttribute('fill', aaFill('default'));
             text.textContent = '.'; // Dot character
         } else if (bottomAA) {
-            text.setAttribute('fill', aaColors[bottomAA] || '#000');
+            text.setAttribute('fill', aaFill(bottomAA));
             text.textContent = bottomAA;
         }
         if (isGap || isDot || bottomAA) {
@@ -8458,11 +9058,11 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
                     text.setAttribute('font-family', 'Courier New, Courier, monospace'); // Fixed-width font for consistent character alignment
                     text.setAttribute('font-size', baseFontSize.toString());
                     text.setAttribute('font-weight', 'bold');
-                    // Handle gaps (nabla character) with grey color
+                    // Handle gaps (nabla character) and AAs using CONFIG.colors.AA
                     if (aa === '∇') {
-                        text.setAttribute('fill', '#808080'); // Grey for gaps
+                        text.setAttribute('fill', aaFill('-'));
                     } else {
-                        text.setAttribute('fill', aaColors[aa] || '#000');
+                        text.setAttribute('fill', aaFill(aa));
                     }
                     
                     // Scale vertically from the baseline
