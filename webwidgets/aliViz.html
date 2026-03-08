@@ -648,11 +648,12 @@
     <div class="item" id="ctx-info-cluster">Cluster: Not assigned</div>
 </div>
 
-<div id="pdb3d-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 10001;">
-    <div id="pdb3d-window" style="position: fixed; left: 5%; top: 5%; width: 90vw; max-width: 1000px; height: 85vh; background: var(--panel-bg, #fff); border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; z-index: 10002;">
+<div id="pdb3d-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 10001; pointer-events: none;">
+    <div id="pdb3d-window" style="position: fixed; left: 5%; top: 5%; width: 90vw; max-width: 1000px; height: 85vh; background: var(--panel-bg, #fff); border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; z-index: 10002; pointer-events: auto;">
         <div id="pdb3d-title-bar" style="flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border-color, #d1d5db); cursor: move; user-select: none; background: #fff; z-index: 10;">
             <span id="pdb3d-title" style="font-weight: 600;">PDB 3D Structure</span>
             <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btn-new-epitope-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">New epitope</button>
                 <button id="btn-fullscreen-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Full screen</button>
                 <button id="btn-export-png-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Export PNG</button>
                 <button id="btn-close-pdb3d" type="button" style="padding: 6px 12px; cursor: pointer;">Close</button>
@@ -699,6 +700,28 @@
             </div>
         </div>
         <div id="pdb3d-viewer" style="flex: 1; min-height: 0; width: 100%; position: relative; z-index: 1;"></div>
+    </div>
+</div>
+<div id="new-epitope-dialog-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 10010;">
+    <div id="new-epitope-dialog" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); min-width: 320px;">
+        <h3 style="margin: 0 0 15px 0;">New epitope (distance-based)</h3>
+        <p style="margin: 0 0 12px 0; font-size: 12px; color: #374151;">Select one intrinsic and one extrinsic chain. Compute minimum distance from each intrinsic residue to the extrinsic chain; residues below the cutoff form the epitope.</p>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Intrinsic chain</label>
+            <select id="new-epitope-intrinsic-chain" style="width: 100%; padding: 6px 8px; font-size: 13px;"></select>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Extrinsic chain</label>
+            <select id="new-epitope-extrinsic-chain" style="width: 100%; padding: 6px 8px; font-size: 13px;"></select>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px;">Distance cutoff (&Aring;): <span id="new-epitope-cutoff-value">8</span></label>
+            <input type="range" id="new-epitope-cutoff-slider" min="3" max="20" step="0.5" value="8" style="width: 100%;">
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+            <button type="button" id="new-epitope-cancel" style="padding: 8px 16px; border: 1px solid #ccc; background: white; cursor: pointer;">Cancel</button>
+            <button type="button" id="new-epitope-compute" style="padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: white; cursor: pointer;">Compute</button>
+        </div>
     </div>
 </div>
 
@@ -1256,6 +1279,66 @@ async function init() {
     }
     if (dom.pdbOverlay) {
         dom.pdbOverlay.addEventListener('click', e => { if (e.target === dom.pdbOverlay) closePdbViewer(); });
+    }
+    var btnNewEpitopePdb3d = document.getElementById('btn-new-epitope-pdb3d');
+    var newEpitopeOverlay = document.getElementById('new-epitope-dialog-overlay');
+    var newEpitopeIntrinsicSel = document.getElementById('new-epitope-intrinsic-chain');
+    var newEpitopeExtrinsicSel = document.getElementById('new-epitope-extrinsic-chain');
+    var newEpitopeCutoffSlider = document.getElementById('new-epitope-cutoff-slider');
+    var newEpitopeCutoffValue = document.getElementById('new-epitope-cutoff-value');
+    var newEpitopeCancel = document.getElementById('new-epitope-cancel');
+    var newEpitopeCompute = document.getElementById('new-epitope-compute');
+    if (btnNewEpitopePdb3d && newEpitopeOverlay) {
+        btnNewEpitopePdb3d.addEventListener('click', function () {
+            if (!pdb3dIntrinsicChainIds.length || !pdb3dExtrinsicChainIds.length) {
+                alert('Open the molecule viewer with at least one intrinsic and one extrinsic chain first.');
+                return;
+            }
+            newEpitopeIntrinsicSel.innerHTML = '';
+            pdb3dIntrinsicChainIds.forEach(function (id) {
+                var opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                newEpitopeIntrinsicSel.appendChild(opt);
+            });
+            newEpitopeExtrinsicSel.innerHTML = '';
+            pdb3dExtrinsicChainIds.forEach(function (id) {
+                var opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                newEpitopeExtrinsicSel.appendChild(opt);
+            });
+            if (newEpitopeCutoffSlider && newEpitopeCutoffValue) {
+                newEpitopeCutoffValue.textContent = newEpitopeCutoffSlider.value;
+            }
+            newEpitopeOverlay.style.display = 'flex';
+        });
+    }
+    if (newEpitopeCutoffSlider && newEpitopeCutoffValue) {
+        newEpitopeCutoffSlider.addEventListener('input', function () {
+            newEpitopeCutoffValue.textContent = newEpitopeCutoffSlider.value;
+        });
+    }
+    if (newEpitopeCancel && newEpitopeOverlay) {
+        newEpitopeCancel.addEventListener('click', function () { newEpitopeOverlay.style.display = 'none'; });
+    }
+    if (newEpitopeCompute && newEpitopeOverlay) {
+        newEpitopeCompute.addEventListener('click', function () {
+            var intrinsicChain = newEpitopeIntrinsicSel && newEpitopeIntrinsicSel.value;
+            var extrinsicChain = newEpitopeExtrinsicSel && newEpitopeExtrinsicSel.value;
+            var cutoff = newEpitopeCutoffSlider ? parseFloat(newEpitopeCutoffSlider.value) : 8;
+            if (!intrinsicChain || !extrinsicChain) {
+                alert('Please select one intrinsic and one extrinsic chain.');
+                return;
+            }
+            var result = computeDistanceBasedEpitope(state.pdbFileContent, intrinsicChain, extrinsicChain, cutoff);
+            if (result && result.regions && result.regions.length > 0) {
+                if (!state.epitopes) state.epitopes = [];
+                state.epitopes.push({ name: result.name, regions: result.regions });
+                selectEpitope(result.name);
+            }
+            newEpitopeOverlay.style.display = 'none';
+        });
     }
     dom.btnInferTree.addEventListener('click', showInferModal);
     dom.btnExportTree.addEventListener('click', exportTree);
@@ -2421,13 +2504,13 @@ function inferTreeNJ() {
     
     setTimeout(() => {
         try {
-            // Exclude reference and PDB chain sequences from tree inference
+            // Exclude reference, [subtype], and PDB chain sequences from tree inference
             const refName = state.rawSequences[state.refIndex]?.name;
             const nonRefSequences = state.rawSequences.filter((s, idx) =>
-                idx !== state.refIndex && !isPdbChainSequence(s));
+                idx !== state.refIndex && idx !== state.subtypeIndex && !isPdbChainSequence(s));
             
             if (nonRefSequences.length < 2) {
-                alert("Need at least 2 non-reference, non-PDB sequences to infer a tree.");
+                alert("Need at least 2 sequences (excluding reference, subtype, and PDB) to infer a tree.");
                 showOverlay(false);
                 return;
             }
@@ -2466,21 +2549,21 @@ async function runFastTreeTask() {
     dom.overlaySub.textContent = "via bioWASM";
 
     try {
-        // Exclude reference and PDB chain sequences from tree inference
+        // Exclude reference, [subtype], and PDB chain sequences from tree inference
         const nonRefSequences = state.rawSequences.filter((s, idx) =>
-            idx !== state.refIndex && !isPdbChainSequence(s));
+            idx !== state.refIndex && idx !== state.subtypeIndex && !isPdbChainSequence(s));
         
         if (nonRefSequences.length < 2) {
-            alert("Need at least 2 non-reference, non-PDB sequences to infer a tree.");
+            alert("Need at least 2 sequences (excluding reference, subtype, and PDB) to infer a tree.");
             showOverlay(false);
             return;
         }
         
-        // Use indices as temporary names (excluding ref and PDB chains)
+        // Use indices as temporary names (excluding ref, subtype, and PDB chains)
         const indexMap = new Map();
         let newIdx = 0;
         state.rawSequences.forEach((s, origIdx) => {
-            if (origIdx !== state.refIndex && !isPdbChainSequence(s)) {
+            if (origIdx !== state.refIndex && origIdx !== state.subtypeIndex && !isPdbChainSequence(s)) {
                 indexMap.set(newIdx, origIdx);
                 newIdx++;
             }
@@ -2783,25 +2866,17 @@ function showRerootModal() {
     const select = document.getElementById('sel-reroot-target');
     select.innerHTML = '';
     
-    // Add founder first (default selection)
+    // Add founder only (subtype is not in the tree after inference, so cannot be a root option)
     if (hasFounder) {
         const option = document.createElement('option');
         option.value = 'founder';
         option.textContent = '[Founder]';
-        option.selected = true; // Make founder the default
+        option.selected = true;
         select.appendChild(option);
     }
     
-    // Add subtype second
-    if (hasSubtype) {
-        const option = document.createElement('option');
-        option.value = 'subtype';
-        option.textContent = '[SUBTYPE]';
-        select.appendChild(option);
-    }
-    
-    if (!hasSubtype && !hasFounder) {
-        alert("No subtype or founder sequence found. Please add a founder sequence or ensure the subtype is present.");
+    if (!hasFounder) {
+        alert("No founder sequence found in the tree. Add a founder sequence to reroot.");
         return;
     }
     
@@ -3260,9 +3335,8 @@ function rerootTree(root, targetNode, targetType = 'subtype') {
             subtypeNode.len = 0;
         } else if (subtypeNode) {
             // Subtype found but not a direct child of root - no adjustment needed
-        } else {
-            console.warn(`Subtype "${subtypeName}" not found in tree after rerooting`);
         }
+        // If subtype not found: expected when subtype was excluded from tree inference; no warning
     }
     
     // The target node is now the root
@@ -3460,14 +3534,18 @@ function applyTreeOrder(root) {
         }
     });
     
-    // Order: Reference first, then PDB chains, then tree-ordered non-PDB, then any remaining non-PDB
+    // Order: Reference first, then Subtype (if present), then PDB chains, then tree-ordered non-PDB, then any remaining
     const newSeqList = [];
     if (refSeq) {
         newSeqList.push(refSeq); // Reference always first
     }
-    pdbChainsInOrder.forEach(s => newSeqList.push(s)); // PDB chains immediately after reference
+    if (subtypeSeq && subtypeName) {
+        newSeqList.push(subtypeSeq); // Subtype always second
+        seqMap.delete(subtypeName); // So it is not added again in tree order
+    }
+    pdbChainsInOrder.forEach(s => newSeqList.push(s)); // PDB chains after reference and subtype
     leafOrder.forEach(name => {
-        if (name !== refName && seqMap.has(name)) {
+        if (name !== refName && name !== subtypeName && seqMap.has(name)) {
             newSeqList.push(seqMap.get(name));
             seqMap.delete(name);
         }
@@ -3799,14 +3877,31 @@ function showProjectionPlot(selectedMethod) {
     const ys = projectionCoords.map(c => c.y);
     const rangeX = Math.max(...xs) - Math.min(...xs);
     const rangeY = Math.max(...ys) - Math.min(...ys);
-    const minRange = Math.min(rangeX, rangeY);
+    // Use the larger of the two ranges so radius is on the scale of the data (handles degenerate y=0 case)
+    const effectiveRange = (rangeX > 0 || rangeY > 0) ? Math.max(rangeX, rangeY) : 1;
     
-    // Set epsilon slider step to 0.01 of the minimum range
-    const epsStep = minRange * 0.01;
-    const epsMin = epsStep; // Minimum should be at least one step
-    // For UMAP, set max to 2x current spread value; for MDS, use 2x minimum range
-    const epsMax = selectedMethod === 'umap' ? spread * 2 : minRange * 2;
-    const epsDefault = minRange * 0.1; // Default to 10% of minimum range
+    // UMAP: max = half of max dimension range; initial = half of that; step = 1/10 of initial. MDS: max = effectiveRange/2, step = max/10
+    const epsMin = 0;
+    let epsMax, epsStep, epsDefault;
+    if (selectedMethod === 'umap') {
+        epsMax = effectiveRange / 2;
+        epsDefault = epsMax / 2;  // half of max
+        epsStep = epsDefault / 10;  // 1/10 of initial
+    } else {
+        epsMax = effectiveRange / 2;
+        epsStep = epsMax > 0 ? epsMax / 10 : 0.1;
+        epsDefault = epsMax / 2;  // MDS: start at half the maximum
+    }
+    
+    // Console report for projection/clustering debugging (MDS or UMAP)
+    const methodLabel = selectedMethod === 'umap' ? 'UMAP' : 'MDS';
+    const dim1Min = Math.min(...xs);
+    const dim1Max = Math.max(...xs);
+    const dim2Min = Math.min(...ys);
+    const dim2Max = Math.max(...ys);
+    console.log('[' + methodLabel + ' projection] dimension 1 (x): min =', dim1Min, ', max =', dim1Max);
+    console.log('[' + methodLabel + ' projection] dimension 2 (y): min =', dim2Min, ', max =', dim2Max);
+    console.log('[' + methodLabel + ' clustering] maximum radius (epsMax) =', epsMax, ', radius step size (epsStep) =', epsStep);
     
     // Store data for DBSCAN updates
     window.mdsData = { leaves, coords: projectionCoords, subtypeName };
@@ -3817,18 +3912,18 @@ function showProjectionPlot(selectedMethod) {
     const epsValue = document.getElementById('mds-eps-value');
     const minPtsValue = document.getElementById('mds-minpts-value');
     
-    // Update epsilon slider attributes based on projection data
+    // Update epsilon slider attributes based on projection data (no rounding of max)
     epsSlider.min = epsMin.toString();
     epsSlider.max = epsMax.toString();
     epsSlider.step = epsStep.toString();
     epsSlider.value = epsDefault.toString();
     
-    // Calculate decimal places for display based on step size
-    // Clamp to valid range for toFixed() (0-100)
-    let decimalPlaces = 2; // Default
-    if (epsStep > 0 && isFinite(epsStep)) {
-        const calculated = Math.max(0, -Math.floor(Math.log10(epsStep)) + 1);
-        decimalPlaces = Math.min(100, Math.max(0, calculated));
+    // Decimal places for display: use enough so max radius is never shown as 0.00
+    let decimalPlaces = 2;
+    if (epsMax > 0 && epsMax < 1 && isFinite(epsMax)) {
+        decimalPlaces = Math.min(100, Math.max(2, Math.ceil(-Math.log10(epsMax)) + 2));
+    } else if (epsStep > 0 && isFinite(epsStep) && epsStep < 1) {
+        decimalPlaces = Math.min(100, Math.max(2, Math.ceil(-Math.log10(epsStep)) + 2));
     }
     
     // Store current clusters for apply button
@@ -3842,17 +3937,16 @@ function showProjectionPlot(selectedMethod) {
             minDist = minDistSlider ? parseFloat(minDistSlider.value) : 0.1;
             projectionCoords = performProjection(selectedMethod, distanceMatrix, nNeighbors, spread, minDist);
             
-            // Update coordinate ranges for epsilon slider
+            // UMAP: max = half of max dimension range; initial = half of max; step = 1/10 of initial
             const xs = projectionCoords.map(c => c.x);
             const ys = projectionCoords.map(c => c.y);
             const rangeX = Math.max(...xs) - Math.min(...xs);
             const rangeY = Math.max(...ys) - Math.min(...ys);
-            const minRange = Math.min(rangeX, rangeY);
-            const epsStep = minRange * 0.01;
-            const epsMin = epsStep;
-            // For UMAP, set max to 2x current spread value
-            const epsMax = spread * 2;
-            const epsDefault = minRange * 0.1;
+            const effectiveRange = (rangeX > 0 || rangeY > 0) ? Math.max(rangeX, rangeY) : 1;
+            const epsMax = effectiveRange / 2;
+            const epsDefault = epsMax / 2;
+            const epsStep = epsDefault / 10;
+            const epsMin = 0;
             
             epsSlider.min = epsMin.toString();
             epsSlider.max = epsMax.toString();
@@ -4298,6 +4392,7 @@ function showHierarchicalModal() {
     }
     
     const maxDepth = state.tree.maxDepth;
+    console.log('[Hierarchical clustering] max root-to-leaf length =', maxDepth);
     
     // Set up sliders
     const slider1 = document.getElementById('hier-slider-1');
@@ -4307,19 +4402,27 @@ function showHierarchicalModal() {
     const value2 = document.getElementById('hier-value-2');
     const value3 = document.getElementById('hier-value-3');
     
-    // Set max values (allow one step past maximum depth)
-    const step = 0.01;
-    slider1.max = maxDepth + step;
-    slider2.max = maxDepth + step;
-    slider3.max = maxDepth + step;
+    // Max = max root-to-leaf rounded up (e.g. 0.005746 → 0.006, 0.0345 → 0.04); step = 0.001
+    const sliderMax = maxDepth < 0.01
+        ? Math.ceil(maxDepth * 1000) / 1000
+        : Math.ceil(maxDepth * 100) / 100;
+    const step = 0.001;
+    slider1.max = sliderMax.toString();
+    slider2.max = sliderMax.toString();
+    slider3.max = sliderMax.toString();
+    slider1.step = step.toString();
+    slider2.step = step.toString();
+    slider3.step = step.toString();
     
-    // Initialize values
-    slider1.value = 0;
-    slider2.value = 0;
-    slider3.value = 0;
-    value1.textContent = '0.00';
-    value2.textContent = '0.00';
-    value3.textContent = '0.00';
+    // Start the three sliders at 0.001, 0.002, 0.003
+    slider1.value = 0.001;
+    slider2.value = 0.002;
+    slider3.value = 0.003;
+    value1.textContent = (0.001).toFixed(3);
+    value2.textContent = (0.002).toFixed(3);
+    value3.textContent = (0.003).toFixed(3);
+    state.hierarchicalDepths = [0.001, 0.002, 0.003];
+    applyHierarchicalClustering(0.001, 0.002, 0.003);
     
     // Function to update clustering
     function updateHierarchicalClustering() {
@@ -4336,18 +4439,18 @@ function showHierarchicalModal() {
     // Slider event handlers with constraints
     slider1.addEventListener('input', () => {
         const val = parseFloat(slider1.value);
-        value1.textContent = val.toFixed(2);
+        value1.textContent = val.toFixed(3);
         
         // Constrain slider2 >= slider1
         if (parseFloat(slider2.value) < val) {
             slider2.value = val;
-            value2.textContent = val.toFixed(2);
+            value2.textContent = val.toFixed(3);
         }
         
         // Constrain slider3 >= slider2
         if (parseFloat(slider3.value) < parseFloat(slider2.value)) {
             slider3.value = slider2.value;
-            value3.textContent = slider2.value;
+            value3.textContent = parseFloat(slider2.value).toFixed(3);
         }
         
         updateHierarchicalClustering();
@@ -4360,16 +4463,16 @@ function showHierarchicalModal() {
         // Constrain slider2 >= slider1
         if (val < val1) {
             slider2.value = val1;
-            value2.textContent = val1.toFixed(2);
+            value2.textContent = val1.toFixed(3);
             return;
         }
         
-        value2.textContent = val.toFixed(2);
+        value2.textContent = val.toFixed(3);
         
         // Constrain slider3 >= slider2
         if (parseFloat(slider3.value) < val) {
             slider3.value = val;
-            value3.textContent = val.toFixed(2);
+            value3.textContent = val.toFixed(3);
         }
         
         updateHierarchicalClustering();
@@ -4382,11 +4485,11 @@ function showHierarchicalModal() {
         // Constrain slider3 >= slider2
         if (val < val2) {
             slider3.value = val2;
-            value3.textContent = val2.toFixed(2);
+            value3.textContent = val2.toFixed(3);
             return;
         }
         
-        value3.textContent = val.toFixed(2);
+        value3.textContent = val.toFixed(3);
         updateHierarchicalClustering();
     });
     
@@ -4817,16 +4920,15 @@ function performClassicalMDS(distanceMatrix) {
     
     // Check if second eigenvalue is too small (relative to first)
     const ratio = lambda2 / (lambda1 + 1e-10);
+    const xScale = Math.sqrt(lambda1);
     
     for (let i = 0; i < n; i++) {
-        const x = eigenResult.vectors[0][i] * Math.sqrt(lambda1);
+        const x = eigenResult.vectors[0][i] * xScale;
         let y = eigenResult.vectors[1][i] * Math.sqrt(lambda2);
         
-        // If second eigenvalue is very small, still use it but scale appropriately
-        // This ensures we get some spread in the second dimension
         if (ratio < 1e-6 && lambda2 > 0) {
-            // Scale up the second dimension to make it visible
-            y = eigenResult.vectors[1][i] * Math.sqrt(lambda1) * 0.1;
+            // Second eigenvalue very small: scale second dimension for visibility
+            y = eigenResult.vectors[1][i] * xScale * 0.1;
         }
         
         coords.push({ x, y });
@@ -4943,7 +5045,7 @@ function performDBSCAN(coords, eps, minPts, subtypeIndex = null, founderIndex = 
     const n = coords.length;
     const visited = new Array(n).fill(false);
     const clusters = new Array(n).fill(-1); // -1 means noise/unassigned
-    let clusterId = 0;
+    let clusterId = 1; // Cluster numbers start at 1 (subtype is not part of clustering)
     
     // Calculate Euclidean distances between all points
     function distance(p1, p2) {
@@ -5307,37 +5409,19 @@ function drawMdsPlot(leaves, coords, subtypeName, clusters = null, epsilon = nul
         }
     });
     
-    // Draw legend
+    // Draw legend (no Subtype marker; subtype is not part of clustering)
     ctx.fillStyle = '#111827';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';
     let legendY = padding.top - 25;
     ctx.fillText('Legend:', padding.left, legendY);
-    
-    // Subtype
-    ctx.fillStyle = '#dc2626';
-    ctx.strokeStyle = '#991b1b';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    const subtypeX = padding.left + 60;
-    const subtypeY = legendY - 5;
-    const size = 6;
-    ctx.moveTo(subtypeX, subtypeY - size);
-    ctx.lineTo(subtypeX + size, subtypeY);
-    ctx.lineTo(subtypeX, subtypeY + size);
-    ctx.lineTo(subtypeX - size, subtypeY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#111827';
-    ctx.fillText('Subtype', subtypeX + 10, subtypeY + 4);
+    const legendBaselineY = legendY - 5;
     
     // Show cluster info if clustering is active
     if (clusters) {
         const numClusters = new Set(clusters.filter(c => c !== -1)).size;
         const numNoise = clusters.filter(c => c === -1).length;
-        
-        let xPos = subtypeX + 80;
+        let xPos = padding.left + 60;
         
         if (numClusters > 0) {
             ctx.fillText(`Clusters: ${numClusters}`, xPos, legendY);
@@ -5347,13 +5431,13 @@ function drawMdsPlot(leaves, coords, subtypeName, clusters = null, epsilon = nul
         if (numNoise > 0) {
             ctx.fillStyle = noiseColor;
             ctx.beginPath();
-            ctx.arc(xPos, subtypeY, 5, 0, 2 * Math.PI);
+            ctx.arc(xPos, legendBaselineY, 5, 0, 2 * Math.PI);
             ctx.fill();
             ctx.strokeStyle = '#6b7280';
             ctx.lineWidth = 1;
             ctx.stroke();
             ctx.fillStyle = '#111827';
-            ctx.fillText(`Noise: ${numNoise}`, xPos + 10, subtypeY + 4);
+            ctx.fillText(`Noise: ${numNoise}`, xPos + 10, legendBaselineY + 4);
         }
     }
 }
@@ -5596,9 +5680,9 @@ function showEpitopeSelector() {
         return;
     }
     
-    // Create a simple selector dialog
+    // Create a simple selector dialog (z-index above PDB viewer so it appears in front when viewer is open)
     const selector = document.createElement('div');
-    selector.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 10000; min-width: 300px;';
+    selector.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 10010; min-width: 300px;';
     
     const title = document.createElement('h3');
     title.textContent = 'Select Epitope';
@@ -5647,16 +5731,30 @@ function showEpitopeSelector() {
     document.body.appendChild(selector);
 }
 
-/** Convert a ref region (1-based inclusive start/end) to alignment column indices. Only includes columns where the reference has a residue (not a gap). */
+/** Convert a ref region (1-based inclusive start/end) to alignment column indices.
+ * Returns all alignment columns from the first column that reaches region.start through the last that reaches region.end (inclusive).
+ * Interior columns are included even where the reference has a gap. Stops at the last column before refMap advances past region.end
+ * so trailing reference gaps do not pull in columns from the end of the alignment. */
 function getAlignmentColumnsForRefRegion(region) {
-    var refSeq = state.viewSequences && state.refIndex >= 0 ? state.viewSequences[state.refIndex].seq : null;
-    if (!refSeq || !state.refMap) return [];
-    var cols = [];
-    for (var col = 0; col < state.refMap.length && col < refSeq.length; col++) {
-        if (refSeq[col] !== '-' && refSeq[col] !== '.' && state.refMap[col] >= region.start && state.refMap[col] <= region.end) {
-            cols.push(col);
+    if (!state.refMap || state.refMap.length === 0) return [];
+    var firstCol = -1;
+    for (var col = 0; col < state.refMap.length; col++) {
+        if (state.refMap[col] >= region.start) {
+            firstCol = col;
+            break;
         }
     }
+    if (firstCol < 0) return [];
+    var lastCol = firstCol;
+    for (var col = firstCol; col < state.refMap.length; col++) {
+        if (state.refMap[col] > region.end) {
+            lastCol = col - 1;
+            break;
+        }
+        lastCol = col;
+    }
+    var cols = [];
+    for (var c = firstCol; c <= lastCol; c++) cols.push(c);
     return cols;
 }
 
@@ -5691,6 +5789,11 @@ function selectEpitope(epitopeName) {
     enableButtonsAfterSelectEpitope();
     
     recalc();
+    
+    // Update PDB 3D viewer if open so epitope coloring reflects the new selection
+    if (typeof pdb3dViewerInstance !== 'undefined' && pdb3dViewerInstance && typeof applyPdb3dStyleToViewer === 'function') {
+        applyPdb3dStyleToViewer();
+    }
 }
 
 function setTreeWidth(w) {
@@ -7244,6 +7347,160 @@ function filterStructureByChains(text, chainIds) {
     return isCifStructure(text) ? filterCifByChains(text, chainIds) : filterPdbByChains(text, chainIds);
 }
 
+/** Get per-residue atoms with coordinates for a chain from PDB text. Returns [ { resSeq, atoms: [{x,y,z}] } ]. */
+function getChainAtomsFromPdb(pdbText, chainId) {
+    var byRes = new Map();
+    var lines = (pdbText || '').split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.startsWith('ATOM ') || line.startsWith('HETATM ')) {
+            var ch = (line.substring(21, 22) || ' ').trim() || 'A';
+            if (ch !== chainId) continue;
+            var resName = (line.substring(17, 20) || '').trim();
+            if (PDB_RESIDUE_TO_ONE[resName] === '') continue;
+            var resSeq = parseInt(line.substring(22, 26), 10) || 0;
+            var x = parseFloat(line.substring(30, 38)) || 0;
+            var y = parseFloat(line.substring(38, 46)) || 0;
+            var z = parseFloat(line.substring(46, 54)) || 0;
+            if (!byRes.has(resSeq)) byRes.set(resSeq, []);
+            byRes.get(resSeq).push({ x: x, y: y, z: z });
+        }
+    }
+    var resSeqs = Array.from(byRes.keys()).sort(function (a, b) { return a - b; });
+    return resSeqs.map(function (resSeq) { return { resSeq: resSeq, atoms: byRes.get(resSeq) }; });
+}
+
+/** Get per-residue atoms with coordinates for a chain from CIF text. Returns [ { resSeq, atoms: [{x,y,z}] } ]. */
+function getChainAtomsFromCif(cifText, chainId) {
+    var lines = (cifText || '').split(/\r?\n/);
+    var colChain = -1, colSeq = -1, colComp = -1, colX = -1, colY = -1, colZ = -1;
+    var inAtomSite = false;
+    var columns = [];
+    var byRes = new Map();
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var trimmed = line.trim();
+        if (trimmed.startsWith('loop_')) {
+            inAtomSite = false;
+            columns = [];
+            colChain = colSeq = colComp = colX = colY = colZ = -1;
+            continue;
+        }
+        if (trimmed.startsWith('_atom_site.')) {
+            var name = trimmed.slice(11).split(/\s/)[0];
+            columns.push(name);
+            if (name === 'label_asym_id' || name === 'auth_asym_id') colChain = columns.length - 1;
+            if (name === 'label_seq_id' || name === 'auth_seq_id') colSeq = columns.length - 1;
+            if (name === 'label_comp_id' || name === 'auth_comp_id') colComp = columns.length - 1;
+            if (name === 'Cartn_x' || name === 'auth_Cartn_x') colX = columns.length - 1;
+            if (name === 'Cartn_y' || name === 'auth_Cartn_y') colY = columns.length - 1;
+            if (name === 'Cartn_z' || name === 'auth_Cartn_z') colZ = columns.length - 1;
+            inAtomSite = true;
+            continue;
+        }
+        if (inAtomSite && columns.length > 0 && colChain >= 0 && colSeq >= 0 && colComp >= 0 && colX >= 0 && colY >= 0 && colZ >= 0) {
+            if (trimmed.startsWith('_') || trimmed === '' || trimmed.startsWith('#')) { inAtomSite = false; continue; }
+            var parts = line.split(/\s+/);
+            if (parts.length < columns.length) continue;
+            if ((parts[colChain] || '').trim() !== chainId) continue;
+            var resName = (parts[colComp] || '').trim().slice(0, 3);
+            if (PDB_RESIDUE_TO_ONE[resName] === '') continue;
+            var resSeq = parseInt(parts[colSeq], 10) || 0;
+            var x = parseFloat(parts[colX]) || 0;
+            var y = parseFloat(parts[colY]) || 0;
+            var z = parseFloat(parts[colZ]) || 0;
+            if (!byRes.has(resSeq)) byRes.set(resSeq, []);
+            byRes.get(resSeq).push({ x: x, y: y, z: z });
+        }
+    }
+    var resSeqs = Array.from(byRes.keys()).sort(function (a, b) { return a - b; });
+    return resSeqs.map(function (resSeq) { return { resSeq: resSeq, atoms: byRes.get(resSeq) }; });
+}
+
+/** Get per-residue atoms for a chain (PDB or CIF). Returns [ { resSeq, atoms: [{x,y,z}] } ]. */
+function getChainAtoms(text, chainId) {
+    return isCifStructure(text) ? getChainAtomsFromCif(text, chainId) : getChainAtomsFromPdb(text, chainId);
+}
+
+/** Compute distance-based epitope: residues on intrinsic chain whose min distance to extrinsic chain is below cutoff.
+ * Returns { name, cutoff, residues: [ { resSeq, refCoords: { single } or { pair } }, ... ] } or null. Epitope name = pdbCode_cutoff. Reference coords are 1-based. */
+function computeDistanceBasedEpitope(pdbContent, intrinsicChainId, extrinsicChainId, cutoff) {
+    if (!pdbContent) return null;
+    var intrinsicResidues = getChainAtoms(pdbContent, intrinsicChainId);
+    var extrinsicResidues = getChainAtoms(pdbContent, extrinsicChainId);
+    if (!intrinsicResidues.length || !extrinsicResidues.length) return null;
+    var extrinsicAtoms = [];
+    extrinsicResidues.forEach(function (r) {
+        r.atoms.forEach(function (a) { extrinsicAtoms.push(a); });
+    });
+    if (!extrinsicAtoms.length) return null;
+    function dist(a, b) {
+        var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    function minDistToExtrinsic(atoms) {
+        var d = Infinity;
+        for (var i = 0; i < atoms.length; i++) {
+            for (var j = 0; j < extrinsicAtoms.length; j++) {
+                var t = dist(atoms[i], extrinsicAtoms[j]);
+                if (t < d) d = t;
+            }
+        }
+        return d;
+    }
+    var residuesBelowCutoff = [];
+    intrinsicResidues.forEach(function (r) {
+        var minD = minDistToExtrinsic(r.atoms);
+        if (minD < cutoff) residuesBelowCutoff.push(r.resSeq);
+    });
+    var pdbCode = (state.pdbFileName || 'PDB').replace(/\.(pdb|ent|cif)$/i, '');
+    var name = pdbCode + '_' + cutoff;
+    var residueRefs = [];
+    residuesBelowCutoff.forEach(function (resSeq) {
+        var refCoords = getRefCoordsForPdbResidue(intrinsicChainId, resSeq);
+        residueRefs.push({ resSeq: resSeq, refCoords: refCoords });
+    });
+    var formatted = formatEpitopeAsFileLine(name, residueRefs);
+    if (formatted && formatted.line) console.log(formatted.line);
+    return { name: name, cutoff: cutoff, residues: residueRefs, epitopeLine: formatted && formatted.line, regions: formatted && formatted.regions };
+}
+
+/** Convert residueRefs (with refCoords single or pair) to [start,end] ranges, merge joining/overlapping regions, then format as epitope file line. Returns { line, regions } (regions = [{ start, end }, ...]). */
+function formatEpitopeAsFileLine(epitopeName, residueRefs) {
+    var ranges = [];
+    residueRefs.forEach(function (item) {
+        var rc = item.refCoords;
+        if (!rc) return;
+        var start, end;
+        if (rc.single != null) {
+            start = rc.single;
+            end = rc.single;
+        } else if (rc.pair && rc.pair.length >= 2) {
+            start = rc.pair[0];
+            end = rc.pair[1];
+        } else return;
+        ranges.push([start, end]);
+    });
+    if (ranges.length === 0) return { line: epitopeName, regions: [] };
+    ranges.sort(function (a, b) { return a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1]; });
+    var merged = [ranges[0].slice()];
+    for (var i = 1; i < ranges.length; i++) {
+        var prev = merged[merged.length - 1];
+        var cur = ranges[i];
+        if (cur[0] <= prev[1] + 1) {
+            if (cur[1] > prev[1]) prev[1] = cur[1];
+        } else {
+            merged.push(cur.slice());
+        }
+    }
+    var regions = merged.map(function (r) { return { start: r[0], end: r[1] }; });
+    var parts = [epitopeName];
+    merged.forEach(function (r) {
+        parts.push(r[0] === r[1] ? String(r[0]) : r[0] + ':' + r[1]);
+    });
+    return { line: parts.join(','), regions: regions };
+}
+
 /** Filter PDB text to only include ATOM/HETATM lines for the given chain IDs. */
 function filterPdbByChains(pdbText, chainIds) {
     const set = new Set(chainIds);
@@ -7291,6 +7548,52 @@ function getRefCoordForPdbResidue(chainId, resSeq) {
             if (resSeqs[fullChainIndex] === resSeqNum) {
                 return state.refMap[col];
             }
+        }
+    }
+    return null;
+}
+
+/** Reference coord(s) for PDB residue (chainId, resSeq) by finding where it sits in the panel alignment and reading ref from there.
+ * Returns null if not in alignment. Includes one-letter residue from the chain row at that column.
+ * If residue aligns to a non-gap in the reference: { single: refCoord, resLetter } (1-based).
+ * If it aligns to a gap in the reference: { pair: [refBefore, refAfter], resLetter } (first non-gap before, first non-gap after). */
+function getRefCoordsForPdbResidue(chainId, resSeq) {
+    if (!state.viewSequences || !state.refMap) return null;
+    var resSeqLists = getStructureChainResSeqLists(state.pdbFileContent);
+    var resSeqs = resSeqLists.get(chainId);
+    if (!resSeqs) return null;
+    var resSeqNum = parseInt(resSeq, 10);
+    var refView = state.viewSequences[state.refIndex];
+    var refSeq = refView && refView.seq;
+    if (!refSeq) return null;
+    for (var v = 0; v < state.viewSequences.length; v++) {
+        var view = state.viewSequences[v];
+        var m = (view.name || '').match(/^[A-Za-z0-9]+_Chain_(.+)$/);
+        if (!m || m[1] !== chainId) continue;
+        var row = view.seq || [];
+        var chainStart = (view.chainStart != null && view.chainStart >= 0) ? view.chainStart : 0;
+        for (var col = 0; col < row.length && col < state.refMap.length; col++) {
+            if (row[col] === '-' || row[col] === '.') continue;
+            var residueIndexInRow = pdbRowResidueIndexAtColumn(row, col);
+            var fullChainIndex = chainStart + residueIndexInRow;
+            if (fullChainIndex < 0 || fullChainIndex >= resSeqs.length) continue;
+            if (resSeqs[fullChainIndex] !== resSeqNum) continue;
+            var resLetter = (normToOneLetter(row[col]) || String(row[col]).trim() || '?').toUpperCase();
+            if (resLetter.length > 1) resLetter = resLetter.charAt(0);
+            var refCoord = state.refMap[col];
+            var refChar = refSeq[col];
+            if (refChar !== '-' && refChar !== '.') {
+                return { single: refCoord, resLetter: resLetter };
+            }
+            var refBefore = refCoord;
+            var refAfter = refBefore;
+            for (var c = col + 1; c < refSeq.length && c < state.refMap.length; c++) {
+                if (refSeq[c] !== '-' && refSeq[c] !== '.') {
+                    refAfter = state.refMap[c];
+                    break;
+                }
+            }
+            return { pair: [refBefore, refAfter], resLetter: resLetter };
         }
     }
     return null;
@@ -7505,6 +7808,7 @@ function applyPdb3dStyleToViewer() {
         try { pdb3dViewerInstance.setView(savedView); } catch (e) { /* ignore */ }
     }
     pdb3dViewerInstance.render();
+    updatePdb3dAALabels(pdb3dViewerInstance);
 }
 
 function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
