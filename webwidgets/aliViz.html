@@ -223,9 +223,9 @@
             <div style="display:flex; gap:5px; align-items:center;">
                 <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt">
                 <button id="btn-group-sequences" title="Group sequences by name field">Group</button>
+                <button id="btn-sort-sequences" title="Sort by current grouping, or by name if no grouping (REF and SUBTYPE remain first)">Sort</button>
                 <button id="btn-prune" title="Remove sequences from selected groups">Prune</button>
                 <button id="btn-subtype" title="Add founder sequence from selected group">Add Founder</button>
-                <button id="btn-sort-sequences" title="Sort sequences by name (REF and SUBTYPE remain first)">Sort</button>
             </div>
         </div>
         <div class="control-group">
@@ -446,9 +446,10 @@
         <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
             <label style="text-transform: none; font-size: 13px; color: #374151;">Choose dimensionality reduction method:</label>
             <select id="sel-projection-method" style="width: 100%;">
-                <option value="mds">MDS (Classical Multidimensional Scaling)</option>
+                <option value="hierarchical-clade" selected>Hierarchical (tree-clade clustering)</option>
+                <option value="hierarchical">Hierarchical (tree-cut clustering)</option>
                 <option value="umap">UMAP (Uniform Manifold Approximation and Projection)</option>
-                <option value="hierarchical">Hierarchical (Tree-based Clustering)</option>
+                <option value="mds">MDS (Classical Multidimensional Scaling)</option>
             </select>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
@@ -478,11 +479,39 @@
                     <input type="range" id="hier-slider-3" min="0" max="1" step="0.01" value="0" style="flex: 1;">
                     <span id="hier-value-3" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">0.00</span>
                 </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: #374151; min-width: 120px;">Min leaves per cluster:</label>
+                    <input type="range" id="hier-min-leaves-slider" min="1" max="5" step="1" value="1" style="flex: 1;">
+                    <span id="hier-min-leaves-value" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">1</span>
+                </div>
             </div>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
             <button id="btn-hier-cancel">Cancel</button>
             <button id="btn-hier-accept" class="active">Accept</button>
+        </div>
+    </div>
+</div>
+
+<div id="hierarchical-clade-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;">
+    <div class="help-box" style="width: 420px; pointer-events: auto;">
+        <h2>Tree-clade clustering</h2>
+        <p style="margin: 0 0 15px 0; font-size: 12px; color: #374151;">A new clade starts when the incoming branch length to a node is greater than the threshold. Leaves are grouped by the clade that contains them.</p>
+        <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 15px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <label style="font-size: 12px; color: #374151; min-width: 140px;">Branch length threshold:</label>
+                <input type="range" id="clade-threshold-slider" min="0" max="0.01" step="0.0001" value="0.001" style="flex: 1;">
+                <span id="clade-threshold-value" style="font-size: 11px; color: #374151; min-width: 55px; text-align: right;">0.001</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <label style="font-size: 12px; color: #374151; min-width: 140px;">Min leaves per cluster:</label>
+                <input type="range" id="clade-min-leaves-slider" min="1" max="5" step="1" value="1" style="flex: 1;">
+                <span id="clade-min-leaves-value" style="font-size: 11px; color: #374151; min-width: 55px; text-align: right;">1</span>
+            </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button id="btn-clade-cancel">Cancel</button>
+            <button id="btn-clade-accept" class="active">Accept</button>
         </div>
     </div>
 </div>
@@ -618,7 +647,7 @@
         <h2>aliViz Help</h2>
         <div style="font-size: 0.75em; color: #6b7280; margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee;">Based on the alignment app from <a href="https://murrellgroup.github.io/WebWidgets/alivibe.html" target="_blank" style="color: #3b82f6;">https://murrellgroup.github.io/WebWidgets/alivibe.html</a></div>
         <div class="help-row"><span class="help-key">Choose File</span> <span>Load an Alignment with Ref as first seq and SubType as second seq.</span></div>
-        <div class="help-row"><span class="help-key">Sort</span> <span>Sort sequences by name (REF and SUBTYPE remain first)</span></div>
+        <div class="help-row"><span class="help-key">Sort</span> <span>Sort by current grouping, or by name if no grouping (REF and SUBTYPE remain first)</span></div>
         <div class="help-row"><span class="help-key">Group</span> <span>Group sequences using field in Seq names</span></div>
         <div class="help-row"><span class="help-key">Prune</span> <span>Remove sequences from deselected groups</span></div>
         <div class="help-row"><span class="help-key">Add Founder</span> <span>Set a Founder sequence as consensus of a group</span></div>
@@ -1367,6 +1396,8 @@ async function init() {
             document.getElementById('method-select-overlay').style.display = 'none';
             if (selectedMethod === 'hierarchical') {
                 showHierarchicalModal();
+            } else if (selectedMethod === 'hierarchical-clade') {
+                showHierarchicalCladeModal();
             } else {
                 showProjectionPlot(selectedMethod);
             }
@@ -1827,7 +1858,7 @@ function loadTreeFile(file) {
     reader.readAsText(file);
 }
 
-// --- Sort Sequences by Name ---
+// --- Sort Sequences by Name (or by current grouping when present) ---
 function sortSequencesByName() {
     if (state.rawSequences.length === 0) {
         alert("No sequences to sort.");
@@ -1855,12 +1886,32 @@ function sortSequencesByName() {
         }
     }
     
-    // Sort non-PDB sequences by name
-    otherSeqs.sort((a, b) => {
-        const nameA = a.seq.name || '';
-        const nameB = b.seq.name || '';
-        return nameA.localeCompare(nameB);
-    });
+    // Sort: use current grouping as sort key when present; otherwise sort by sequence name (non-magenta = these "other" seqs)
+    if (state.leafClusters && state.leafClusters.size > 0) {
+        otherSeqs.sort((a, b) => {
+            const clusterA = state.leafClusters.get(a.seq.name);
+            const clusterB = state.leafClusters.get(b.seq.name);
+            const idA = clusterA === undefined ? 1e9 : (clusterA === -1 ? 1e8 : clusterA);
+            const idB = clusterB === undefined ? 1e9 : (clusterB === -1 ? 1e8 : clusterB);
+            if (idA !== idB) return idA - idB;
+            return (a.seq.name || '').localeCompare(b.seq.name || '');
+        });
+    } else if (state.sequenceGroups && state.groupNames && state.groupNames.size > 0) {
+        otherSeqs.sort((a, b) => {
+            const groupA = state.sequenceGroups.get(a.seq.name);
+            const groupB = state.sequenceGroups.get(b.seq.name);
+            const idA = groupA === undefined ? 1e9 : groupA;
+            const idB = groupB === undefined ? 1e9 : groupB;
+            if (idA !== idB) return idA - idB;
+            return (a.seq.name || '').localeCompare(b.seq.name || '');
+        });
+    } else {
+        otherSeqs.sort((a, b) => {
+            const nameA = a.seq.name || '';
+            const nameB = b.seq.name || '';
+            return nameA.localeCompare(nameB);
+        });
+    }
     
     // Rebuild: REF at 0, then PDB chains, then SUBTYPE (if any), then sorted non-PDB
     const newSequences = [refSeq];
@@ -2814,6 +2865,15 @@ function finalizeLoad(seqs) {
     state.refIndex = 0; 
     state.subtypeIndex = (seqs.length > 1) ? 1 : 0; // Second sequence is subtype, or first if only one sequence
     
+    // Clear previous grouping and clustering so color legend does not show stale data
+    state.sequenceGroups = null;
+    state.groupNames = null;
+    state.groupDelimiter = null;
+    state.groupFieldNum = null;
+    state.leafClusters = null;
+    state.hierarchicalActive = false;
+    state.hierarchicalDepths = [0, 0, 0];
+    
     // Store original subtype
     if (state.subtypeIndex >= 0 && state.subtypeIndex < seqs.length) {
         state.originalSubtype = JSON.parse(JSON.stringify(seqs[state.subtypeIndex]));
@@ -2833,13 +2893,15 @@ function finalizeLoad(seqs) {
         setMode('NT', false);
     }
     
-    // Enable buttons that become usable after a file is loaded
+    // Re-apply startup disabled state, then enable only buttons valid after a fresh load
+    disableButtonsOnStartup();
     enableButtonsAfterLoad();
     
     // Calculate and set names panel width to accommodate all names
     calculateNamesWidth();
     
     setTreeWidth(0);
+    updateColorLegend(); // Clear group/cluster legend after loading new file
     recalc();
     showOverlay(false);
 }
@@ -4422,18 +4484,22 @@ function showHierarchicalModal() {
     value2.textContent = (0.002).toFixed(3);
     value3.textContent = (0.003).toFixed(3);
     state.hierarchicalDepths = [0.001, 0.002, 0.003];
-    applyHierarchicalClustering(0.001, 0.002, 0.003);
+    const minLeavesSlider = document.getElementById('hier-min-leaves-slider');
+    const minLeavesValue = document.getElementById('hier-min-leaves-value');
+    minLeavesValue.textContent = minLeavesSlider.value;
+    applyHierarchicalClustering(0.001, 0.002, 0.003, parseInt(minLeavesSlider.value, 10));
     
     // Function to update clustering
     function updateHierarchicalClustering() {
         const depth1 = parseFloat(slider1.value);
         const depth2 = parseFloat(slider2.value);
         const depth3 = parseFloat(slider3.value);
+        const minLeaves = parseInt(minLeavesSlider.value, 10);
         
         // Store depths in state for drawing vertical lines
         state.hierarchicalDepths = [depth1, depth2, depth3];
         
-        applyHierarchicalClustering(depth1, depth2, depth3);
+        applyHierarchicalClustering(depth1, depth2, depth3, minLeaves);
     }
     
     // Slider event handlers with constraints
@@ -4490,6 +4556,11 @@ function showHierarchicalModal() {
         }
         
         value3.textContent = val.toFixed(3);
+        updateHierarchicalClustering();
+    });
+    
+    minLeavesSlider.addEventListener('input', () => {
+        minLeavesValue.textContent = minLeavesSlider.value;
         updateHierarchicalClustering();
     });
     
@@ -4612,8 +4683,195 @@ function showHierarchicalModal() {
     updateHierarchicalClustering();
 }
 
-function applyHierarchicalClustering(depth1, depth2, depth3) {
+function showHierarchicalCladeModal() {
+    if (!state.tree || !state.tree.root) {
+        alert("Please load or infer a tree first.");
+        return;
+    }
+    if (!state.tree.maxDepth) {
+        let totalLen = 0;
+        function checkLen(n) { totalLen += (n.len || 0); n.children.forEach(checkLen); }
+        checkLen(state.tree.root);
+        const useCladogram = (totalLen === 0);
+        let maxDepth = 0;
+        function layoutX(node, currentDepth) {
+            let dist = useCladogram ? (node === state.tree.root ? 0 : 1) : (node.len || 0);
+            node.xDepth = currentDepth + dist;
+            if (node.xDepth > maxDepth) maxDepth = node.xDepth;
+            node.children.forEach(c => layoutX(c, node.xDepth));
+        }
+        layoutX(state.tree.root, 0);
+        state.tree.maxDepth = maxDepth;
+    }
+    let maxBranch = 0;
+    function collectMaxBranch(node) {
+        const len = node.len != null ? node.len : 0;
+        if (len > maxBranch) maxBranch = len;
+        if (node.children) node.children.forEach(collectMaxBranch);
+    }
+    collectMaxBranch(state.tree.root);
+    const sliderMax = Math.max(0.01, maxBranch < 0.01 ? Math.ceil(maxBranch * 1000) / 1000 : Math.ceil(maxBranch * 100) / 100);
+    const slider = document.getElementById('clade-threshold-slider');
+    const valueSpan = document.getElementById('clade-threshold-value');
+    slider.min = '0';
+    slider.max = sliderMax.toString();
+    slider.step = '0.0001';
+    slider.value = Math.min(0.001, sliderMax).toString();
+    valueSpan.textContent = parseFloat(slider.value).toFixed(4);
+    const cladeMinLeavesSlider = document.getElementById('clade-min-leaves-slider');
+    const cladeMinLeavesValue = document.getElementById('clade-min-leaves-value');
+    cladeMinLeavesValue.textContent = cladeMinLeavesSlider.value;
+    function updateCladeClustering() {
+        const threshold = parseFloat(slider.value);
+        const minLeaves = parseInt(cladeMinLeavesSlider.value, 10);
+        valueSpan.textContent = threshold.toFixed(4);
+        cladeMinLeavesValue.textContent = cladeMinLeavesSlider.value;
+        applyCladeClustering(threshold, minLeaves);
+    }
+    slider.oninput = updateCladeClustering;
+    cladeMinLeavesSlider.oninput = updateCladeClustering;
+    document.getElementById('btn-clade-cancel').onclick = () => {
+        document.getElementById('hierarchical-clade-overlay').style.display = 'none';
+        recalc();
+    };
+    document.getElementById('btn-clade-accept').onclick = () => {
+        const delimiter = state.groupDelimiter || '_';
+        const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+        const nameMapping = new Map();
+        state.rawSequences.forEach(seq => {
+            if (seq.name) {
+                const originalName = seq.name.replace(clusterPattern, '');
+                const clusterId = state.leafClusters ? state.leafClusters.get(originalName) : undefined;
+                if (clusterId !== undefined && clusterId !== -1) {
+                    const oldName = seq.name;
+                    const newName = originalName + `${delimiter}cl-${clusterId}`;
+                    seq.name = newName;
+                    if (oldName !== newName) nameMapping.set(oldName, newName);
+                } else if (clusterId === -1) {
+                    const oldName = seq.name;
+                    const newName = originalName + `${delimiter}cl-na`;
+                    seq.name = newName;
+                    if (oldName !== newName) nameMapping.set(oldName, newName);
+                }
+            }
+        });
+        if (state.tree && state.tree.root && nameMapping.size > 0) {
+            function updateTreeNodeNames(node) {
+                if (node.name) {
+                    if (nameMapping.has(node.name)) node.name = nameMapping.get(node.name);
+                    else {
+                        const originalNodeName = node.name.replace(clusterPattern, '');
+                        for (const [oldName, newName] of nameMapping.entries()) {
+                            if (oldName.replace(clusterPattern, '') === originalNodeName) {
+                                node.name = newName;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (node.children) node.children.forEach(updateTreeNodeNames);
+            }
+            updateTreeNodeNames(state.tree.root);
+        }
+        if (state.leafClusters && state.leafClusters.size > 0) {
+            const updatedLeafClusters = new Map();
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const originalName = seq.name.replace(clusterPattern, '');
+                    const clusterId = state.leafClusters.get(originalName);
+                    if (clusterId !== undefined) updatedLeafClusters.set(seq.name, clusterId);
+                }
+            });
+            state.leafClusters = updatedLeafClusters;
+        }
+        if (state.sequenceGroups && state.sequenceGroups.size > 0) {
+            const updatedSequenceGroups = new Map();
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const originalName = seq.name.replace(clusterPattern, '');
+                    const groupId = state.sequenceGroups.get(originalName);
+                    if (groupId !== undefined) updatedSequenceGroups.set(seq.name, groupId);
+                }
+            });
+            state.sequenceGroups = updatedSequenceGroups;
+        }
+        document.getElementById('hierarchical-clade-overlay').style.display = 'none';
+        recalc();
+    };
+    document.getElementById('hierarchical-clade-overlay').style.display = 'flex';
+    updateCladeClustering();
+}
+
+function applyCladeClustering(threshold, minLeaves) {
     if (!state.tree || !state.tree.root) return;
+    minLeaves = (minLeaves != null && minLeaves >= 1) ? Math.min(5, Math.max(1, minLeaves)) : 1;
+    const leafToCluster = new Map();
+    let nextClusterId = 2;
+    const delimiter = state.groupDelimiter || '_';
+    const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+    const subtypeNameWithSuffix = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length)
+        ? state.rawSequences[state.subtypeIndex].name
+        : null;
+    const subtypeName = subtypeNameWithSuffix ? subtypeNameWithSuffix.replace(clusterPattern, '') : null;
+    function assignSubtype(node) {
+        if (!node.children || node.children.length === 0) {
+            if (node.name) {
+                const originalNodeName = node.name.replace(clusterPattern, '');
+                if (originalNodeName === subtypeName) leafToCluster.set(node.name, 0);
+            }
+        } else {
+            node.children.forEach(assignSubtype);
+        }
+    }
+    assignSubtype(state.tree.root);
+    let currentClusterId = 1;
+    function dfs(node) {
+        const incomingLen = (node !== state.tree.root && node.len != null) ? node.len : 0;
+        if (node !== state.tree.root && incomingLen > threshold) {
+            currentClusterId = nextClusterId++;
+        }
+        const savedClusterId = currentClusterId;
+        if (!node.children || node.children.length === 0) {
+            if (node.name) {
+                const originalNodeName = node.name.replace(clusterPattern, '');
+                if (originalNodeName !== subtypeName)
+                    leafToCluster.set(node.name, currentClusterId);
+            }
+        } else {
+            node.children.forEach(dfs);
+        }
+        currentClusterId = savedClusterId;
+    }
+    dfs(state.tree.root);
+    const nameToCluster = new Map();
+    for (const [leafName, clusterId] of leafToCluster.entries()) {
+        nameToCluster.set(leafName.replace(clusterPattern, ''), clusterId);
+    }
+    // Mark small clusters as noise (cluster -1), same as MDS/UMAP
+    const clusterCounts = new Map();
+    for (const cid of nameToCluster.values()) {
+        clusterCounts.set(cid, (clusterCounts.get(cid) || 0) + 1);
+    }
+    for (const [originalName, cid] of nameToCluster.entries()) {
+        if (cid !== 0 && (clusterCounts.get(cid) || 0) < minLeaves) {
+            nameToCluster.set(originalName, -1);
+        }
+    }
+    // Renumber clusters to remove gaps: 0 and -1 unchanged, others become 1, 2, 3, ...
+    const distinctIds = [...new Set(nameToCluster.values())].filter(c => c !== 0 && c !== -1).sort((a, b) => a - b);
+    const oldToNew = new Map([[0, 0], [-1, -1]]);
+    distinctIds.forEach((oldId, i) => { oldToNew.set(oldId, i + 1); });
+    for (const [name, cid] of nameToCluster.entries()) {
+        nameToCluster.set(name, oldToNew.get(cid));
+    }
+    state.leafClusters = nameToCluster;
+    updateColorLegend();
+    recalc();
+}
+
+function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
+    if (!state.tree || !state.tree.root) return;
+    minLeaves = (minLeaves != null && minLeaves >= 1) ? Math.min(5, Math.max(1, minLeaves)) : 1;
     
     const leafToCluster = new Map();
     let clusterId = 2; // Start from 2 (cluster 0 for subtype, cluster 1 for leaves left of line)
@@ -4851,6 +5109,24 @@ function applyHierarchicalClustering(depth1, depth2, depth3) {
     for (const [leafName, clusterId] of leafToCluster.entries()) {
         const originalName = leafName.replace(clusterPattern, '');
         nameToCluster.set(originalName, clusterId);
+    }
+    
+    // Mark small clusters as noise (cluster -1), same as MDS/UMAP
+    const clusterCounts = new Map();
+    for (const cid of nameToCluster.values()) {
+        clusterCounts.set(cid, (clusterCounts.get(cid) || 0) + 1);
+    }
+    for (const [originalName, cid] of nameToCluster.entries()) {
+        if (cid !== 0 && (clusterCounts.get(cid) || 0) < minLeaves) {
+            nameToCluster.set(originalName, -1);
+        }
+    }
+    // Renumber clusters to remove gaps: 0 and -1 unchanged, others become 1, 2, 3, ...
+    const distinctIds = [...new Set(nameToCluster.values())].filter(c => c !== 0 && c !== -1).sort((a, b) => a - b);
+    const oldToNew = new Map([[0, 0], [-1, -1]]);
+    distinctIds.forEach((oldId, i) => { oldToNew.set(oldId, i + 1); });
+    for (const [name, cid] of nameToCluster.entries()) {
+        nameToCluster.set(name, oldToNew.get(cid));
     }
     
     state.leafClusters = nameToCluster;
@@ -8170,7 +8446,6 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
             o = document.createElement('option');
             o.value = 'founder';
             o.textContent = 'Founder';
-            o.selected = true;
             select.appendChild(o);
         }
         pdbChains.forEach(function (seq) {
@@ -8183,6 +8458,7 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
         o.value = 'none';
         o.textContent = 'None';
         select.appendChild(o);
+        if (hasSubtype) select.value = 'subtype'; else if (hasFounder) select.value = 'founder'; else if (hasReference) select.value = 'reference';
         selectorModal.appendChild(select);
         var buttonDiv = document.createElement('div');
         buttonDiv.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end;';
@@ -8544,7 +8820,6 @@ function showSequenceLogo() {
         const opt = document.createElement('option');
         opt.value = 'founder';
         opt.textContent = 'Founder';
-        opt.selected = true; // Default to founder
         select.appendChild(opt);
     }
     
@@ -8560,6 +8835,8 @@ function showSequenceLogo() {
     optNone.value = 'none';
     optNone.textContent = 'None';
     select.appendChild(optNone);
+    
+    if (hasSubtype) select.value = 'subtype'; else if (hasFounder) select.value = 'founder'; else if (hasReference) select.value = 'reference';
     
     if (!hasReference && !hasSubtype && !hasFounder && pdbChains.length === 0) {
         // Even if no other sequences, AllGaps is always available
