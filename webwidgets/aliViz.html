@@ -480,9 +480,17 @@
                     <span id="hier-value-3" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">0.00</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: #374151; min-width: 120px;">Optimise levels:</label>
+                    <button type="button" id="btn-hier-auto" style="padding: 4px 10px; font-size: 11px;">Auto</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
                     <label style="font-size: 12px; color: #374151; min-width: 120px;">Min leaves per cluster:</label>
                     <input type="range" id="hier-min-leaves-slider" min="1" max="5" step="1" value="1" style="flex: 1;">
                     <span id="hier-min-leaves-value" style="font-size: 11px; color: #374151; min-width: 60px; text-align: right;">1</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: #374151; min-width: 120px;">Calinski–Harabasz:</label>
+                    <span id="hier-ch-value" style="font-size: 11px; color: #374151; font-weight: 500;">—</span>
                 </div>
             </div>
         </div>
@@ -500,13 +508,18 @@
         <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 15px;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <label style="font-size: 12px; color: #374151; min-width: 140px;">Branch length threshold:</label>
-                <input type="range" id="clade-threshold-slider" min="0" max="0.01" step="0.0001" value="0.001" style="flex: 1;">
+                <input type="range" id="clade-threshold-slider" min="0.0001" max="0.01" step="0.0001" value="0.001" style="flex: 1;">
                 <span id="clade-threshold-value" style="font-size: 11px; color: #374151; min-width: 55px; text-align: right;">0.001</span>
+                <button type="button" id="btn-clade-auto" style="padding: 4px 10px; font-size: 11px;">Auto</button>
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
                 <label style="font-size: 12px; color: #374151; min-width: 140px;">Min leaves per cluster:</label>
                 <input type="range" id="clade-min-leaves-slider" min="1" max="5" step="1" value="1" style="flex: 1;">
                 <span id="clade-min-leaves-value" style="font-size: 11px; color: #374151; min-width: 55px; text-align: right;">1</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <label style="font-size: 12px; color: #374151; min-width: 140px;">Calinski–Harabasz:</label>
+                <span id="clade-ch-value" style="font-size: 11px; color: #374151; font-weight: 500;">—</span>
             </div>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
@@ -526,11 +539,16 @@
                     <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Radius (eps):</label>
                     <input type="range" id="mds-eps-slider" min="0.01" max="1" step="0.01" value="0.1" style="flex: 1;">
                     <span id="mds-eps-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">0.1</span>
+                    <button type="button" id="btn-mds-eps-auto" style="padding: 4px 10px; font-size: 11px;">Auto</button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Min Neighbors:</label>
                     <input type="range" id="mds-minpts-slider" min="0" max="5" step="1" value="2" style="flex: 1;">
                     <span id="mds-minpts-value" style="font-size: 11px; color: #374151; min-width: 50px; text-align: right;">2</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 11px; color: #6b7280; min-width: 80px;">Calinski–Harabasz:</label>
+                    <span id="mds-ch-value" style="font-size: 11px; color: #374151; font-weight: 500;">—</span>
                 </div>
             </div>
             <div id="umap-params-container" style="display: none; flex-direction: column; gap: 5px;">
@@ -594,10 +612,24 @@
 </div>
 
 <div id="pdb-load-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
-    <div class="help-box" style="width: 320px;">
+    <div class="help-box" style="width: 420px;">
         <h2>Load 3D structure</h2>
         <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 12px;">
             <button type="button" id="btn-pdb-choose-file" style="padding: 8px 14px; text-align: left;">Choose file...</button>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 13px; color: #374151;">Suggested PDB</label>
+                <select id="sel-pdb-suggested" style="width: 100%; padding: 8px 10px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">— Select to fetch —</option>
+                    <option value="8F7T">8F7T (consensus C trimer with no antibodies attached)</option>
+                    <option value="6CK9">6CK9 (consensus C trimer with two antibodies attached)</option>
+                    <option value="7UCG">7UCG (Du422 trimer, subtype C with antibodies attached)</option>
+                    <option value="7KMD">7KMD (Du172 trimer, subtype C with antibodies attached)</option>
+                    <option value="6V8X">6V8X (BG505 trimer, subtype A with VRC01 antibodies)</option>
+                    <option value="9BEW">9BEW (BG505 with 10-1074 + 3BNC117 antibodies)</option>
+                    <option value="6DFG">6DFG (BG505 MD39 + BG18)</option>
+                    <option value="8FIS">8FIS (BG505 + CAP256.25.J3)</option>
+                </select>
+            </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <label style="font-size: 13px; color: #374151; white-space: nowrap;">PDB ID</label>
                 <input type="text" id="inp-pdb-id" placeholder="e.g. 7U2N" maxlength="4" style="width: 5em; padding: 6px 8px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 4px;">
@@ -1170,6 +1202,17 @@ async function init() {
             if (e.target === pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
         });
     }
+    var selPdbSuggested = document.getElementById('sel-pdb-suggested');
+    if (selPdbSuggested) {
+        selPdbSuggested.addEventListener('change', function () {
+            var code = (this.value || '').trim().toUpperCase().slice(0, 4);
+            if (!/^[A-Z0-9]{4}$/.test(code)) return;
+            if (dom.inpPdbId) dom.inpPdbId.value = code;
+            if (pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
+            loadPdbById(code);
+            this.value = ''; // reset so selecting again works
+        });
+    }
     if (dom.btnFetchPdb && dom.inpPdbId) {
         dom.btnFetchPdb.addEventListener('click', function () {
             var code = (dom.inpPdbId.value || '').trim().toUpperCase().slice(0, 4);
@@ -1179,6 +1222,7 @@ async function init() {
             }
             if (pdbLoadOverlay) pdbLoadOverlay.style.display = 'none';
             loadPdbById(code);
+            if (selPdbSuggested) selPdbSuggested.value = '';
         });
     }
     if (dom.btnView3d) {
@@ -3942,8 +3986,7 @@ function showProjectionPlot(selectedMethod) {
     // Use the larger of the two ranges so radius is on the scale of the data (handles degenerate y=0 case)
     const effectiveRange = (rangeX > 0 || rangeY > 0) ? Math.max(rangeX, rangeY) : 1;
     
-    // UMAP: max = half of max dimension range; initial = half of that; step = 1/10 of initial. MDS: max = effectiveRange/2, step = max/10
-    const epsMin = 0;
+    // UMAP: max = half of max dimension range; initial = half of that; step = 1/10 of initial. MDS: max = effectiveRange/2, step = max/10. Min = step to avoid CH infinity.
     let epsMax, epsStep, epsDefault;
     if (selectedMethod === 'umap') {
         epsMax = effectiveRange / 2;
@@ -3954,6 +3997,7 @@ function showProjectionPlot(selectedMethod) {
         epsStep = epsMax > 0 ? epsMax / 10 : 0.1;
         epsDefault = epsMax / 2;  // MDS: start at half the maximum
     }
+    const epsMin = epsStep;
     
     // Console report for projection/clustering debugging (MDS or UMAP)
     const methodLabel = selectedMethod === 'umap' ? 'UMAP' : 'MDS';
@@ -3974,11 +4018,11 @@ function showProjectionPlot(selectedMethod) {
     const epsValue = document.getElementById('mds-eps-value');
     const minPtsValue = document.getElementById('mds-minpts-value');
     
-    // Update epsilon slider attributes based on projection data (no rounding of max)
+    // Update epsilon slider attributes based on projection data (no rounding of max); min = step to avoid CH infinity
     epsSlider.min = epsMin.toString();
     epsSlider.max = epsMax.toString();
     epsSlider.step = epsStep.toString();
-    epsSlider.value = epsDefault.toString();
+    epsSlider.value = Math.max(epsMin, Math.min(epsDefault, epsMax)).toString();
     
     // Decimal places for display: use enough so max radius is never shown as 0.00
     let decimalPlaces = 2;
@@ -3999,7 +4043,7 @@ function showProjectionPlot(selectedMethod) {
             minDist = minDistSlider ? parseFloat(minDistSlider.value) : 0.1;
             projectionCoords = performProjection(selectedMethod, distanceMatrix, nNeighbors, spread, minDist);
             
-            // UMAP: max = half of max dimension range; initial = half of max; step = 1/10 of initial
+            // UMAP: max = half of max dimension range; initial = half of max; step = 1/10 of initial; min = step to avoid CH infinity
             const xs = projectionCoords.map(c => c.x);
             const ys = projectionCoords.map(c => c.y);
             const rangeX = Math.max(...xs) - Math.min(...xs);
@@ -4008,13 +4052,14 @@ function showProjectionPlot(selectedMethod) {
             const epsMax = effectiveRange / 2;
             const epsDefault = epsMax / 2;
             const epsStep = epsDefault / 10;
-            const epsMin = 0;
+            const epsMin = epsStep;
             
             epsSlider.min = epsMin.toString();
             epsSlider.max = epsMax.toString();
             epsSlider.step = epsStep.toString();
-            if (parseFloat(epsSlider.value) > epsMax) {
-                epsSlider.value = epsDefault.toString();
+            const currentVal = parseFloat(epsSlider.value);
+            if (currentVal > epsMax || currentVal < epsMin) {
+                epsSlider.value = Math.max(epsMin, Math.min(epsDefault, epsMax)).toString();
             }
             
             // Update stored coords
@@ -4059,12 +4104,68 @@ function showProjectionPlot(selectedMethod) {
         
         currentClusters = clusters; // Store for apply button
         
+        const chEl = document.getElementById('mds-ch-value');
+        if (chEl) {
+            const delimiter = state.groupDelimiter || '_';
+            const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+            const nameToCluster = new Map();
+            for (let i = 0; i < leaves.length; i++) {
+                if (clusters[i] === -1) continue;
+                const orig = (leaves[i].name || '').toString().replace(clusterPattern, '');
+                if (orig) nameToCluster.set(orig, clusters[i]);
+            }
+            const ch = calinskiHarabaszTree(nameToCluster);
+            chEl.textContent = (ch != null && Number.isFinite(ch)) ? ch.toFixed(2) : (ch === Infinity ? '∞' : '—');
+        }
+        
         // Draw projection plot with clusters and epsilon circles
         drawMdsPlot(leaves, projectionCoords, subtypeName, clusters, eps, founderName);
     };
     
     epsSlider.addEventListener('input', updatePlot);
     minPtsSlider.addEventListener('input', updatePlot);
+    
+    // Auto buttons: optimize eps or minPts to maximize Calinski–Harabasz (using current projection coords)
+    const buildNameToCluster = (clusters, leavesArr) => {
+        const delimiter = state.groupDelimiter || '_';
+        const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+        const nameToCluster = new Map();
+        for (let i = 0; i < leavesArr.length; i++) {
+            if (clusters[i] === -1) continue;
+            const orig = (leavesArr[i].name || '').toString().replace(clusterPattern, '');
+            if (orig) nameToCluster.set(orig, clusters[i]);
+        }
+        return nameToCluster;
+    };
+    document.getElementById('btn-mds-eps-auto').onclick = function () {
+        const data = window.mdsData;
+        if (!data || !data.leaves || !data.coords) return;
+        const minPts = parseInt(minPtsSlider.value, 10);
+        let subtypeIdx = -1;
+        if (data.subtypeName) {
+            for (let i = 0; i < data.leaves.length; i++) {
+                if (data.leaves[i].name === data.subtypeName) { subtypeIdx = i; break; }
+            }
+        }
+        const epsMin = parseFloat(epsSlider.min);
+        const epsMax = parseFloat(epsSlider.max);
+        const epsStep = parseFloat(epsSlider.step) || (epsMax - epsMin) / 50;
+        const nSteps = Math.min(80, Math.max(15, Math.ceil((epsMax - epsMin) / epsStep)));
+        let bestEps = parseFloat(epsSlider.value);
+        let bestCh = -Infinity;
+        for (let i = 0; i <= nSteps; i++) {
+            const eps = i < nSteps ? epsMin + (i / nSteps) * (epsMax - epsMin) : epsMax;
+            let clusters = performDBSCAN(data.coords, eps, minPts, subtypeIdx, null);
+            clusters = renumberClustersByDistanceFromSubtype(clusters, data.coords, subtypeIdx, data.leaves, data.subtypeName);
+            const nameToCluster = buildNameToCluster(clusters, data.leaves);
+            const ch = calinskiHarabaszTree(nameToCluster);
+            const chNum = (ch === Infinity) ? 1e308 : (ch != null && Number.isFinite(ch) ? ch : -Infinity);
+            if (chNum > bestCh) { bestCh = chNum; bestEps = eps; }
+        }
+        epsSlider.value = bestEps.toString();
+        epsValue.textContent = bestEps.toFixed(decimalPlaces);
+        updatePlot();
+    };
     
     // Initialize UMAP parameter display values
     if (nNeighborsValue) {
@@ -4563,7 +4664,58 @@ function showHierarchicalModal() {
         minLeavesValue.textContent = minLeavesSlider.value;
         updateHierarchicalClustering();
     });
-    
+
+    const sliderMaxNum = parseFloat(slider1.max);
+    const slider1Min = parseFloat(slider1.min);
+    /** Enforce level2 >= level1 and level3 >= level2; move higher sliders right if needed. */
+    function enforceLevelOrder() {
+        let v1 = parseFloat(slider1.value);
+        let v2 = parseFloat(slider2.value);
+        let v3 = parseFloat(slider3.value);
+        if (v2 < v1) { v2 = v1; slider2.value = v2.toFixed(3); value2.textContent = slider2.value; }
+        if (v3 < v2) { v3 = v2; slider3.value = v3.toFixed(3); value3.textContent = slider3.value; }
+    }
+    document.getElementById('btn-hier-auto').onclick = function () {
+        const minLeaves = parseInt(minLeavesSlider.value, 10);
+        // Full grid search: sample n+1 values from [slider1Min, sliderMaxNum], try every (d1,d2,d3) with d1 <= d2 <= d3
+        const n = 20;
+        const vals = [];
+        for (let i = 0; i <= n; i++) {
+            vals.push(slider1Min + (i / n) * (sliderMaxNum - slider1Min));
+        }
+        let bestD1 = slider1Min;
+        let bestD2 = slider1Min;
+        let bestD3 = slider1Min;
+        let bestCh = -Infinity;
+        for (let i = 0; i <= n; i++) {
+            const d1 = vals[i];
+            for (let j = i; j <= n; j++) {
+                const d2 = vals[j];
+                for (let k = j; k <= n; k++) {
+                    const d3 = vals[k];
+                    const map = computeHierarchicalClusterMap(d1, d2, d3, minLeaves);
+                    if (!map) continue;
+                    const ch = calinskiHarabaszTree(map);
+                    const chNum = (ch === Infinity) ? 1e308 : (ch != null && Number.isFinite(ch) ? ch : -Infinity);
+                    if (chNum > bestCh) {
+                        bestCh = chNum;
+                        bestD1 = d1;
+                        bestD2 = d2;
+                        bestD3 = d3;
+                    }
+                }
+            }
+        }
+        slider1.value = bestD1.toFixed(3);
+        value1.textContent = slider1.value;
+        slider2.value = bestD2.toFixed(3);
+        value2.textContent = slider2.value;
+        slider3.value = bestD3.toFixed(3);
+        value3.textContent = slider3.value;
+        state.hierarchicalDepths = [bestD1, bestD2, bestD3];
+        updateHierarchicalClustering();
+    };
+
     // Button handlers
     document.getElementById('btn-hier-cancel').onclick = () => {
         document.getElementById('hierarchical-overlay').style.display = 'none';
@@ -4713,10 +4865,11 @@ function showHierarchicalCladeModal() {
     const sliderMax = Math.max(0.01, maxBranch < 0.01 ? Math.ceil(maxBranch * 1000) / 1000 : Math.ceil(maxBranch * 100) / 100);
     const slider = document.getElementById('clade-threshold-slider');
     const valueSpan = document.getElementById('clade-threshold-value');
-    slider.min = '0';
+    const stepVal = 0.0001;
+    slider.min = stepVal.toString();
     slider.max = sliderMax.toString();
-    slider.step = '0.0001';
-    slider.value = Math.min(0.001, sliderMax).toString();
+    slider.step = stepVal.toString();
+    slider.value = Math.max(stepVal, Math.min(0.001, sliderMax)).toString();
     valueSpan.textContent = parseFloat(slider.value).toFixed(4);
     const cladeMinLeavesSlider = document.getElementById('clade-min-leaves-slider');
     const cladeMinLeavesValue = document.getElementById('clade-min-leaves-value');
@@ -4730,6 +4883,32 @@ function showHierarchicalCladeModal() {
     }
     slider.oninput = updateCladeClustering;
     cladeMinLeavesSlider.oninput = updateCladeClustering;
+    const btnCladeAuto = document.getElementById('btn-clade-auto');
+    if (btnCladeAuto) {
+        btnCladeAuto.onclick = function () {
+            const minLeaves = parseInt(cladeMinLeavesSlider.value, 10);
+            const minVal = parseFloat(slider.min);
+            const maxVal = parseFloat(slider.max);
+            const step = parseFloat(slider.step) || (maxVal - minVal) / 100;
+            const nSteps = Math.min(100, Math.max(20, Math.ceil((maxVal - minVal) / step)));
+            let bestThreshold = parseFloat(slider.value);
+            let bestCh = -Infinity;
+            for (let i = 0; i <= nSteps; i++) {
+                const t = i < nSteps ? minVal + (i / nSteps) * (maxVal - minVal) : maxVal;
+                const map = computeCladeClusterMap(t, minLeaves);
+                if (!map) continue;
+                const ch = calinskiHarabaszTree(map);
+                const chNum = (ch === Infinity) ? 1e308 : (ch != null && Number.isFinite(ch) ? ch : -Infinity);
+                if (chNum > bestCh) {
+                    bestCh = chNum;
+                    bestThreshold = t;
+                }
+            }
+            slider.value = bestThreshold.toString();
+            valueSpan.textContent = bestThreshold.toFixed(4);
+            updateCladeClustering();
+        };
+    }
     document.getElementById('btn-clade-cancel').onclick = () => {
         document.getElementById('hierarchical-clade-overlay').style.display = 'none';
         recalc();
@@ -4802,8 +4981,108 @@ function showHierarchicalCladeModal() {
     updateCladeClustering();
 }
 
-function applyCladeClustering(threshold, minLeaves) {
-    if (!state.tree || !state.tree.root) return;
+/** Calinski-Harabasz index for tree-based clustering. Uses branch distance to MRCA for within-cluster and branch distance from MRCA to root for between-cluster. Returns number or null if undefined.
+ * optionalLeafClusters: if provided, Map(originalLeafName -> clusterId) to use instead of state.leafClusters (e.g. for MDS/UMAP so all methods use the same tree-based index). */
+function calinskiHarabaszTree(optionalLeafClusters) {
+    const leafClusters = optionalLeafClusters != null ? optionalLeafClusters : state.leafClusters;
+    if (!state.tree || !state.tree.root || !leafClusters || leafClusters.size === 0) return null;
+    const root = state.tree.root;
+    const useCladogram = !!state.tree.useCladogram;
+    const delimiter = state.groupDelimiter || '_';
+    const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+    function pathToRoot(node) {
+        const p = [];
+        let n = node;
+        while (n) { p.push(n); n = n.parent; }
+        return p;
+    }
+    function distToRoot(node) {
+        let d = 0;
+        let n = node;
+        while (n && n !== root) {
+            d += useCladogram ? 1 : (n.len || 0);
+            n = n.parent;
+        }
+        return d;
+    }
+    function getMRCA(leafNodes) {
+        if (leafNodes.length === 0) return null;
+        if (leafNodes.length === 1) return leafNodes[0];
+        const paths = leafNodes.map(leaf => pathToRoot(leaf));
+        for (let i = 0; i < paths[0].length; i++) {
+            const node = paths[0][i];
+            if (paths.every(p => p.includes(node))) return node;
+        }
+        return null;
+    }
+    const clusterToLeaves = new Map();
+    function collectLeaves(node) {
+        if (!node.children || node.children.length === 0) {
+            if (node.name) {
+                const orig = node.name.replace(clusterPattern, '');
+                const cid = leafClusters.get(orig);
+                if (cid !== undefined && cid !== -1) {
+                    if (!clusterToLeaves.has(cid)) clusterToLeaves.set(cid, []);
+                    clusterToLeaves.get(cid).push(node);
+                }
+            }
+        } else {
+            node.children.forEach(collectLeaves);
+        }
+    }
+    collectLeaves(root);
+    const k = clusterToLeaves.size;
+    const n = [...clusterToLeaves.values()].reduce((sum, list) => sum + list.length, 0);
+    if (k < 1 || n < 1 || (k === 1 && n < 2)) return null;
+    let W = 0;
+    let B = 0;
+    if (k === 1) {
+        const leavesList = clusterToLeaves.values().next().value;
+        if (!leavesList) return null;
+        leavesList.forEach(leaf => {
+            const dLeaf = distToRoot(leaf);
+            W += dLeaf * dLeaf;
+        });
+        let maxBranch = 0;
+        function collectMaxBranch(node) {
+            if (node !== root) {
+                const isInternal = node.children && node.children.length > 0;
+                if (isInternal) {
+                    const branchLen = useCladogram ? 1 : (node.len || 0);
+                    if (branchLen > maxBranch) maxBranch = branchLen;
+                }
+            }
+            if (node.children) node.children.forEach(collectMaxBranch);
+        }
+        collectMaxBranch(root);
+        const halfMax = maxBranch / 2;
+        B = (n / 2) * halfMax * halfMax;
+        console.log('Calinski–Harabasz (k=1): numerator =', B, ', W =', W, ', n =', n);
+    } else {
+        clusterToLeaves.forEach((leaves, cid) => {
+            const mrca = getMRCA(leaves);
+            if (!mrca) return;
+            const dMrca = distToRoot(mrca);
+            B += leaves.length * dMrca * dMrca;
+            leaves.forEach(leaf => {
+                const dLeaf = distToRoot(leaf);
+                W += (dLeaf - dMrca) * (dLeaf - dMrca);
+            });
+        });
+        if (k === 2) {
+            const numerator = B / (k - 1);
+            console.log('Calinski–Harabasz (k=2): numerator =', numerator, ', W =', W, ', n =', n);
+        }
+    }
+    if (W <= 0) return Infinity; // best possible clustering
+    const numerator = k === 1 ? B : B / (k - 1);
+    const ch = numerator / (W / (n - k));
+    return ch / Math.pow(2, k); // bias against high k
+}
+
+/** Return nameToCluster map for tree-clade clustering with given threshold and minLeaves (no state change). */
+function computeCladeClusterMap(threshold, minLeaves) {
+    if (!state.tree || !state.tree.root) return null;
     minLeaves = (minLeaves != null && minLeaves >= 1) ? Math.min(5, Math.max(1, minLeaves)) : 1;
     const leafToCluster = new Map();
     let nextClusterId = 2;
@@ -4847,7 +5126,6 @@ function applyCladeClustering(threshold, minLeaves) {
     for (const [leafName, clusterId] of leafToCluster.entries()) {
         nameToCluster.set(leafName.replace(clusterPattern, ''), clusterId);
     }
-    // Mark small clusters as noise (cluster -1), same as MDS/UMAP
     const clusterCounts = new Map();
     for (const cid of nameToCluster.values()) {
         clusterCounts.set(cid, (clusterCounts.get(cid) || 0) + 1);
@@ -4857,34 +5135,43 @@ function applyCladeClustering(threshold, minLeaves) {
             nameToCluster.set(originalName, -1);
         }
     }
-    // Renumber clusters to remove gaps: 0 and -1 unchanged, others become 1, 2, 3, ...
     const distinctIds = [...new Set(nameToCluster.values())].filter(c => c !== 0 && c !== -1).sort((a, b) => a - b);
     const oldToNew = new Map([[0, 0], [-1, -1]]);
     distinctIds.forEach((oldId, i) => { oldToNew.set(oldId, i + 1); });
     for (const [name, cid] of nameToCluster.entries()) {
         nameToCluster.set(name, oldToNew.get(cid));
     }
+    return nameToCluster;
+}
+
+function applyCladeClustering(threshold, minLeaves) {
+    if (!state.tree || !state.tree.root) return;
+    minLeaves = (minLeaves != null && minLeaves >= 1) ? Math.min(5, Math.max(1, minLeaves)) : 1;
+    const nameToCluster = computeCladeClusterMap(threshold, minLeaves);
+    if (!nameToCluster) return;
     state.leafClusters = nameToCluster;
+    const chEl = document.getElementById('clade-ch-value');
+    if (chEl) chEl.textContent = (function () { const ch = calinskiHarabaszTree(); return (ch != null && Number.isFinite(ch)) ? ch.toFixed(2) : (ch === Infinity ? '∞' : '—'); })();
     updateColorLegend();
     recalc();
 }
 
-function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
-    if (!state.tree || !state.tree.root) return;
+/** Returns Map(originalLeafName -> clusterId) for tree-cut clustering with given depths and minLeaves; does not mutate state. */
+function computeHierarchicalClusterMap(depth1, depth2, depth3, minLeaves) {
+    if (!state.tree || !state.tree.root) return null;
     minLeaves = (minLeaves != null && minLeaves >= 1) ? Math.min(5, Math.max(1, minLeaves)) : 1;
-    
+    const root = state.tree.root;
+    const delimiter = state.groupDelimiter || '_';
+    const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+    const subtypeNameWithSuffix = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length)
+        ? state.rawSequences[state.subtypeIndex].name
+        : null;
+    const subtypeName = subtypeNameWithSuffix ? subtypeNameWithSuffix.replace(clusterPattern, '') : null;
+
     const leafToCluster = new Map();
     let clusterId = 2; // Start from 2 (cluster 0 for subtype, cluster 1 for leaves left of line)
     const assignedNodes = new Set(); // Track which nodes have had their subtrees assigned
-    
-    // Get subtype name (use original name without cluster suffix for comparison)
-    const delimiter = state.groupDelimiter || '_';
-    const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
-    const subtypeNameWithSuffix = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length) 
-        ? state.rawSequences[state.subtypeIndex].name 
-        : null;
-    const subtypeName = subtypeNameWithSuffix ? subtypeNameWithSuffix.replace(clusterPattern, '') : null;
-    
+
     // First, assign cluster 0 to the subtype leaf
     function assignSubtype(node) {
         if (!node.children || node.children.length === 0) {
@@ -4900,7 +5187,7 @@ function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
             node.children.forEach(assignSubtype);
         }
     }
-    assignSubtype(state.tree.root);
+    assignSubtype(root);
     
     // Second, assign cluster 1 to all leaves to the left of line 1 (depth < depth1)
     function assignLeavesLeftOfLine(node) {
@@ -4920,10 +5207,10 @@ function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
             node.children.forEach(assignLeavesLeftOfLine);
         }
     }
-    assignLeavesLeftOfLine(state.tree.root);
+    assignLeavesLeftOfLine(root);
     
     // Third, use BFS to find subtrees crossing line 1 and assign incremental cluster numbers
-    const queue1 = [state.tree.root];
+    const queue1 = [root];
     
     while (queue1.length > 0) {
         const node = queue1.shift();
@@ -4985,7 +5272,7 @@ function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
     
     // Fourth, use BFS to find subtrees crossing line 2 and assign incremental cluster numbers
     if (depth2 > depth1) {
-        const queue2 = [state.tree.root];
+        const queue2 = [root];
         const assignedNodes2 = new Set(); // Track nodes assigned at line 2 level
         
         while (queue2.length > 0) {
@@ -5044,7 +5331,7 @@ function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
     
     // Fifth, use BFS to find subtrees crossing line 3 and assign incremental cluster numbers
     if (depth3 > depth2) {
-        const queue3 = [state.tree.root];
+        const queue3 = [root];
         const assignedNodes3 = new Set(); // Track nodes assigned at line 3 level
         
         while (queue3.length > 0) {
@@ -5106,9 +5393,9 @@ function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
     const nameToCluster = new Map();
     
     // Convert leafToCluster (which uses current names) to nameToCluster (using original names)
-    for (const [leafName, clusterId] of leafToCluster.entries()) {
+    for (const [leafName, cid] of leafToCluster.entries()) {
         const originalName = leafName.replace(clusterPattern, '');
-        nameToCluster.set(originalName, clusterId);
+        nameToCluster.set(originalName, cid);
     }
     
     // Mark small clusters as noise (cluster -1), same as MDS/UMAP
@@ -5128,10 +5415,15 @@ function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
     for (const [name, cid] of nameToCluster.entries()) {
         nameToCluster.set(name, oldToNew.get(cid));
     }
-    
+    return nameToCluster;
+}
+
+function applyHierarchicalClustering(depth1, depth2, depth3, minLeaves) {
+    const nameToCluster = computeHierarchicalClusterMap(depth1, depth2, depth3, minLeaves);
+    if (!nameToCluster) return;
     state.leafClusters = nameToCluster;
-    
-    // Update legend and re-render
+    const chEl = document.getElementById('hier-ch-value');
+    if (chEl) chEl.textContent = (function () { const ch = calinskiHarabaszTree(); return (ch != null && Number.isFinite(ch)) ? ch.toFixed(2) : (ch === Infinity ? '∞' : '—'); })();
     updateColorLegend();
     recalc();
 }
@@ -7992,7 +8284,7 @@ function getPdb3dStyleSpec(styleKey, epitopeResidues) {
                 };
             } else {
                 style = {};
-                style[subStyle] = { colorscheme: 'spectrum' };
+                style[subStyle] = { colorscheme: 'amino' };
             }
             break;
         }
@@ -8009,7 +8301,7 @@ function getPdb3dStyleSpec(styleKey, epitopeResidues) {
                     }
                 };
             } else {
-                style = { cartoon: { color: 'spectrum' } };
+                style = { cartoon: { colorscheme: 'amino' } };
             }
             break;
         }
