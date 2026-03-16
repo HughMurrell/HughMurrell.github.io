@@ -314,6 +314,7 @@
                 <button id="btn-load-epitopes" title="Load epitope descriptions from CSV file">Load Epitopes</button>
                 <button id="btn-select-epitope" title="Select an epitope to restrict display">Select Epitope</button>
                 <button id="btn-show-logo" title="Show sequence logo for selected epitope">Show Logo</button>
+                <button id="btn-export-epitopes" title="Download current epitopes as CSV">Export Epitopes</button>
             </div>
         </div>
         <div class="control-group">
@@ -973,6 +974,7 @@ const dom = {
     btnLoadEpitopes: document.getElementById('btn-load-epitopes'),
     btnSelectEpitope: document.getElementById('btn-select-epitope'),
     btnShowLogo: document.getElementById('btn-show-logo'),
+    btnExportEpitopes: document.getElementById('btn-export-epitopes'),
     inpPdb: document.getElementById('inp-pdb'),
     inpPdbId: document.getElementById('inp-pdb-id'),
     btnLoadPdb: document.getElementById('btn-load-pdb'),
@@ -1044,6 +1046,7 @@ function disableButtonsOnStartup() {
     if (dom.btnLoadEpitopes) dom.btnLoadEpitopes.disabled = true;
     if (dom.btnSelectEpitope) dom.btnSelectEpitope.disabled = true;
     if (dom.btnShowLogo) dom.btnShowLogo.disabled = true;
+    if (dom.btnExportEpitopes) dom.btnExportEpitopes.disabled = true;
     // Help button should always be enabled, so we don't disable it
 }
 
@@ -1090,6 +1093,9 @@ function enableButtonsAfterLadderize() {
 function enableButtonsAfterLoadEpitopes() {
     // Enable Select Epitope button after successful epitope loading
     if (dom.btnSelectEpitope) dom.btnSelectEpitope.disabled = false;
+    if (dom.btnExportEpitopes && state.epitopes && state.epitopes.length > 0) {
+        dom.btnExportEpitopes.disabled = false;
+    }
 }
 
 function enableButtonsAfterSelectEpitope() {
@@ -1173,6 +1179,9 @@ async function init() {
     }
     if (dom.btnShowLogo) {
         dom.btnShowLogo.addEventListener('click', showSequenceLogo);
+    }
+    if (dom.btnExportEpitopes) {
+        dom.btnExportEpitopes.addEventListener('click', exportEpitopesAsCsv);
     }
     var pdbLoadOverlay = document.getElementById('pdb-load-overlay');
     if (dom.btnLoadPdb) {
@@ -1408,6 +1417,13 @@ async function init() {
             if (result && result.regions && result.regions.length > 0) {
                 if (!state.epitopes) state.epitopes = [];
                 state.epitopes.push({ name: result.name, regions: result.regions });
+                // Enable epitope-related actions now that at least one epitope exists
+                if (dom && dom.btnSelectEpitope) {
+                    dom.btnSelectEpitope.disabled = false;
+                }
+                if (dom && dom.btnExportEpitopes) {
+                    dom.btnExportEpitopes.disabled = false;
+                }
                 selectEpitope(result.name);
             }
             newEpitopeOverlay.style.display = 'none';
@@ -2555,12 +2571,23 @@ function runInferTask() {
         const delimiter = state.groupDelimiter || '_';
         const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
         
-        // Remove cluster suffixes from sequence names
-        state.rawSequences.forEach(seq => {
-            if (seq.name) {
-                seq.name = seq.name.replace(clusterPattern, '');
+        // Remove cluster suffixes from sequence names and keep group coloring by updating sequenceGroups keys
+        if (state.rawSequences && state.rawSequences.length > 0) {
+            const newSequenceGroups = state.sequenceGroups ? new Map() : null;
+            state.rawSequences.forEach(seq => {
+                if (seq.name) {
+                    const oldName = seq.name;
+                    const newName = oldName.replace(clusterPattern, '');
+                    seq.name = newName;
+                    if (newSequenceGroups && state.sequenceGroups && state.sequenceGroups.has(oldName)) {
+                        newSequenceGroups.set(newName, state.sequenceGroups.get(oldName));
+                    }
+                }
+            });
+            if (newSequenceGroups) {
+                state.sequenceGroups = newSequenceGroups;
             }
-        });
+        }
         
         // Also remove from tree nodes if tree exists
         if (state.tree && state.tree.root) {
@@ -4719,9 +4746,48 @@ function showHierarchicalModal() {
     // Button handlers
     document.getElementById('btn-hier-cancel').onclick = () => {
         document.getElementById('hierarchical-overlay').style.display = 'none';
-        state.hierarchicalActive = false;
-        state.hierarchicalDepths = [0, 0, 0];
-        // Restore previous clustering if any
+        // Clear clustering state and remove cluster annotations, preserving group coloring
+        if (state.leafClusters || state.hierarchicalActive) {
+            const delimiter = state.groupDelimiter || '_';
+            const suffix = `${delimiter}cl-`;
+            // Remove cluster suffixes from sequence names and remap sequenceGroups to new names
+            if (state.rawSequences && state.rawSequences.length > 0) {
+                const newSequenceGroups = state.sequenceGroups ? new Map() : null;
+                state.rawSequences.forEach(seq => {
+                    if (seq.name) {
+                        const oldName = seq.name;
+                        const idx = oldName.lastIndexOf(suffix);
+                        const newName = idx !== -1 ? oldName.slice(0, idx) : oldName;
+                        seq.name = newName;
+                        if (newSequenceGroups && state.sequenceGroups && state.sequenceGroups.has(oldName)) {
+                            newSequenceGroups.set(newName, state.sequenceGroups.get(oldName));
+                        }
+                    }
+                });
+                if (newSequenceGroups) {
+                    state.sequenceGroups = newSequenceGroups;
+                }
+            }
+            // Also remove from tree nodes if tree exists
+            if (state.tree && state.tree.root) {
+                function removeClusterSuffixesFromTree(node) {
+                    if (node.name) {
+                        const idx = node.name.lastIndexOf(suffix);
+                        if (idx !== -1) {
+                            node.name = node.name.slice(0, idx);
+                        }
+                    }
+                    if (node.children) {
+                        node.children.forEach(removeClusterSuffixesFromTree);
+                    }
+                }
+                removeClusterSuffixesFromTree(state.tree.root);
+            }
+            state.leafClusters = null;
+            state.hierarchicalActive = false;
+            state.hierarchicalDepths = [0, 0, 0];
+            updateColorLegend();
+        }
         recalc();
     };
     
@@ -4911,6 +4977,46 @@ function showHierarchicalCladeModal() {
     }
     document.getElementById('btn-clade-cancel').onclick = () => {
         document.getElementById('hierarchical-clade-overlay').style.display = 'none';
+        // Clear clustering state and remove cluster annotations, preserving group coloring
+        if (state.leafClusters) {
+            const delimiter = state.groupDelimiter || '_';
+            const suffix = `${delimiter}cl-`;
+            // Remove cluster suffixes from sequence names and remap sequenceGroups to new names
+            if (state.rawSequences && state.rawSequences.length > 0) {
+                const newSequenceGroups = state.sequenceGroups ? new Map() : null;
+                state.rawSequences.forEach(seq => {
+                    if (seq.name) {
+                        const oldName = seq.name;
+                        const idx = oldName.lastIndexOf(suffix);
+                        const newName = idx !== -1 ? oldName.slice(0, idx) : oldName;
+                        seq.name = newName;
+                        if (newSequenceGroups && state.sequenceGroups && state.sequenceGroups.has(oldName)) {
+                            newSequenceGroups.set(newName, state.sequenceGroups.get(oldName));
+                        }
+                    }
+                });
+                if (newSequenceGroups) {
+                    state.sequenceGroups = newSequenceGroups;
+                }
+            }
+            // Also remove from tree nodes if tree exists
+            if (state.tree && state.tree.root) {
+                function removeClusterSuffixesFromTree(node) {
+                    if (node.name) {
+                        const idx = node.name.lastIndexOf(suffix);
+                        if (idx !== -1) {
+                            node.name = node.name.slice(0, idx);
+                        }
+                    }
+                    if (node.children) {
+                        node.children.forEach(removeClusterSuffixesFromTree);
+                    }
+                }
+                removeClusterSuffixesFromTree(state.tree.root);
+            }
+            state.leafClusters = null;
+            updateColorLegend();
+        }
         recalc();
     };
     document.getElementById('btn-clade-accept').onclick = () => {
@@ -6185,7 +6291,7 @@ function loadEpitopes(file) {
         try {
             const text = e.target.result;
             const lines = text.split(/\r?\n/).filter(line => line.trim());
-            const epitopes = [];
+            const loaded = [];
             
             for (const line of lines) {
                 const parts = line.split(',').map(p => p.trim());
@@ -6215,11 +6321,19 @@ function loadEpitopes(file) {
                 }
                 
                 if (regions.length > 0) {
-                    epitopes.push({ name, regions });
+                    loaded.push({ name, regions });
                 }
             }
-            
-            state.epitopes = epitopes;
+            // Merge with any existing epitopes: overwrite by name, keep others
+            if (!state.epitopes) state.epitopes = [];
+            const byName = new Map();
+            state.epitopes.forEach(ep => {
+                if (ep && ep.name) byName.set(ep.name, ep);
+            });
+            loaded.forEach(ep => {
+                if (ep && ep.name) byName.set(ep.name, ep);
+            });
+            state.epitopes = Array.from(byName.values());
             
             // Epitopes use AA; if currently NT, convert sequences to AA and switch to AA mode (no going back)
             if (!state.isAASequence && state.rawSequences.length > 0) {
@@ -6229,17 +6343,55 @@ function loadEpitopes(file) {
                 setMode('AA', state.isAASequence);
             }
             
-            // Enable Select Epitope button after successful loading
+            // Enable Select Epitope / Export buttons after successful loading
             enableButtonsAfterLoadEpitopes();
             
             // Show temporary notification that disappears after 2 seconds
-            showTemporaryNotification(`Loaded ${epitopes.length} epitope(s). Use "Select Epitope" to choose one.`, 2000);
+            showTemporaryNotification(`Loaded ${loaded.length} epitope(s). Use "Select Epitope" to choose one.`, 2000);
         } catch (err) {
             console.error("Error loading epitopes:", err);
             alert("Error loading epitopes: " + err.message);
         }
     };
     reader.readAsText(file);
+}
+
+function exportEpitopesAsCsv() {
+    if (!state.epitopes || state.epitopes.length === 0) {
+        alert("No epitopes to export. Please load or define epitopes first.");
+        return;
+    }
+    const lines = [];
+    for (const ep of state.epitopes) {
+        if (!ep || !ep.name || !ep.regions || ep.regions.length === 0) continue;
+        const parts = [ep.name];
+        for (const r of ep.regions) {
+            if (!r) continue;
+            const s = typeof r.start === 'number' ? r.start : parseInt(r.start, 10);
+            const e = typeof r.end === 'number' ? r.end : parseInt(r.end, 10);
+            if (!isNaN(s) && !isNaN(e)) {
+                if (s === e) parts.push(String(s));
+                else parts.push(`${s}:${e}`);
+            }
+        }
+        if (parts.length > 1) {
+            lines.push(parts.join(','));
+        }
+    }
+    if (lines.length === 0) {
+        alert("No epitopes with regions to export.");
+        return;
+    }
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'epitopes.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
 
 function showEpitopeSelector() {
@@ -6333,7 +6485,8 @@ function selectEpitope(epitopeName) {
         // Clear epitope selection - show all
         state.epitopeColumns = null;
         // Disable Show Logo button when epitope selection is cleared
-        if (dom.btnShowLogo) dom.btnShowLogo.disabled = true;
+    if (dom.btnShowLogo) dom.btnShowLogo.disabled = true;
+    if (dom.btnExportEpitopes) dom.btnExportEpitopes.disabled = true;
         recalc();
         return;
     }
@@ -8022,7 +8175,7 @@ function computeDistanceBasedEpitope(pdbContent, intrinsicChainId, extrinsicChai
         if (minD < cutoff) residuesBelowCutoff.push(r.resSeq);
     });
     var pdbCode = (state.pdbFileName || 'PDB').replace(/\.(pdb|ent|cif)$/i, '');
-    var name = pdbCode + '_' + cutoff;
+    var name = pdbCode + '_' + cutoff + 'A';
     var residueRefs = [];
     residuesBelowCutoff.forEach(function (resSeq) {
         var refCoords = getRefCoordsForPdbResidue(intrinsicChainId, resSeq);
