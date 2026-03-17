@@ -677,8 +677,9 @@
 
 <div id="help-overlay">
     <div class="help-box">
-        <h2>aliViz Help</h2>
-        <div style="font-size: 0.75em; color: #6b7280; margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee;">Based on the alignment app from <a href="https://murrellgroup.github.io/WebWidgets/alivibe.html" target="_blank" style="color: #3b82f6;">https://murrellgroup.github.io/WebWidgets/alivibe.html</a></div>
+        <h2>aliViz Help</h2> 
+        <div style="font-size: 0.75em; color: #6b7280; margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #eee;">(for a full user guide please open: <a href="https://hivdiversity.github.io/webwidgets/aliViz_userGuide.html" target="_blank" style="color: #3b82f6;">aliViz_userGuide</a> in a new tab)
+        </div>
         <div class="help-row"><span class="help-key">Choose File</span> <span>Load an Alignment with Ref as first seq and SubType as second seq.</span></div>
         <div class="help-row"><span class="help-key">Sort</span> <span>Sort by current grouping, or by name if no grouping (REF and SUBTYPE remain first)</span></div>
         <div class="help-row"><span class="help-key">Group</span> <span>Group sequences using field in Seq names</span></div>
@@ -1936,11 +1937,15 @@ function sortSequencesByName() {
     // Get other sequences: non-PDB (for sorting) and PDB chains (kept in order, always after Reference)
     const otherSeqs = [];
     const pdbChains = [];
+    let founderSeq = null;
     for (let i = 0; i < state.rawSequences.length; i++) {
         if (i === state.refIndex || i === state.subtypeIndex) continue;
         const s = state.rawSequences[i];
         if (isPdbChainSequence(s)) {
             pdbChains.push(s);
+        } else if (s && s.name && s.name.startsWith('consensus_of_')) {
+            // Founder is a special sequence: keep it out of the sort and place it after subtype
+            founderSeq = s;
         } else {
             otherSeqs.push({ index: i, seq: s });
         }
@@ -1973,14 +1978,17 @@ function sortSequencesByName() {
         });
     }
     
-    // Rebuild: REF at 0, then PDB chains, then SUBTYPE (if any), then sorted non-PDB
+    // Rebuild: REF, then PDB chains, then SUBTYPE, then Founder, then sorted remaining sequences
     const newSequences = [refSeq];
     pdbChains.forEach(s => newSequences.push(s));
     if (subtypeSeq && subtypeSeq !== refSeq) {
         newSequences.push(subtypeSeq);
     }
+    if (founderSeq && founderSeq !== refSeq && founderSeq !== subtypeSeq) {
+        newSequences.push(founderSeq);
+    }
     otherSeqs.forEach(item => {
-        if (item.seq !== refSeq && item.seq !== subtypeSeq) {
+        if (item.seq !== refSeq && item.seq !== subtypeSeq && item.seq !== founderSeq) {
             newSequences.push(item.seq);
         }
     });
@@ -2202,32 +2210,35 @@ function applyPrune() {
 
 // --- Add Founder Sequence ---
 function showSubtypeModal() {
-    if (!state.sequenceGroups || state.groupNames.size === 0) {
-        alert("Please group sequences first before adding a founder sequence.");
-        return;
-    }
-    
     // Populate group selector
     const select = document.getElementById('sel-subtype-group');
     select.innerHTML = '';
     
-    // Sort groups alphabetically by value
-    const groupEntries = Array.from(state.groupNames.entries()).sort((a, b) => {
-        const valA = a[1] || '';
-        const valB = b[1] || '';
-        return valA.localeCompare(valB);
-    });
+    const hasGroups = !!(state.sequenceGroups && state.groupNames && state.groupNames.size > 0);
+    if (hasGroups) {
+        // Sort groups alphabetically by value
+        const groupEntries = Array.from(state.groupNames.entries()).sort((a, b) => {
+            const valA = a[1] || '';
+            const valB = b[1] || '';
+            return valA.localeCompare(valB);
+        });
+        
+        groupEntries.forEach(([groupId, groupValue], index) => {
+            const option = document.createElement('option');
+            option.value = groupId.toString();
+            option.textContent = groupValue || `Group ${groupId}`;
+            // Make the first group selected by default
+            if (index === 0) option.selected = true;
+            select.appendChild(option);
+        });
+    }
     
-    groupEntries.forEach(([groupId, groupValue], index) => {
-        const option = document.createElement('option');
-        option.value = groupId.toString();
-        option.textContent = groupValue || `Group ${groupId}`;
-        // Make the first group selected by default
-        if (index === 0) {
-            option.selected = true;
-        }
-        select.appendChild(option);
-    });
+    // Add subtype option last
+    const subtypeOpt = document.createElement('option');
+    subtypeOpt.value = 'subtype';
+    subtypeOpt.textContent = '[SubType]';
+    if (!hasGroups) subtypeOpt.selected = true;
+    select.appendChild(subtypeOpt);
     
     document.getElementById('subtype-overlay').style.display = 'flex';
 }
@@ -2278,42 +2289,58 @@ function calculateFounder(sequences) {
 
 function applySubtypeFounder() {
     const select = document.getElementById('sel-subtype-group');
-    const selectedGroupId = parseInt(select.value);
-    
-    if (isNaN(selectedGroupId)) {
-        alert("Please select a group.");
+    const selected = (select && select.value != null) ? String(select.value) : '';
+    if (!selected) {
+        alert("Please select a group or [SubType].");
         return;
     }
     
-    // Get group value for naming
-    const groupValue = state.groupNames.get(selectedGroupId) || `group${selectedGroupId}`;
+    let founder = null;
+    let founderName = null;
     
-    // Find all sequences in the selected group
-    const groupSequences = [];
-    for (let i = 0; i < state.rawSequences.length; i++) {
-        if (i === state.refIndex || i === state.subtypeIndex) continue; // Exclude REF and subtype
-        
-        const seq = state.rawSequences[i];
-        const groupId = state.sequenceGroups.get(seq.name);
-        
-        if (groupId === selectedGroupId) {
-            // Get the sequence array
-            const seqArr = state.isAASequence ? state.viewSequences[i].seq : state.rawSequences[i].seq;
-            groupSequences.push(seqArr);
+    if (selected === 'subtype') {
+        if (state.subtypeIndex == null || state.subtypeIndex < 0 || state.subtypeIndex >= state.rawSequences.length) {
+            alert("No subtype sequence found.");
+            return;
         }
-    }
-    
-    if (groupSequences.length === 0) {
-        alert("No sequences found in the selected group.");
-        return;
-    }
-    
-    // Calculate founder
-    const founder = calculateFounder(groupSequences);
-    
-    if (!founder) {
-        alert("Failed to calculate founder sequence.");
-        return;
+        const subtypeSeq = state.rawSequences[state.subtypeIndex];
+        founder = subtypeSeq && subtypeSeq.seq ? [...subtypeSeq.seq] : null;
+        founderName = 'consensus_of_subtype';
+    } else {
+        const selectedGroupId = parseInt(selected, 10);
+        if (isNaN(selectedGroupId)) {
+            alert("Please select a valid group or [SubType].");
+            return;
+        }
+        if (!state.sequenceGroups || !state.groupNames || state.groupNames.size === 0) {
+            alert("Please group sequences first before adding a founder sequence from a group.");
+            return;
+        }
+        
+        // Get group value for naming
+        const groupValue = state.groupNames.get(selectedGroupId) || `group${selectedGroupId}`;
+        founderName = `consensus_of_${groupValue}`;
+        
+        // Find all sequences in the selected group
+        const groupSequences = [];
+        for (let i = 0; i < state.rawSequences.length; i++) {
+            if (i === state.refIndex || i === state.subtypeIndex) continue; // Exclude REF and subtype
+            const seq = state.rawSequences[i];
+            const groupId = state.sequenceGroups.get(seq.name);
+            if (groupId === selectedGroupId) {
+                const seqArr = state.isAASequence ? state.viewSequences[i].seq : state.rawSequences[i].seq;
+                groupSequences.push(seqArr);
+            }
+        }
+        if (groupSequences.length === 0) {
+            alert("No sequences found in the selected group.");
+            return;
+        }
+        founder = calculateFounder(groupSequences);
+        if (!founder) {
+            alert("Failed to calculate founder sequence.");
+            return;
+        }
     }
     
     // Save state for undo
@@ -2335,7 +2362,7 @@ function applySubtypeFounder() {
     
     // Create new founder sequence
     const founderSeq = {
-        name: `consensus_of_${groupValue}`,
+        name: founderName,
         seq: [...founder]
     };
     
