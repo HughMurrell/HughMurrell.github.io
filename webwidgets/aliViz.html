@@ -3191,7 +3191,7 @@ function appendTreeSvgColorLegend(parts, legendX, legendY, legendW, legendH) {
         groupEntries.forEach(([groupId, groupValue]) => {
             const color = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
             const lab = escapeXml(groupValue || `Group ${groupId}`);
-            leg.push(`<rect x="${x0}" y="${y - sw + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
+            leg.push(`<rect x="${x0}" y="${y - sw / 2 + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
             leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">${lab}</text>\n`);
             y += rowH;
         });
@@ -3203,12 +3203,12 @@ function appendTreeSvgColorLegend(parts, legendX, legendY, legendW, legendH) {
         y += titleH;
         clusterIds.forEach(clusterId => {
             const color = getClusterColor(clusterId);
-            leg.push(`<rect x="${x0}" y="${y - sw + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
+            leg.push(`<rect x="${x0}" y="${y - sw / 2 + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
             leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">${escapeXml(`Cluster ${clusterId}`)}</text>\n`);
             y += rowH;
         });
         if (hasNoise) {
-            leg.push(`<rect x="${x0}" y="${y - sw + 1}" width="${sw}" height="${sw}" fill="#9ca3af" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
+            leg.push(`<rect x="${x0}" y="${y - sw / 2 + 1}" width="${sw}" height="${sw}" fill="#9ca3af" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
             leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">Noise</text>\n`);
             y += rowH;
         }
