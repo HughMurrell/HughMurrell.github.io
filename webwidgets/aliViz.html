@@ -226,6 +226,7 @@
                 <button id="btn-sort-sequences" title="Sort by current grouping, or by name if no grouping (REF and SUBTYPE remain first)">Sort</button>
                 <button id="btn-prune" title="Remove sequences from selected groups">Prune</button>
                 <button id="btn-subtype" title="Add founder sequence from selected group">Add Founder</button>
+                <button id="btn-download" title="Download Current View">fasta</button>
             </div>
         </div>
         <div class="control-group">
@@ -238,18 +239,8 @@
                 <button id="btn-ladderize-tree" title="Ladderize tree and reorder sequences">Ladderize</button>
                 <button id="btn-histogram" title="Show histogram of root-to-leaf distances" disabled>Histogram</button>
                 <button id="btn-mds" title="Show 2D projection and clustering of pairwise leaf distances" disabled>Cluster</button>
-            </div>
-        </div>
-        
-        <!-- Export Controls -->
-        <div style="width:1px; height:30px; background:#e5e7eb; margin:0 10px;"></div>
-        <div class="control-group">
-            <label>Export</label>
-            <div style="display:flex; gap:5px;">
-                <button id="btn-download" title="Download Current View">fasta</button>
-                <!-- Copy button commented out but code preserved -->
-                <!-- <button id="btn-copy" title="Copy to Clipboard">Copy</button> -->
                 <button id="btn-export-tree" title="Export current tree as Newick">tree</button>
+                <button id="btn-export-tree-svg" title="Export current tree as SVG (linear or circular)">svg</button>
             </div>
         </div>
         
@@ -447,7 +438,8 @@
         <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
             <label style="text-transform: none; font-size: 13px; color: #374151;">Choose dimensionality reduction method:</label>
             <select id="sel-projection-method" style="width: 100%;">
-                <option value="hierarchical-clade" selected>Hierarchical (tree-clade clustering)</option>
+                <option value="none" selected>None</option>
+                <option value="hierarchical-clade">Hierarchical (tree-clade clustering)</option>
                 <option value="hierarchical">Hierarchical (tree-cut clustering)</option>
                 <option value="umap">UMAP (Uniform Manifold Approximation and Projection)</option>
                 <option value="mds">MDS (Classical Multidimensional Scaling)</option>
@@ -456,6 +448,27 @@
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
             <button onclick="document.getElementById('method-select-overlay').style.display='none'">Cancel</button>
             <button id="btn-confirm-method" class="active">Continue</button>
+        </div>
+    </div>
+</div>
+
+<div id="tree-svg-export-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;">
+    <div class="help-box" style="width: 420px; pointer-events: auto;">
+        <h2>Export tree as SVG</h2>
+        <p style="font-size: 13px; color: #374151; margin: 0 0 12px 0;">Tip labels use <strong>group</strong> colors; tip markers use <strong>cluster</strong> colors (when clustering is active).</p>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                <input type="radio" name="tree-svg-layout" id="tree-svg-linear" value="linear" checked>
+                Linear (rectangular cladogram)
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                <input type="radio" name="tree-svg-layout" id="tree-svg-circular" value="circular">
+                Circular (radial layout)
+            </label>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" id="btn-tree-svg-cancel">Cancel</button>
+            <button type="button" id="btn-tree-svg-export" class="active">Export</button>
         </div>
     </div>
 </div>
@@ -951,6 +964,7 @@ const state = {
     aioliCLI: null,
     isAASequence: false, // Flag to track if sequences are already amino acids (not DNA to be translated)
     leafClusters: null, // Map from leaf name to cluster ID (from MDS clustering)
+    lastAcceptedClusterMethod: null, // 'Hierarchical', 'Hierarchical-clade', 'UMAP', or 'MDS'
     hierarchicalActive: false, // Whether hierarchical clustering modal is active
     hierarchicalDepths: [0, 0, 0], // Current depth values for hierarchical clustering sliders
     sequenceGroups: null, // Map from sequence name to group ID (from grouping by name field)
@@ -971,6 +985,7 @@ const dom = {
     fileTree: document.getElementById('inp-tree'),
     btnInferTree: document.getElementById('btn-infer-tree'),
     btnExportTree: document.getElementById('btn-export-tree'),
+    btnExportTreeSvg: document.getElementById('btn-export-tree-svg'),
     btnLadderizeTree: document.getElementById('btn-ladderize-tree'),
     btnRerootTree: document.getElementById('btn-reroot-tree'),
     btnHistogram: document.getElementById('btn-histogram'),
@@ -1056,6 +1071,7 @@ function disableButtonsOnStartup() {
     if (dom.btnMds) dom.btnMds.disabled = true;
     if (dom.btnDownload) dom.btnDownload.disabled = true;
     if (dom.btnExportTree) dom.btnExportTree.disabled = true;
+    if (dom.btnExportTreeSvg) dom.btnExportTreeSvg.disabled = true;
     if (dom.btnClearAlignment) dom.btnClearAlignment.disabled = true;
     if (dom.btnClearTree) dom.btnClearTree.disabled = true;
     if (dom.btnUndo) dom.btnUndo.disabled = true;
@@ -1107,6 +1123,7 @@ function enableButtonsAfterLadderize() {
     if (dom.btnHistogram) dom.btnHistogram.disabled = false;
     if (dom.btnMds) dom.btnMds.disabled = false;
     if (dom.btnExportTree) dom.btnExportTree.disabled = false;
+    if (dom.btnExportTreeSvg) dom.btnExportTreeSvg.disabled = false;
 }
 
 function enableButtonsAfterLoadEpitopes() {
@@ -1450,6 +1467,24 @@ async function init() {
     }
     dom.btnInferTree.addEventListener('click', showInferModal);
     dom.btnExportTree.addEventListener('click', exportTree);
+    if (dom.btnExportTreeSvg) {
+        dom.btnExportTreeSvg.addEventListener('click', showTreeSvgExportModal);
+    }
+    const treeSvgOverlay = document.getElementById('tree-svg-export-overlay');
+    const btnTreeSvgCancel = document.getElementById('btn-tree-svg-cancel');
+    const btnTreeSvgExport = document.getElementById('btn-tree-svg-export');
+    if (btnTreeSvgCancel && treeSvgOverlay) {
+        btnTreeSvgCancel.addEventListener('click', () => {
+            treeSvgOverlay.style.display = 'none';
+        });
+    }
+    if (btnTreeSvgExport && treeSvgOverlay) {
+        btnTreeSvgExport.addEventListener('click', () => {
+            const circular = document.getElementById('tree-svg-circular') && document.getElementById('tree-svg-circular').checked;
+            treeSvgOverlay.style.display = 'none';
+            exportTreeAsSvg(circular ? 'circular' : 'linear');
+        });
+    }
     dom.btnLadderizeTree.addEventListener('click', showLadderizeModal);
     if (dom.btnRerootTree) {
         dom.btnRerootTree.addEventListener('click', showRerootModal);
@@ -1473,7 +1508,41 @@ async function init() {
             const methodSelect = document.getElementById('sel-projection-method');
             const selectedMethod = methodSelect ? methodSelect.value : 'mds';
             document.getElementById('method-select-overlay').style.display = 'none';
-            if (selectedMethod === 'hierarchical') {
+            if (selectedMethod === 'none') {
+                // Clear any current clustering and remove cluster suffixes from names.
+                const delimiter = state.groupDelimiter || '_';
+                const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+
+                if (state.rawSequences && state.rawSequences.length > 0) {
+                    const newSequenceGroups = state.sequenceGroups ? new Map() : null;
+                    state.rawSequences.forEach(seq => {
+                        if (!seq.name) return;
+                        const oldName = seq.name;
+                        const newName = oldName.replace(clusterPattern, '');
+                        seq.name = newName;
+                        if (newSequenceGroups && state.sequenceGroups && state.sequenceGroups.has(oldName)) {
+                            newSequenceGroups.set(newName, state.sequenceGroups.get(oldName));
+                        }
+                    });
+                    if (newSequenceGroups) state.sequenceGroups = newSequenceGroups;
+                }
+
+                if (state.tree && state.tree.root) {
+                    function removeClusterSuffixesFromTree(node) {
+                        if (node.name) node.name = node.name.replace(clusterPattern, '');
+                        if (node.children) node.children.forEach(removeClusterSuffixesFromTree);
+                    }
+                    removeClusterSuffixesFromTree(state.tree.root);
+                }
+
+                state.leafClusters = null;
+                state.hierarchicalActive = false;
+                state.hierarchicalDepths = [0, 0, 0];
+                state.lastAcceptedClusterMethod = null;
+
+                updateColorLegend();
+                recalc();
+            } else if (selectedMethod === 'hierarchical') {
                 showHierarchicalModal();
             } else if (selectedMethod === 'hierarchical-clade') {
                 showHierarchicalCladeModal();
@@ -1884,6 +1953,9 @@ function clearTreeOnly() {
     }
     if (dom.btnExportTree) {
         dom.btnExportTree.disabled = true;
+    }
+    if (dom.btnExportTreeSvg) {
+        dom.btnExportTreeSvg.disabled = true;
     }
     updateColorLegend();
     render();
@@ -2415,6 +2487,85 @@ function applySubtypeFounder() {
     recalc();
 }
 
+/** Round branch-length magnitude for a short scale bar (same units as tree layout / Newick). */
+function pickPhyloScaleBarValue(maxDepth) {
+    if (maxDepth == null || maxDepth <= 0 || !isFinite(maxDepth)) return null;
+    const target = maxDepth / 3;
+    const log10 = Math.log10(target);
+    if (!isFinite(log10)) return null;
+    const exp = Math.floor(log10);
+    const base = Math.pow(10, exp);
+    const f = target / base;
+    let nf = 1;
+    if (f <= 1) nf = 1;
+    else if (f <= 2) nf = 2;
+    else if (f <= 5) nf = 5;
+    else nf = 10;
+    let v = nf * base;
+    if (v > maxDepth) {
+        v = base;
+        while (v > maxDepth && v > 0) v /= 10;
+        if (v <= 0) v = maxDepth;
+    }
+    return v;
+}
+
+/** Plain decimal string for branch lengths (no scientific notation). */
+function formatPhyloBranchLength(value) {
+    if (value == null || !isFinite(value)) return '';
+    if (value === 0) return '0';
+    const sign = value < 0 ? '-' : '';
+    const v = Math.abs(value);
+    let dec;
+    if (v >= 1000) dec = v.toFixed(2).replace(/\.?0+$/, '');
+    else if (v >= 1) dec = v.toFixed(6).replace(/\.?0+$/, '');
+    else if (v >= 0.0001) dec = v.toFixed(8).replace(/\.?0+$/, '');
+    else dec = v.toFixed(12).replace(/\.?0+$/, '');
+    return sign + dec;
+}
+
+/** Branch-length scale bar on exported tree SVG (same px/length mapping as tree drawing). */
+function appendSvgTreeScaleBarLinear(parts, xScale, maxD) {
+    const scaleVal = pickPhyloScaleBarValue(maxD);
+    if (scaleVal == null) return;
+    const pxLen = scaleVal * xScale;
+    const x0 = 5;
+    const y0 = 12;
+    const labelX = x0 + pxLen + 8;
+    const num = escapeXml(formatPhyloBranchLength(scaleVal));
+    parts.push(`<g fill="none" stroke="#111827" stroke-width="2">\n`);
+    parts.push(`<line x1="${x0}" y1="${y0}" x2="${x0 + pxLen}" y2="${y0}"/>\n`);
+    parts.push(`<line x1="${x0}" y1="${y0 - 4}" x2="${x0}" y2="${y0 + 4}"/>\n`);
+    parts.push(`<line x1="${x0 + pxLen}" y1="${y0 - 4}" x2="${x0 + pxLen}" y2="${y0 + 4}"/>\n`);
+    parts.push('</g>\n');
+    parts.push(`<g font-family="sans-serif" font-size="11" fill="#111827">\n`);
+    parts.push(`<text x="${labelX}" y="${y0}" dominant-baseline="middle" font-weight="600">${num}</text>\n`);
+    parts.push('</g>\n');
+}
+
+/** Top area of circular plot: below top margin, inset from right by bar length; number left of bar. */
+function appendSvgTreeScaleBarCircular(parts, plotW, R, maxD, plotMargin) {
+    const scaleVal = pickPhyloScaleBarValue(maxD);
+    if (scaleVal == null) return;
+    const pxLen = scaleVal * (R / maxD);
+    const margin = plotMargin != null ? plotMargin : 48;
+    const y0 = margin + 8;
+    const padR = 10;
+    const xEnd = plotW - padR - pxLen;
+    const x0 = xEnd - pxLen;
+    if (x0 < 5) return;
+    const num = escapeXml(formatPhyloBranchLength(scaleVal));
+    const labelX = x0 - 8;
+    parts.push(`<g fill="none" stroke="#111827" stroke-width="2">\n`);
+    parts.push(`<line x1="${x0}" y1="${y0}" x2="${xEnd}" y2="${y0}"/>\n`);
+    parts.push(`<line x1="${x0}" y1="${y0 - 4}" x2="${x0}" y2="${y0 + 4}"/>\n`);
+    parts.push(`<line x1="${xEnd}" y1="${y0 - 4}" x2="${xEnd}" y2="${y0 + 4}"/>\n`);
+    parts.push('</g>\n');
+    parts.push(`<g font-family="sans-serif" font-size="11" fill="#111827">\n`);
+    parts.push(`<text x="${labelX}" y="${y0}" dominant-baseline="middle" font-weight="600" text-anchor="end">${num}</text>\n`);
+    parts.push('</g>\n');
+}
+
 // --- Color Legend ---
 function updateColorLegend() {
     const legend = document.getElementById('color-legend');
@@ -2607,6 +2758,7 @@ function runInferTask() {
     if (dom.btnHistogram) dom.btnHistogram.disabled = true;
     if (dom.btnMds) dom.btnMds.disabled = true;
     if (dom.btnExportTree) dom.btnExportTree.disabled = true;
+    if (dom.btnExportTreeSvg) dom.btnExportTreeSvg.disabled = true;
     // Disable reroot and ladderize buttons (will be re-enabled after inference/reroot)
     if (dom.btnRerootTree) dom.btnRerootTree.disabled = true;
     if (dom.btnLadderizeTree) dom.btnLadderizeTree.disabled = true;
@@ -2849,6 +3001,597 @@ function exportTree() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+/** Escape text for SVG/XML. */
+function escapeXml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function getTreeClusterPattern() {
+    const delimiter = state.groupDelimiter || '_';
+    return new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+}
+
+function findViewSeqRowForTreeNode(nodeName) {
+    if (!nodeName) return -1;
+    const idx = state.viewSequences.findIndex(s => s.name === nodeName);
+    if (idx >= 0) return idx;
+    const pat = getTreeClusterPattern();
+    const stripped = nodeName.replace(pat, '');
+    for (let i = 0; i < state.viewSequences.length; i++) {
+        if (state.viewSequences[i].name.replace(pat, '') === stripped) return i;
+    }
+    return -1;
+}
+
+/** Tip marker fill: cluster colors (same logic as canvas tree). */
+function getSvgLeafTipFill(nodeName) {
+    let fillColor = '#374151';
+    if (!nodeName) return fillColor;
+    const clusterPattern = getTreeClusterPattern();
+    const originalNodeName = nodeName.replace(clusterPattern, '');
+    const subtypeOriginalName = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length)
+        ? state.rawSequences[state.subtypeIndex].name.replace(clusterPattern, '')
+        : '';
+    const isSubtype = state.subtypeIndex >= 0 && originalNodeName === subtypeOriginalName;
+    if (state.leafClusters && nodeName) {
+        let clusterId = state.leafClusters.get(nodeName);
+        if (clusterId === undefined) clusterId = state.leafClusters.get(originalNodeName);
+        if (clusterId !== undefined && clusterId !== null) {
+            if (clusterId === -1) fillColor = '#9ca3af';
+            else fillColor = getClusterColor(clusterId);
+        } else if (isSubtype) fillColor = '#dc2626';
+    } else if (isSubtype) {
+        fillColor = '#dc2626';
+    }
+    return fillColor;
+}
+
+/** Tip label fill: group / special sequence colors (same as name panel). */
+function getSvgLeafLabelFill(nodeName) {
+    const r = findViewSeqRowForTreeNode(nodeName);
+    if (r < 0) return '#374151';
+    const vs = state.viewSequences[r];
+    const isSubtype = vs.name === state.rawSequences[state.subtypeIndex]?.name;
+    const isFounder = vs.name && vs.name.startsWith('consensus_of_');
+    const isPdbChain = isPdbChainSequence(vs);
+    if (r === state.refIndex || isSubtype || isFounder || isPdbChain) return '#ff00ff';
+    const groupId = state.sequenceGroups ? state.sequenceGroups.get(vs.name) : undefined;
+    if (groupId !== undefined) return COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
+    return '#374151';
+}
+
+function getSvgLeafDisplayLabel(nodeName) {
+    const r = findViewSeqRowForTreeNode(nodeName);
+    if (r < 0) return escapeXml(nodeName || '');
+    const vs = state.viewSequences[r];
+    const isSubtype = vs.name === state.rawSequences[state.subtypeIndex]?.name;
+    const isFounder = vs.name && vs.name.startsWith('consensus_of_');
+    const isPdbChain = isPdbChainSequence(vs);
+    let label = isPdbChain ? getPdbChainDisplayLabel(vs) : vs.name;
+    if (r === state.refIndex) label += ' [Reference]';
+    if (isSubtype && state.subtypeIndex < state.rawSequences.length) label += ' [Subtype]';
+    if (isFounder) label += ' [Founder]';
+    return escapeXml(label);
+}
+
+function truncateTitle(s, maxChars) {
+    const str = String(s == null ? '' : s);
+    if (str.length <= maxChars) return str;
+    if (maxChars <= 3) return str.slice(0, maxChars);
+    return str.slice(0, maxChars - 3) + '...';
+}
+
+function getSvgTreeTitleLines() {
+    const rawName = state.currentFileName || dom.file?.files?.[0]?.name || 'Alignment';
+    const baseName = rawName.replace(/\.[^.]+$/, '');
+    // User request: show full FASTA filename (no ellipsis truncation).
+    const fastaName = baseName;
+
+    const inferSel = document.getElementById('sel-infer-method')?.value || 'fasttree';
+    const inferLabel = inferSel === 'nj'
+        ? 'Neighbor-Joining'
+        : (inferSel === 'fasttree' ? 'FastTree (bioWASM)' : String(inferSel));
+
+    // Cluster method name (4 options). Use last accepted clustering choice.
+    let clusterMethod = state.lastAcceptedClusterMethod;
+    if (!clusterMethod) {
+        const projSel = document.getElementById('sel-projection-method')?.value;
+        clusterMethod = projSel || null;
+    }
+
+    let clusterLabel = 'No clustering';
+    if (clusterMethod) {
+        const m = String(clusterMethod);
+        if (m === 'hierarchical' || m === 'Hierarchical' || m === 'hierarchical-cut') {
+            clusterLabel = 'Hierarchical (tree-cut clustering)';
+        } else if (m === 'hierarchical-clade' || m === 'Hierarchical-clade' || m === 'hierarchical-clade') {
+            clusterLabel = 'Hierarchical (tree-clade clustering)';
+        } else if (m === 'umap' || m === 'UMAP') {
+            clusterLabel = 'UMAP';
+        } else if (m === 'mds' || m === 'MDS') {
+            clusterLabel = 'MDS';
+        } else {
+            clusterLabel = m;
+        }
+    }
+
+    return [
+        escapeXml(fastaName),
+        escapeXml(`Infer: ${inferLabel} | Cluster: ${clusterLabel}`)
+    ];
+}
+
+/** Approximate horizontal width in px for circular SVG labels (11px bold sans). */
+function estimateSvgCircularLabelWidthPx(nodeName) {
+    const r = findViewSeqRowForTreeNode(nodeName);
+    let label = nodeName || '';
+    if (r >= 0) {
+        const vs = state.viewSequences[r];
+        const isSubtype = vs.name === state.rawSequences[state.subtypeIndex]?.name;
+        const isFounder = vs.name && vs.name.startsWith('consensus_of_');
+        const isPdbChain = isPdbChainSequence(vs);
+        label = isPdbChain ? getPdbChainDisplayLabel(vs) : vs.name;
+        if (r === state.refIndex) label += ' [Reference]';
+        if (isSubtype && state.subtypeIndex < state.rawSequences.length) label += ' [Subtype]';
+        if (isFounder) label += ' [Founder]';
+    }
+    return Math.max(0, label.length) * 7.0;
+}
+
+/** Append SVG for the current color legend (groups + clusters + noise). */
+function appendTreeSvgColorLegend(parts, legendX, legendY, legendW, legendH) {
+    const pad = 8;
+    const sw = 14;
+    const rowH = 20;
+    const titleH = 16;
+    let y = legendY + pad + 14;
+    const x0 = legendX + pad;
+
+    const hasGroups = !!(state.sequenceGroups && state.groupNames && state.groupNames.size > 0);
+    const clusterIdSet = new Set();
+    let hasNoise = false;
+    if (state.leafClusters) {
+        state.leafClusters.forEach(clusterId => {
+            if (clusterId === -1) hasNoise = true;
+            else clusterIdSet.add(clusterId);
+        });
+    }
+    const clusterIds = Array.from(clusterIdSet).sort((a, b) => a - b);
+    const hasClusters = clusterIds.length > 0 || hasNoise;
+
+    const leg = [];
+
+    if (!hasGroups && !hasClusters) {
+        const midY = legendY + Math.min(legendH, 48) / 2 + 4;
+        leg.push(`<text x="${x0}" y="${midY}" font-family="sans-serif" font-size="11" fill="#6b7280">${escapeXml('No group or cluster colors')}</text>\n`);
+        parts.push(`<rect x="${legendX}" y="${legendY}" width="${legendW}" height="${Math.min(legendH, 48)}" fill="#fafafa" stroke="#e5e7eb" stroke-width="1"/>\n`);
+        leg.forEach(s => parts.push(s));
+        return;
+    }
+
+    leg.push(`<text x="${x0}" y="${y}" font-family="sans-serif" font-size="14" font-weight="700" fill="#374151">Color Legend</text>\n`);
+    y += 22;
+
+    leg.push(`<g font-family="sans-serif" font-size="11">\n`);
+
+    if (hasGroups) {
+        leg.push(`<text x="${x0}" y="${y}" font-weight="600" fill="#374151">Groups:</text>\n`);
+        y += titleH;
+        const groupEntries = Array.from(state.groupNames.entries()).sort((a, b) => {
+            const valA = a[1] || '';
+            const valB = b[1] || '';
+            return valA.localeCompare(valB);
+        });
+        groupEntries.forEach(([groupId, groupValue]) => {
+            const color = COLOR_PALETTE[(groupId + 1) % COLOR_PALETTE.length];
+            const lab = escapeXml(groupValue || `Group ${groupId}`);
+            leg.push(`<rect x="${x0}" y="${y - sw + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
+            leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">${lab}</text>\n`);
+            y += rowH;
+        });
+        y += 6;
+    }
+
+    if (hasClusters) {
+        leg.push(`<text x="${x0}" y="${y}" font-weight="600" fill="#374151">Clusters:</text>\n`);
+        y += titleH;
+        clusterIds.forEach(clusterId => {
+            const color = getClusterColor(clusterId);
+            leg.push(`<rect x="${x0}" y="${y - sw + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
+            leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">${escapeXml(`Cluster ${clusterId}`)}</text>\n`);
+            y += rowH;
+        });
+        if (hasNoise) {
+            leg.push(`<rect x="${x0}" y="${y - sw + 1}" width="${sw}" height="${sw}" fill="#9ca3af" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
+            leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">Noise</text>\n`);
+            y += rowH;
+        }
+    }
+
+    leg.push('</g>\n');
+
+    const legendTotalH = Math.max(y - legendY + pad, 24);
+    parts.push(`<rect x="${legendX}" y="${legendY}" width="${legendW}" height="${legendTotalH}" fill="#fafafa" stroke="#e5e7eb" stroke-width="1"/>\n`);
+    leg.forEach(s => parts.push(s));
+}
+
+function showTreeSvgExportModal() {
+    if (!state.tree || !state.tree.root) {
+        alert('No tree to export. Load or infer a tree first.');
+        return;
+    }
+    const ov = document.getElementById('tree-svg-export-overlay');
+    if (ov) {
+        ov.style.display = 'flex';
+    }
+}
+
+function exportTreeAsSvg(layout) {
+    if (!state.tree || !state.tree.root) {
+        alert('No tree to export.');
+        return;
+    }
+    let svgStr;
+    try {
+        svgStr = layout === 'circular' ? buildTreeSvgCircular() : buildTreeSvgLinear();
+    } catch (e) {
+        console.error(e);
+        alert('Failed to build SVG: ' + (e && e.message ? e.message : e));
+        return;
+    }
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tree.svg';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function collectVisibleLeaves(node, out) {
+    if (!node) return;
+    if (!node.children || node.children.length === 0) {
+        if (!node.hidden && node.name) out.push(node);
+        return;
+    }
+    node.children.forEach(c => collectVisibleLeaves(c, out));
+}
+
+function assignRadialLeafAngles(root) {
+    const leaves = [];
+    collectVisibleLeaves(root, leaves);
+    leaves.sort((a, b) => (a.yRow || 0) - (b.yRow || 0));
+    const n = leaves.length;
+    if (n === 0) return;
+    for (let i = 0; i < n; i++) {
+        leaves[i]._svgAngle = -Math.PI / 2 + (2 * Math.PI * (i + 0.5)) / n;
+    }
+}
+
+function assignRadialInternalAngles(node) {
+    if (!node.children || node.children.length === 0) return;
+    node.children.forEach(assignRadialInternalAngles);
+    let sum = 0;
+    let count = 0;
+    node.children.forEach(c => {
+        if (!c.hidden) {
+            sum += c._svgAngle;
+            count++;
+        }
+    });
+    node._svgAngle = count ? sum / count : 0;
+}
+
+function buildTreeSvgCircular() {
+    const root = state.tree.root;
+    const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
+    const R = 260;
+    /** Gap along the radius from the tip diamond to the inner edge of the label (first glyph) (px). */
+    const labelGapPastDiamond = 48;
+    const diamond = 10;
+    /** Extra margin so longest label + perpendicular text height stay inside viewBox. */
+    const plotMargin = 64;
+    const titleSpace = 44;
+
+    assignRadialLeafAngles(root);
+    assignRadialInternalAngles(root);
+
+    const leaves = [];
+    collectVisibleLeaves(root, leaves);
+
+    let maxRadialExtent = 0;
+    leaves.forEach(node => {
+        const th = node._svgAngle;
+        const rTip = (node.xDepth / maxD) * R;
+        const labelRadial = rTip + diamond + labelGapPastDiamond;
+        const w = estimateSvgCircularLabelWidthPx(node.name);
+        const lineHalf = 5.5;
+        const extent = Math.sqrt((labelRadial + w) * (labelRadial + w) + lineHalf * lineHalf);
+        if (extent > maxRadialExtent) maxRadialExtent = extent;
+    });
+
+    const size = leaves.length === 0
+        ? 800
+        : Math.max(800, Math.ceil(2 * maxRadialExtent + 2 * plotMargin));
+    const plotW = size;
+    const totalW = plotW * (8 / 7);
+    const legendW = totalW - plotW;
+    const totalH = size + titleSpace;
+    const cx = plotW / 2;
+    const cy = titleSpace + size / 2;
+
+    const parts = [];
+    parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
+    parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`);
+    parts.push(`<rect width="${totalW}" height="${totalH}" fill="white"/>\n`);
+
+    const titleLines = getSvgTreeTitleLines();
+    const titleX = plotW / 2;
+    parts.push(`<g font-family="sans-serif" fill="#111827" text-anchor="middle">\n`);
+    parts.push(`<text x="${titleX}" y="20" font-size="13" font-weight="700">${titleLines[0]}</text>\n`);
+    parts.push(`<text x="${titleX}" y="36" font-size="11">${titleLines[1]}</text>\n`);
+    parts.push(`</g>\n`);
+
+    parts.push(`<g stroke="#374151" stroke-width="1" fill="none">\n`);
+
+    function radXY(node) {
+        const r = (node.xDepth / maxD) * R;
+        const th = node._svgAngle;
+        return { x: cx + r * Math.cos(th), y: cy + r * Math.sin(th) };
+    }
+
+    /** Smallest arc (CCW) that contains all angles; t1 may be > t0 + 2π if it wraps. */
+    function minArcContainingPoints(angles) {
+        if (angles.length === 0) return null;
+        if (angles.length === 1) return { t0: angles[0], t1: angles[0] };
+        const sorted = [...angles].sort((a, b) => a - b);
+        const n = sorted.length;
+        let maxGap = -1;
+        let gapAfter = 0;
+        for (let i = 0; i < n; i++) {
+            const next = (i + 1) % n;
+            const cur = sorted[i];
+            const nxt = next === 0 ? sorted[0] + 2 * Math.PI : sorted[next];
+            const gap = nxt - cur;
+            if (gap > maxGap) {
+                maxGap = gap;
+                gapAfter = i;
+            }
+        }
+        const startIdx = (gapAfter + 1) % n;
+        const endIdx = gapAfter;
+        let t0;
+        let t1;
+        if (startIdx <= endIdx) {
+            t0 = sorted[startIdx];
+            t1 = sorted[endIdx];
+        } else {
+            t0 = sorted[startIdx];
+            t1 = sorted[endIdx] + 2 * Math.PI;
+        }
+        return { t0, t1 };
+    }
+
+    function appendArcPolyline(r, t0, t1) {
+        let span = t1 - t0;
+        if (span < 0) span += 2 * Math.PI;
+        if (span < 1e-8) return;
+        const nSeg = Math.max(8, Math.ceil(span / (Math.PI / 32)));
+        const pts = [];
+        for (let i = 0; i <= nSeg; i++) {
+            const t = t0 + (span * i) / nSeg;
+            const x = cx + r * Math.cos(t);
+            const y = cy + r * Math.sin(t);
+            pts.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+        }
+        parts.push(`<polyline points="${pts.join(' ')}" fill="none"/>\n`);
+    }
+
+    /** Orthogonal polar cladogram: circumferential arc at parent radius, then radial to each child (like linear H+V). */
+    function drawOrthoEdges(node) {
+        if (!node || node.hidden) return;
+        if (!node.children || node.children.length === 0) return;
+        const visibleChildren = node.children.filter(c => !c.hidden);
+        visibleChildren.forEach(drawOrthoEdges);
+
+        const rP = (node.xDepth / maxD) * R;
+        const ths = visibleChildren.map(c => c._svgAngle);
+
+        if (rP > 1e-6) {
+            if (visibleChildren.length > 1) {
+                const arc = minArcContainingPoints(ths);
+                if (arc && Math.abs(arc.t1 - arc.t0) > 1e-6) {
+                    appendArcPolyline(rP, arc.t0, arc.t1);
+                }
+            }
+            visibleChildren.forEach(c => {
+                const rC = (c.xDepth / maxD) * R;
+                const thC = c._svgAngle;
+                const x1 = cx + rP * Math.cos(thC);
+                const y1 = cy + rP * Math.sin(thC);
+                const x2 = cx + rC * Math.cos(thC);
+                const y2 = cy + rC * Math.sin(thC);
+                parts.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"/>\n`);
+            });
+        } else {
+            visibleChildren.forEach(c => {
+                const rC = (c.xDepth / maxD) * R;
+                const thC = c._svgAngle;
+                const x2 = cx + rC * Math.cos(thC);
+                const y2 = cy + rC * Math.sin(thC);
+                parts.push(`<line x1="${cx.toFixed(2)}" y1="${cy.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"/>\n`);
+            });
+        }
+    }
+    drawOrthoEdges(root);
+
+    parts.push('</g>\n');
+
+    parts.push('<g fill="none">\n');
+    leaves.forEach(node => {
+        const th = node._svgAngle;
+        const dx = Math.cos(th);
+        const dy = Math.sin(th);
+        const rTip = (node.xDepth / maxD) * R;
+        const labelRadial = rTip + diamond + labelGapPastDiamond;
+        const dOut = rTip + diamond;
+        const tx = cx + dOut * dx;
+        const ty = cy + dOut * dy;
+        const lx = cx + labelRadial * dx;
+        const ly = cy + labelRadial * dy;
+        const lineStroke = getSvgLeafLabelFill(node.name);
+        parts.push(`<line x1="${tx.toFixed(2)}" y1="${ty.toFixed(2)}" x2="${lx.toFixed(2)}" y2="${ly.toFixed(2)}" stroke="${lineStroke}" stroke-width="1" stroke-dasharray="3 3"/>\n`);
+    });
+    parts.push('</g>\n');
+
+    leaves.forEach(node => {
+        const p = radXY(node);
+        const th = node._svgAngle;
+        const tipFill = getSvgLeafTipFill(node.name);
+        const labFill = getSvgLeafLabelFill(node.name);
+        const dx = Math.cos(th);
+        const dy = Math.sin(th);
+        const rTip = (node.xDepth / maxD) * R;
+        const labelRadial = rTip + diamond + labelGapPastDiamond;
+        const lx = cx + labelRadial * dx;
+        const ly = cy + labelRadial * dy;
+        const deg = (th * 180) / Math.PI;
+        const diamondRot = deg + 90;
+        const pts = `${p.x.toFixed(2)},${(p.y - diamond).toFixed(2)} ${(p.x + diamond).toFixed(2)},${p.y.toFixed(2)} ${p.x.toFixed(2)},${(p.y + diamond).toFixed(2)} ${(p.x - diamond).toFixed(2)},${p.y.toFixed(2)}`;
+        parts.push(`<g transform="rotate(${diamondRot}, ${p.x.toFixed(2)}, ${p.y.toFixed(2)})"><polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/></g>\n`);
+        parts.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" fill="${labFill}" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="start" dominant-baseline="middle" transform="rotate(${deg}, ${lx.toFixed(2)}, ${ly.toFixed(2)})">${getSvgLeafDisplayLabel(node.name)}</text>\n`);
+    });
+
+    appendSvgTreeScaleBarCircular(parts, plotW, R, maxD, plotMargin);
+
+    appendTreeSvgColorLegend(parts, plotW, titleSpace, legendW, totalH);
+
+    parts.push('</svg>');
+    return parts.join('');
+}
+
+function buildTreeSvgLinear() {
+    const padding = 15;
+    const branchW = 520;
+    const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
+    const xScale = branchW / maxD;
+    const rowH = CONFIG.rowHeight;
+    const leftPad = 5;
+    const nRows = Math.max(1, state.viewSequences.length);
+    const svgH = nRows * rowH;
+    const labelX0 = leftPad + 5 + branchW + 14;
+    let maxLabelW = 420;
+    // Reserve space at top for a 2-line title (keeps scale bar/legend in plot area).
+    const titleSpace = 44;
+
+    const plotW = labelX0 + maxLabelW + padding;
+    const totalW = plotW * (8 / 7);
+    const legendW = totalW - plotW;
+    const totalH = svgH + padding * 2 + titleSpace;
+
+    const parts = [];
+    parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
+    parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`);
+    parts.push(`<rect width="${totalW}" height="${totalH}" fill="white"/>\n`);
+    const titleLines = getSvgTreeTitleLines();
+    const titleX = plotW / 2;
+    parts.push(`<g font-family="sans-serif" fill="#111827" text-anchor="middle">\n`);
+    parts.push(`<text x="${titleX}" y="20" font-size="13" font-weight="700">${titleLines[0]}</text>\n`);
+    parts.push(`<text x="${titleX}" y="36" font-size="11">${titleLines[1]}</text>\n`);
+    parts.push(`</g>\n`);
+    // Main plot group shifted down to leave room for the title.
+    parts.push(`<g transform="translate(${padding},${padding + titleSpace})" stroke="#374151" stroke-width="1" fill="none">\n`);
+
+    function nx(node) {
+        return leftPad + node.xDepth * xScale;
+    }
+    function ny(node) {
+        return node.yRow * rowH + rowH / 2;
+    }
+
+    function drawNode(node) {
+        if (!node || node.hidden) return;
+        const x = nx(node);
+        const y = ny(node);
+        if (node.children && node.children.length > 0) {
+            let minY = Infinity;
+            let maxY = -Infinity;
+            node.children.forEach(c => {
+                if (c.hidden) return;
+                drawNode(c);
+                const cx = nx(c);
+                const cy = ny(c);
+                parts.push(`<line x1="${x}" y1="${cy}" x2="${cx}" y2="${cy}"/>\n`);
+                if (cy < minY) minY = cy;
+                if (cy > maxY) maxY = cy;
+            });
+            if (minY !== Infinity) {
+                parts.push(`<line x1="${x}" y1="${minY}" x2="${x}" y2="${maxY}"/>\n`);
+            }
+            parts.push(`<circle cx="${x}" cy="${y}" r="3" fill="#374151" stroke="none"/>\n`);
+        } else {
+            const connectorStroke = getSvgLeafLabelFill(node.name);
+            parts.push(`<line x1="${x}" y1="${y}" x2="${labelX0 - 6}" y2="${y}" stroke-dasharray="2 4" stroke="${connectorStroke}"/>\n`);
+            const tipFill = getSvgLeafTipFill(node.name);
+            const d = 10;
+            const pts = `${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`;
+            parts.push(`<polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/>\n`);
+        }
+    }
+    drawNode(state.tree.root);
+
+    if (state.hierarchicalActive && state.hierarchicalDepths) {
+        const [depth1, depth2, depth3] = state.hierarchicalDepths;
+        const totalH = nRows * rowH;
+        parts.push(`<g stroke-width="1.5" stroke-dasharray="">\n`);
+        if (depth1 > 0) {
+            const x1 = nx({ xDepth: depth1 });
+            parts.push(`<line x1="${x1}" y1="0" x2="${x1}" y2="${totalH}" stroke="#ef4444"/>\n`);
+        }
+        if (depth2 > depth1) {
+            const x2 = nx({ xDepth: depth2 });
+            parts.push(`<line x1="${x2}" y1="0" x2="${x2}" y2="${totalH}" stroke="#f59e0b"/>\n`);
+        }
+        if (depth3 > depth2) {
+            const x3 = nx({ xDepth: depth3 });
+            parts.push(`<line x1="${x3}" y1="0" x2="${x3}" y2="${totalH}" stroke="#10b981"/>\n`);
+        }
+        parts.push('</g>\n');
+    }
+
+    parts.push('</g>\n');
+    parts.push(`<g transform="translate(${padding},${padding + titleSpace})" font-family="sans-serif" font-size="11">\n`);
+    function drawLabels(node) {
+        if (!node || node.hidden) return;
+        if (!node.children || node.children.length === 0) {
+            if (node.name) {
+                const y = ny(node);
+                const fill = getSvgLeafLabelFill(node.name);
+                parts.push(`<text x="${labelX0}" y="${y}" fill="${fill}" font-weight="600" dominant-baseline="middle">${getSvgLeafDisplayLabel(node.name)}</text>\n`);
+            }
+            return;
+        }
+        node.children.forEach(drawLabels);
+    }
+    drawLabels(state.tree.root);
+    parts.push('</g>\n');
+
+    parts.push(`<g transform="translate(${padding},${padding + titleSpace})">\n`);
+    appendSvgTreeScaleBarLinear(parts, xScale, maxD);
+    parts.push('</g>\n');
+
+    appendTreeSvgColorLegend(parts, plotW, titleSpace, legendW, totalH);
+
+    parts.push('</svg>');
+    return parts.join('');
 }
 
 // --- Convert tree structure back to Newick format ---
@@ -7678,9 +8421,39 @@ function render() {
                 ctxTree.lineTo(x3, endY);
                 ctxTree.stroke();
             }
-        ctxTree.restore();
-    }
-        
+            ctxTree.restore();
+        }
+
+        // Branch-length scale on reference row (reference is not a tree tip; row is otherwise empty)
+        const scaleVal = pickPhyloScaleBarValue(state.tree.maxDepth);
+        if (scaleVal != null && state.refIndex >= 0 && state.refIndex < state.viewSequences.length) {
+            const yRef = state.refIndex * CONFIG.rowHeight + CONFIG.rowHeight / 2;
+            const x0 = 5;
+            const pxLen = scaleVal * xScale;
+            const labelX = x0 + pxLen + 8;
+            ctxTree.save();
+            ctxTree.strokeStyle = '#111827';
+            ctxTree.fillStyle = '#111827';
+            ctxTree.lineWidth = 2;
+            ctxTree.setLineDash([]);
+            ctxTree.beginPath();
+            ctxTree.moveTo(x0, yRef);
+            ctxTree.lineTo(x0 + pxLen, yRef);
+            ctxTree.stroke();
+            ctxTree.lineWidth = 1;
+            ctxTree.beginPath();
+            ctxTree.moveTo(x0, yRef - 4);
+            ctxTree.lineTo(x0, yRef + 4);
+            ctxTree.moveTo(x0 + pxLen, yRef - 4);
+            ctxTree.lineTo(x0 + pxLen, yRef + 4);
+            ctxTree.stroke();
+            ctxTree.font = 'bold 11px sans-serif';
+            ctxTree.textAlign = 'left';
+            ctxTree.textBaseline = 'middle';
+            ctxTree.fillText(formatPhyloBranchLength(scaleVal), labelX, yRef);
+            ctxTree.restore();
+        }
+
         ctxTree.restore();
     }
 }
@@ -9739,6 +10512,9 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
     function aaFill(letter) {
         return (CONFIG.colors.AA[letter] || CONFIG.colors.AA['default'] || '#000000');
     }
+    // The app palette maps '-' to white (useful in the sequence panel background), but
+    // the logo background is white too—so gaps would become invisible.
+    const gapLogoFill = '#6b7280'; // Visible grey for the gap glyph (nabla ∇)
 
     const refSeq = state.viewSequences[state.refIndex]?.seq;
     if (!refSeq || !state.refMap) {
@@ -10184,11 +10960,14 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
         text.setAttribute('y', textY);
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('dominant-baseline', 'alphabetic'); // Use alphabetic baseline like labels
-        text.setAttribute('font-family', 'Courier New, Courier, monospace'); // Fixed-width font for consistent character alignment
+        text.setAttribute(
+            'font-family',
+            'Courier New, Courier, "DejaVu Sans", "Arial Unicode MS", "Segoe UI Symbol", sans-serif, monospace'
+        ); // Font fallback so ∇ renders even if Courier lacks it
         text.setAttribute('font-size', '16');
         text.setAttribute('font-weight', 'bold');
         if (isGap) {
-            text.setAttribute('fill', aaFill('-'));
+            text.setAttribute('fill', gapLogoFill);
             text.textContent = '∇'; // Nabla character for gaps
         } else if (isDot) {
             text.setAttribute('fill', aaFill('default'));
@@ -10327,12 +11106,15 @@ function generateSequenceLogo(epitope, bottomSeq, groupIds, bottomIndex, bottomL
                     text.setAttribute('y', yCurrentBottom);
                     text.setAttribute('text-anchor', 'middle');
                     text.setAttribute('dominant-baseline', 'alphabetic'); // Use alphabetic baseline like labels
-                    text.setAttribute('font-family', 'Courier New, Courier, monospace'); // Fixed-width font for consistent character alignment
+                    text.setAttribute(
+                        'font-family',
+                        'Courier New, Courier, "DejaVu Sans", "Arial Unicode MS", "Segoe UI Symbol", sans-serif, monospace'
+                    ); // Font fallback so ∇ renders even if Courier lacks it
                     text.setAttribute('font-size', baseFontSize.toString());
                     text.setAttribute('font-weight', 'bold');
                     // Handle gaps (nabla character) and AAs using CONFIG.colors.AA
                     if (aa === '∇') {
-                        text.setAttribute('fill', aaFill('-'));
+                        text.setAttribute('fill', gapLogoFill);
                     } else {
                         text.setAttribute('fill', aaFill(aa));
                     }
