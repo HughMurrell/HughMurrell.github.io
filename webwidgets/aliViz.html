@@ -453,18 +453,51 @@
 </div>
 
 <div id="tree-svg-export-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; pointer-events: none;">
-    <div class="help-box" style="width: 420px; pointer-events: auto;">
+    <div class="help-box" style="width: 480px; pointer-events: auto;">
         <h2>Export tree as SVG</h2>
         <p style="font-size: 13px; color: #374151; margin: 0 0 12px 0;">Tip labels use <strong>group</strong> colors; tip markers use <strong>cluster</strong> colors (when clustering is active).</p>
-        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
-                <input type="radio" name="tree-svg-layout" id="tree-svg-linear" value="linear" checked>
-                Linear (rectangular cladogram)
-            </label>
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
-                <input type="radio" name="tree-svg-layout" id="tree-svg-circular" value="circular">
-                Circular (radial layout)
-            </label>
+        <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 16px;">
+            <div>
+                <h3 style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #374151; text-transform: capitalize; letter-spacing: 0.04em;">Geometry</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                        <input type="radio" name="tree-svg-layout" id="tree-svg-linear" value="linear" checked>
+                        Linear (rectangular cladogram)
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                        <input type="radio" name="tree-svg-layout" id="tree-svg-circular" value="circular">
+                        Circular (radial layout)
+                    </label>
+                </div>
+            </div>
+            <div>
+                <h3 style="margin: 0 0 8px 0; font-size: 12px; font-weight: 600; color: #374151; text-transform: capitalize; letter-spacing: 0.04em;">Scale</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                        <input type="radio" name="tree-svg-scale" id="tree-svg-scale-auto" value="auto" checked>
+                        Auto (fit tree to available space)
+                    </label>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                            <input type="radio" name="tree-svg-scale" id="tree-svg-scale-fixed" value="fixed">
+                            Fixed
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563;">
+                            <span id="tree-svg-fixed-scale-hint">Branch length / 1 cm:</span>
+                            <select id="tree-svg-fixed-scale-select" disabled style="font-size: 12px; padding: 2px 6px; min-width: 5.5em;">
+                                <option value="0.5">0.5</option>
+                                <option value="0.1">0.1</option>
+                                <option value="0.05">0.05</option>
+                                <option value="0.01">0.01</option>
+                                <option value="0.005">0.005</option>
+                                <option value="0.001" selected>0.001</option>
+                                <option value="0.0005">0.0005</option>
+                                <option value="0.0001">0.0001</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+            </div>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 10px;">
             <button type="button" id="btn-tree-svg-cancel">Cancel</button>
@@ -630,7 +663,7 @@
 
 <div id="color-legend" style="position: fixed; top: 100px; right: 20px; background: white; border: 1px solid #d1d5db; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 5000; display: none; max-width: 250px; font-size: 12px;">
     <div id="legend-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; cursor: move; user-select: none;">
-        <h3 style="margin: 0; font-size: 14px; color: #374151;">Color Legend</h3>
+        <h3 style="margin: 0; font-size: 14px; color: #374151;">Legend</h3>
         <button onclick="document.getElementById('color-legend').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280;">×</button>
     </div>
     <div id="legend-groups" style="margin-bottom: 15px;">
@@ -1467,8 +1500,20 @@ async function init() {
     }
     dom.btnInferTree.addEventListener('click', showInferModal);
     dom.btnExportTree.addEventListener('click', exportTree);
+    function syncTreeSvgFixedScaleControls() {
+        const fixed = document.getElementById('tree-svg-scale-fixed');
+        const sel = document.getElementById('tree-svg-fixed-scale-select');
+        const hint = document.getElementById('tree-svg-fixed-scale-hint');
+        if (!sel) return;
+        const on = !!(fixed && fixed.checked);
+        sel.disabled = !on;
+        if (hint) hint.style.opacity = on ? '1' : '0.5';
+    }
     if (dom.btnExportTreeSvg) {
-        dom.btnExportTreeSvg.addEventListener('click', showTreeSvgExportModal);
+        dom.btnExportTreeSvg.addEventListener('click', () => {
+            showTreeSvgExportModal();
+            syncTreeSvgFixedScaleControls();
+        });
     }
     const treeSvgOverlay = document.getElementById('tree-svg-export-overlay');
     const btnTreeSvgCancel = document.getElementById('btn-tree-svg-cancel');
@@ -1478,11 +1523,19 @@ async function init() {
             treeSvgOverlay.style.display = 'none';
         });
     }
+    document.querySelectorAll('input[name="tree-svg-scale"]').forEach(el => {
+        el.addEventListener('change', syncTreeSvgFixedScaleControls);
+    });
     if (btnTreeSvgExport && treeSvgOverlay) {
         btnTreeSvgExport.addEventListener('click', () => {
             const circular = document.getElementById('tree-svg-circular') && document.getElementById('tree-svg-circular').checked;
-            treeSvgOverlay.style.display = 'none';
-            exportTreeAsSvg(circular ? 'circular' : 'linear');
+            const scaleFixed = document.getElementById('tree-svg-scale-fixed') && document.getElementById('tree-svg-scale-fixed').checked;
+            const scaleMode = scaleFixed ? 'fixed' : 'auto';
+            const sel = document.getElementById('tree-svg-fixed-scale-select');
+            let fixedBranchPerCm = sel ? parseFloat(sel.value, 10) : 0.001;
+            if (!isFinite(fixedBranchPerCm) || fixedBranchPerCm <= 0) fixedBranchPerCm = 0.001;
+            const ok = exportTreeAsSvg(circular ? 'circular' : 'linear', scaleMode, scaleFixed ? fixedBranchPerCm : null);
+            if (ok) treeSvgOverlay.style.display = 'none';
         });
     }
     dom.btnLadderizeTree.addEventListener('click', showLadderizeModal);
@@ -1649,7 +1702,7 @@ async function init() {
                     if (clusterId === -1) {
                         clusterText = 'Noise';
                     } else {
-                        clusterText = `Cluster ${clusterId}`;
+                        clusterText = String(clusterId);
                     }
                 }
             }
@@ -1825,17 +1878,19 @@ function handleClipboardPaste(text) {
     const trimmed = text.trim();
     if(!trimmed) return;
 
-    const fastaEntries = parseClipboardFasta(trimmed);
-    if(fastaEntries.length) {
-        appendSequencesFromClipboard(fastaEntries);
+    const clipboardFasta = parseClipboardFasta(trimmed);
+    if(clipboardFasta.seqs.length) {
+        alertAlignmentReplacements(clipboardFasta.replacements);
+        appendSequencesFromClipboard(clipboardFasta.seqs);
         return;
     }
 
     const lines = trimmed.split(/\r?\n/).filter(line => line.trim().length > 0);
     if(lines.length === 1) {
-        const seqStr = lines[0].replace(/\s+/g, '').toUpperCase().replace(/[^A-Z-]/g, '');
-        if(seqStr.length) {
-            appendSequencesFromClipboard([{ name: null, seq: seqStr.split('') }]);
+        const sanitized = sanitizeAlignmentSequenceLine(lines[0].replace(/\s+/g, ''));
+        if(sanitized.text.length) {
+            alertAlignmentReplacements(sanitized.replacements);
+            appendSequencesFromClipboard([{ name: null, seq: sanitized.text.split('') }]);
             return;
         }
     }
@@ -1849,6 +1904,7 @@ function parseClipboardFasta(text) {
     let currentName = null;
     let buffer = [];
     let sawHeader = false;
+    const replacements = new Map();
 
     for(let rawLine of lines) {
         const line = rawLine.trim();
@@ -1862,7 +1918,9 @@ function parseClipboardFasta(text) {
             currentName = line.substring(1).trim() || null;
             buffer = [];
         } else if(currentName !== null) {
-            buffer.push(line.toUpperCase().replace(/[^A-Z-]/g, ''));
+            const sanitized = sanitizeAlignmentSequenceLine(line);
+            mergeAlignmentReplacementCounts(replacements, sanitized.replacements);
+            buffer.push(sanitized.text);
         }
     }
 
@@ -1871,8 +1929,8 @@ function parseClipboardFasta(text) {
         if(seqStr.length) seqs.push({ name: currentName, seq: seqStr.split('') });
     }
 
-    if(!sawHeader) return [];
-    return seqs;
+    if(!sawHeader) return { seqs: [], replacements };
+    return { seqs, replacements };
 }
 
 function appendSequencesFromClipboard(entries) {
@@ -2524,10 +2582,39 @@ function formatPhyloBranchLength(value) {
     return sign + dec;
 }
 
-/** Branch-length scale bar on exported tree SVG (same px/length mapping as tree drawing). */
-function appendSvgTreeScaleBarLinear(parts, xScale, maxD) {
-    const scaleVal = pickPhyloScaleBarValue(maxD);
-    if (scaleVal == null) return;
+/** Plain decimal, 3 significant figures (e.g. 0.00922958 → 0.00923); falls back to formatPhyloBranchLength if toPrecision uses scientific notation. */
+function formatThreeSignificantFigures(value) {
+    if (value == null || !isFinite(value)) return '';
+    if (value === 0) return '0';
+    const sign = value < 0 ? '-' : '';
+    const v = Math.abs(value);
+    let s = v.toPrecision(3);
+    if (/[eE]/.test(s)) {
+        s = formatPhyloBranchLength(parseFloat(s));
+    }
+    return sign + s;
+}
+
+/** CSS/SVG px per centimeter (1 in = 96 px, 1 in = 2.54 cm). Used for fixed branch-length scale in SVG export. */
+const SVG_PX_PER_CM = 96 / 2.54;
+
+/** Pixels per tree branch-length unit when user selects fixed scale (branch length per 1 cm of plot). */
+function getSvgPxPerBranchUnit(branchLengthPerCm) {
+    const s = parseFloat(branchLengthPerCm, 10);
+    if (!isFinite(s) || s <= 0) return SVG_PX_PER_CM / 0.001;
+    return SVG_PX_PER_CM / s;
+}
+
+/** Branch-length scale bar on exported tree SVG (same px/length mapping as tree drawing).
+ *  @param {number|null|undefined} fixedBranchPerCm If set, label uses this branch length per cm value. */
+function appendSvgTreeScaleBarLinear(parts, xScale, maxD, fixedBranchPerCm) {
+    let scaleVal;
+    if (fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10))) {
+        scaleVal = parseFloat(fixedBranchPerCm, 10);
+    } else {
+        scaleVal = pickPhyloScaleBarValue(maxD);
+        if (scaleVal == null) return;
+    }
     const pxLen = scaleVal * xScale;
     const x0 = 5;
     const y0 = 12;
@@ -2543,11 +2630,18 @@ function appendSvgTreeScaleBarLinear(parts, xScale, maxD) {
     parts.push('</g>\n');
 }
 
-/** Top area of circular plot: below top margin, inset from right by bar length; number left of bar. */
-function appendSvgTreeScaleBarCircular(parts, plotW, R, maxD, plotMargin) {
-    const scaleVal = pickPhyloScaleBarValue(maxD);
-    if (scaleVal == null) return;
-    const pxLen = scaleVal * (R / maxD);
+/** Top area of circular plot: below top margin, inset from right by bar length; number left of bar.
+ *  @param {number} pxPerUnit Exact branch-length mapping used in rendered circular tree (px per branch-length unit).
+ *  @param {number|null|undefined} fixedBranchPerCm If set, label uses this branch length per cm value. */
+function appendSvgTreeScaleBarCircular(parts, plotW, R, maxD, plotMargin, fixedBranchPerCm, pxPerUnit) {
+    let scaleVal;
+    if (fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10))) {
+        scaleVal = parseFloat(fixedBranchPerCm, 10);
+    } else {
+        scaleVal = pickPhyloScaleBarValue(maxD);
+        if (scaleVal == null) return;
+    }
+    const pxLen = scaleVal * pxPerUnit;
     const margin = plotMargin != null ? plotMargin : 48;
     const y0 = margin + 8;
     const padR = 10;
@@ -2648,7 +2742,7 @@ function updateColorLegend() {
                 colorBox.style.borderRadius = '3px';
                 
                 const label = document.createElement('span');
-                label.textContent = `Cluster ${clusterId}`;
+                label.textContent = String(clusterId);
                 label.style.color = '#374151';
                 
                 item.appendChild(colorBox);
@@ -3121,9 +3215,14 @@ function getSvgTreeTitleLines() {
         }
     }
 
+    let maxDepthStr = '—';
+    if (state.tree && state.tree.maxDepth != null && isFinite(state.tree.maxDepth)) {
+        maxDepthStr = formatThreeSignificantFigures(state.tree.maxDepth);
+    }
+
     return [
         escapeXml(fastaName),
-        escapeXml(`Infer: ${inferLabel} | Cluster: ${clusterLabel}`)
+        escapeXml(`Infer: ${inferLabel} | Max depth: ${maxDepthStr} | Cluster: ${clusterLabel}`)
     ];
 }
 
@@ -3175,7 +3274,7 @@ function appendTreeSvgColorLegend(parts, legendX, legendY, legendW, legendH) {
         return;
     }
 
-    leg.push(`<text x="${x0}" y="${y}" font-family="sans-serif" font-size="14" font-weight="700" fill="#374151">Color Legend</text>\n`);
+    leg.push(`<text x="${x0}" y="${y}" font-family="sans-serif" font-size="14" font-weight="700" fill="#374151">Legend</text>\n`);
     y += 22;
 
     leg.push(`<g font-family="sans-serif" font-size="11">\n`);
@@ -3204,7 +3303,7 @@ function appendTreeSvgColorLegend(parts, legendX, legendY, legendW, legendH) {
         clusterIds.forEach(clusterId => {
             const color = getClusterColor(clusterId);
             leg.push(`<rect x="${x0}" y="${y - sw / 2 + 1}" width="${sw}" height="${sw}" fill="${color}" stroke="#d1d5db" stroke-width="1" rx="2"/>\n`);
-            leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">${escapeXml(`Cluster ${clusterId}`)}</text>\n`);
+            leg.push(`<text x="${x0 + sw + 8}" y="${y + 4}" fill="#374151">${escapeXml(String(clusterId))}</text>\n`);
             y += rowH;
         });
         if (hasNoise) {
@@ -3232,18 +3331,49 @@ function showTreeSvgExportModal() {
     }
 }
 
-function exportTreeAsSvg(layout) {
+/** Linear fixed plot uses 520 px branch width; circular uses R=260 with half the px/unit, so same maxD*pxPerUnit limit. */
+const FIXED_SVG_DEPTH_SPAN_LIMIT_PX = 520;
+
+/** @returns {string|null} Error message if fixed scale would overflow, else null. */
+function checkFixedScaleSvgOverflow(fixedBranchPerCm) {
+    if (fixedBranchPerCm == null || !isFinite(parseFloat(fixedBranchPerCm, 10))) return null;
+    const s = parseFloat(fixedBranchPerCm, 10);
+    if (s <= 0) return null;
+    if (!state.tree || state.tree.maxDepth == null || !isFinite(state.tree.maxDepth)) return null;
+    const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
+    const pxPerUnit = getSvgPxPerBranchUnit(s);
+    const depthSpanPx = maxD * pxPerUnit;
+    if (depthSpanPx <= FIXED_SVG_DEPTH_SPAN_LIMIT_PX + 1e-9) return null;
+    return (
+        'Fixed-scale SVG export would overflow the available plot space at this branch-length setting. ' +
+        'Choose a larger branch-length-per-cm value in the dropdown (larger value draws the tree more compactly), ' +
+        'or switch to Auto scale.'
+    );
+}
+
+/** @returns {boolean} True if export succeeded. */
+function exportTreeAsSvg(layout, scaleMode, fixedBranchPerCm) {
     if (!state.tree || !state.tree.root) {
         alert('No tree to export.');
-        return;
+        return false;
+    }
+    if (scaleMode !== 'fixed' && scaleMode !== 'auto') scaleMode = 'auto';
+    if (scaleMode === 'fixed') {
+        const overflowMsg = checkFixedScaleSvgOverflow(fixedBranchPerCm);
+        if (overflowMsg) {
+            alert(overflowMsg);
+            return false;
+        }
     }
     let svgStr;
     try {
-        svgStr = layout === 'circular' ? buildTreeSvgCircular() : buildTreeSvgLinear();
+        svgStr = layout === 'circular'
+            ? buildTreeSvgCircular(scaleMode, fixedBranchPerCm)
+            : buildTreeSvgLinear(scaleMode, fixedBranchPerCm);
     } catch (e) {
         console.error(e);
         alert('Failed to build SVG: ' + (e && e.message ? e.message : e));
-        return;
+        return false;
     }
     const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -3254,6 +3384,7 @@ function exportTreeAsSvg(layout) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    return true;
 }
 
 function collectVisibleLeaves(node, out) {
@@ -3290,10 +3421,21 @@ function assignRadialInternalAngles(node) {
     node._svgAngle = count ? sum / count : 0;
 }
 
-function buildTreeSvgCircular() {
+/** @param {'auto'|'fixed'} scaleMode Branch-length scaling: 'auto' fits the tree; 'fixed' uses branch length per 1 cm of plot.
+ *  @param {number|null|undefined} fixedBranchPerCm When scaleMode is 'fixed', branch length units represented by 1 cm of SVG (CSS px/cm). */
+function buildTreeSvgCircular(scaleMode = 'auto', fixedBranchPerCm) {
+    if (scaleMode !== 'fixed' && scaleMode !== 'auto') scaleMode = 'auto';
     const root = state.tree.root;
     const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
     const R = 260;
+    let fixedPxPerUnit = null;
+    if (scaleMode === 'fixed' && fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10))) {
+        fixedPxPerUnit = getSvgPxPerBranchUnit(fixedBranchPerCm);
+    }
+    const circularPxPerUnit = fixedPxPerUnit != null ? fixedPxPerUnit * 0.5 : (R / maxD);
+    function radialR(node) {
+        return node.xDepth * circularPxPerUnit;
+    }
     /** Gap along the radius from the tip diamond to the inner edge of the label (first glyph) (px). */
     const labelGapPastDiamond = 48;
     const diamond = 10;
@@ -3310,7 +3452,7 @@ function buildTreeSvgCircular() {
     let maxRadialExtent = 0;
     leaves.forEach(node => {
         const th = node._svgAngle;
-        const rTip = (node.xDepth / maxD) * R;
+        const rTip = radialR(node);
         const labelRadial = rTip + diamond + labelGapPastDiamond;
         const w = estimateSvgCircularLabelWidthPx(node.name);
         const lineHalf = 5.5;
@@ -3332,6 +3474,7 @@ function buildTreeSvgCircular() {
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
     parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`);
     parts.push(`<rect width="${totalW}" height="${totalH}" fill="white"/>\n`);
+    parts.push(`<defs><clipPath id="clipTreeCircularSvg"><circle cx="${cx}" cy="${cy}" r="${R}"/></clipPath></defs>\n`);
 
     const titleLines = getSvgTreeTitleLines();
     const titleX = plotW / 2;
@@ -3340,10 +3483,10 @@ function buildTreeSvgCircular() {
     parts.push(`<text x="${titleX}" y="36" font-size="11">${titleLines[1]}</text>\n`);
     parts.push(`</g>\n`);
 
-    parts.push(`<g stroke="#374151" stroke-width="1" fill="none">\n`);
+    parts.push(`<g stroke="#374151" stroke-width="1" fill="none" clip-path="url(#clipTreeCircularSvg)">\n`);
 
     function radXY(node) {
-        const r = (node.xDepth / maxD) * R;
+        const r = radialR(node);
         const th = node._svgAngle;
         return { x: cx + r * Math.cos(th), y: cy + r * Math.sin(th) };
     }
@@ -3402,7 +3545,7 @@ function buildTreeSvgCircular() {
         const visibleChildren = node.children.filter(c => !c.hidden);
         visibleChildren.forEach(drawOrthoEdges);
 
-        const rP = (node.xDepth / maxD) * R;
+        const rP = radialR(node);
         const ths = visibleChildren.map(c => c._svgAngle);
 
         if (rP > 1e-6) {
@@ -3413,7 +3556,7 @@ function buildTreeSvgCircular() {
                 }
             }
             visibleChildren.forEach(c => {
-                const rC = (c.xDepth / maxD) * R;
+                const rC = radialR(c);
                 const thC = c._svgAngle;
                 const x1 = cx + rP * Math.cos(thC);
                 const y1 = cy + rP * Math.sin(thC);
@@ -3423,7 +3566,7 @@ function buildTreeSvgCircular() {
             });
         } else {
             visibleChildren.forEach(c => {
-                const rC = (c.xDepth / maxD) * R;
+                const rC = radialR(c);
                 const thC = c._svgAngle;
                 const x2 = cx + rC * Math.cos(thC);
                 const y2 = cy + rC * Math.sin(thC);
@@ -3440,11 +3583,11 @@ function buildTreeSvgCircular() {
         const th = node._svgAngle;
         const dx = Math.cos(th);
         const dy = Math.sin(th);
-        const rTip = (node.xDepth / maxD) * R;
+        const rTip = radialR(node);
         const labelRadial = rTip + diamond + labelGapPastDiamond;
-        const dOut = rTip + diamond;
-        const tx = cx + dOut * dx;
-        const ty = cy + dOut * dy;
+        const rDashStart = Math.min(rTip + diamond, R);
+        const tx = cx + rDashStart * dx;
+        const ty = cy + rDashStart * dy;
         const lx = cx + labelRadial * dx;
         const ly = cy + labelRadial * dy;
         const lineStroke = getSvgLeafLabelFill(node.name);
@@ -3452,25 +3595,40 @@ function buildTreeSvgCircular() {
     });
     parts.push('</g>\n');
 
+    parts.push(`<g>\n`);
     leaves.forEach(node => {
         const p = radXY(node);
         const th = node._svgAngle;
         const tipFill = getSvgLeafTipFill(node.name);
-        const labFill = getSvgLeafLabelFill(node.name);
-        const dx = Math.cos(th);
-        const dy = Math.sin(th);
-        const rTip = (node.xDepth / maxD) * R;
-        const labelRadial = rTip + diamond + labelGapPastDiamond;
-        const lx = cx + labelRadial * dx;
-        const ly = cy + labelRadial * dy;
         const deg = (th * 180) / Math.PI;
         const diamondRot = deg + 90;
         const pts = `${p.x.toFixed(2)},${(p.y - diamond).toFixed(2)} ${(p.x + diamond).toFixed(2)},${p.y.toFixed(2)} ${p.x.toFixed(2)},${(p.y + diamond).toFixed(2)} ${(p.x - diamond).toFixed(2)},${p.y.toFixed(2)}`;
         parts.push(`<g transform="rotate(${diamondRot}, ${p.x.toFixed(2)}, ${p.y.toFixed(2)})"><polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/></g>\n`);
+    });
+    parts.push('</g>\n');
+
+    leaves.forEach(node => {
+        const th = node._svgAngle;
+        const dx = Math.cos(th);
+        const dy = Math.sin(th);
+        const rTip = radialR(node);
+        const labelRadial = rTip + diamond + labelGapPastDiamond;
+        const lx = cx + labelRadial * dx;
+        const ly = cy + labelRadial * dy;
+        const labFill = getSvgLeafLabelFill(node.name);
+        const deg = (th * 180) / Math.PI;
         parts.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" fill="${labFill}" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="start" dominant-baseline="middle" transform="rotate(${deg}, ${lx.toFixed(2)}, ${ly.toFixed(2)})">${getSvgLeafDisplayLabel(node.name)}</text>\n`);
     });
 
-    appendSvgTreeScaleBarCircular(parts, plotW, R, maxD, plotMargin);
+    appendSvgTreeScaleBarCircular(
+        parts,
+        plotW,
+        R,
+        maxD,
+        plotMargin,
+        scaleMode === 'fixed' ? fixedBranchPerCm : null,
+        circularPxPerUnit
+    );
 
     appendTreeSvgColorLegend(parts, plotW, titleSpace, legendW, totalH);
 
@@ -3478,11 +3636,16 @@ function buildTreeSvgCircular() {
     return parts.join('');
 }
 
-function buildTreeSvgLinear() {
+/** @param {'auto'|'fixed'} scaleMode Branch-length scaling: 'auto' fits the tree; 'fixed' uses branch length per 1 cm of plot.
+ *  @param {number|null|undefined} fixedBranchPerCm When scaleMode is 'fixed', branch length units represented by 1 cm of SVG (CSS px/cm). */
+function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm) {
+    if (scaleMode !== 'fixed' && scaleMode !== 'auto') scaleMode = 'auto';
     const padding = 15;
     const branchW = 520;
     const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
-    const xScale = branchW / maxD;
+    const isFixedScale =
+        scaleMode === 'fixed' && fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10));
+    const xScale = isFixedScale ? getSvgPxPerBranchUnit(fixedBranchPerCm) : branchW / maxD;
     const rowH = CONFIG.rowHeight;
     const leftPad = 5;
     const nRows = Math.max(1, state.viewSequences.length);
@@ -3501,14 +3664,16 @@ function buildTreeSvgLinear() {
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
     parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`);
     parts.push(`<rect width="${totalW}" height="${totalH}" fill="white"/>\n`);
+    parts.push(`<defs><clipPath id="clipTreeLinearSvg"><rect x="${leftPad}" y="0" width="${branchW}" height="${svgH}"/></clipPath></defs>\n`);
     const titleLines = getSvgTreeTitleLines();
-    const titleX = plotW / 2;
-    parts.push(`<g font-family="sans-serif" fill="#111827" text-anchor="middle">\n`);
-    parts.push(`<text x="${titleX}" y="20" font-size="13" font-weight="700">${titleLines[0]}</text>\n`);
-    parts.push(`<text x="${titleX}" y="36" font-size="11">${titleLines[1]}</text>\n`);
+    const titleLineX = padding + 5;
+    parts.push(`<g font-family="sans-serif" fill="#111827" text-anchor="start">\n`);
+    parts.push(`<text x="${titleLineX}" y="20" font-size="13" font-weight="700">${titleLines[0]}</text>\n`);
+    parts.push(`<text x="${titleLineX}" y="36" font-size="11">${titleLines[1]}</text>\n`);
     parts.push(`</g>\n`);
     // Main plot group shifted down to leave room for the title.
     parts.push(`<g transform="translate(${padding},${padding + titleSpace})" stroke="#374151" stroke-width="1" fill="none">\n`);
+    parts.push(`<g clip-path="url(#clipTreeLinearSvg)">\n`);
 
     function nx(node) {
         return leftPad + node.xDepth * xScale;
@@ -3516,6 +3681,9 @@ function buildTreeSvgLinear() {
     function ny(node) {
         return node.yRow * rowH + rowH / 2;
     }
+
+    const markerInternalNodes = [];
+    const markerLeafNodes = [];
 
     function drawNode(node) {
         if (!node || node.hidden) return;
@@ -3536,14 +3704,9 @@ function buildTreeSvgLinear() {
             if (minY !== Infinity) {
                 parts.push(`<line x1="${x}" y1="${minY}" x2="${x}" y2="${maxY}"/>\n`);
             }
-            parts.push(`<circle cx="${x}" cy="${y}" r="3" fill="#374151" stroke="none"/>\n`);
+            markerInternalNodes.push(node);
         } else {
-            const connectorStroke = getSvgLeafLabelFill(node.name);
-            parts.push(`<line x1="${x}" y1="${y}" x2="${labelX0 - 6}" y2="${y}" stroke-dasharray="2 4" stroke="${connectorStroke}"/>\n`);
-            const tipFill = getSvgLeafTipFill(node.name);
-            const d = 10;
-            const pts = `${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`;
-            parts.push(`<polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/>\n`);
+            markerLeafNodes.push(node);
         }
     }
     drawNode(state.tree.root);
@@ -3568,6 +3731,36 @@ function buildTreeSvgLinear() {
     }
 
     parts.push('</g>\n');
+
+    parts.push('<g stroke="#374151" fill="none">\n');
+    markerInternalNodes.forEach(node => {
+        const x = nx(node);
+        const y = ny(node);
+        parts.push(`<circle cx="${x}" cy="${y}" r="3" fill="#374151" stroke="none"/>\n`);
+    });
+    markerLeafNodes.forEach(node => {
+        const x = nx(node);
+        const y = ny(node);
+        const tipFill = getSvgLeafTipFill(node.name);
+        const d = 10;
+        const pts = `${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`;
+        parts.push(`<polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/>\n`);
+    });
+    parts.push('</g>\n');
+
+    parts.push(`<g fill="none" stroke="#374151" stroke-width="1">\n`);
+    const leavesLin = [];
+    collectVisibleLeaves(state.tree.root, leavesLin);
+    leavesLin.forEach(node => {
+        const x = nx(node);
+        const y = ny(node);
+        const xStart = Math.min(x, leftPad + branchW);
+        const connectorStroke = getSvgLeafLabelFill(node.name);
+        parts.push(`<line x1="${xStart}" y1="${y}" x2="${labelX0 - 6}" y2="${y}" stroke-dasharray="2 4" stroke="${connectorStroke}"/>\n`);
+    });
+    parts.push('</g>\n');
+
+    parts.push('</g>\n');
     parts.push(`<g transform="translate(${padding},${padding + titleSpace})" font-family="sans-serif" font-size="11">\n`);
     function drawLabels(node) {
         if (!node || node.hidden) return;
@@ -3585,7 +3778,7 @@ function buildTreeSvgLinear() {
     parts.push('</g>\n');
 
     parts.push(`<g transform="translate(${padding},${padding + titleSpace})">\n`);
-    appendSvgTreeScaleBarLinear(parts, xScale, maxD);
+    appendSvgTreeScaleBarLinear(parts, xScale, maxD, scaleMode === 'fixed' ? fixedBranchPerCm : null);
     parts.push('</g>\n');
 
     appendTreeSvgColorLegend(parts, plotW, titleSpace, legendW, totalH);
@@ -3610,21 +3803,74 @@ function treeToNewick(node) {
     }
 }
 
+/** Sanitize one sequence line: A–Z, gap (-), and stop (*) kept; other symbols → X (same length). */
+function sanitizeAlignmentSequenceLine(line, extraAllowed) {
+    const allowedSet = new Set(['-', '*'].concat(extraAllowed || []));
+    const upper = String(line).toUpperCase();
+    const replacements = new Map();
+    let out = '';
+    for (let i = 0; i < upper.length; i++) {
+        const ch = upper[i];
+        if ((ch >= 'A' && ch <= 'Z') || allowedSet.has(ch)) {
+            out += ch;
+        } else {
+            out += 'X';
+            replacements.set(ch, (replacements.get(ch) || 0) + 1);
+        }
+    }
+    return { text: out, replacements };
+}
+
+function mergeAlignmentReplacementCounts(target, source) {
+    if (!source) return target;
+    source.forEach((count, ch) => {
+        target.set(ch, (target.get(ch) || 0) + count);
+    });
+    return target;
+}
+
+function describeReplacedAlignmentChar(ch) {
+    if (ch === ' ') return 'space';
+    if (ch === '\t') return 'tab';
+    if (ch.length === 1) {
+        const code = ch.charCodeAt(0);
+        if (code < 32 || code > 127) return 'U+' + code.toString(16).toUpperCase().padStart(4, '0');
+        return '"' + ch + '"';
+    }
+    return JSON.stringify(ch);
+}
+
+function alertAlignmentReplacements(counts) {
+    if (!counts || !counts.size) return;
+    const parts = [];
+    counts.forEach((count, ch) => {
+        parts.push(`${describeReplacedAlignmentChar(ch)} → X (${count})`);
+    });
+    parts.sort((a, b) => a.localeCompare(b));
+    alert(
+        'Non-standard alignment characters were replaced with X (alignment length unchanged):\n\n' +
+        parts.join('\n')
+    );
+}
+
 function parseFastq(text) {
     const lines = text.split(/\r?\n/);
     const seqs = [];
+    const replacements = new Map();
     for(let i=0; i<lines.length; i++) {
         const line = lines[i].trim();
         if(!line) continue;
         if(line.startsWith('@')) {
             const name = line.substring(1); 
             if(i + 1 < lines.length) {
-                const seqStr = lines[i+1].trim().toUpperCase().replace(/[^A-Z-]/g, '');
-                seqs.push({ name: name, seq: seqStr.split('') });
+                const sanitized = sanitizeAlignmentSequenceLine(lines[i + 1].trim());
+                mergeAlignmentReplacementCounts(replacements, sanitized.replacements);
+                seqs.push({ name: name, seq: sanitized.text.split('') });
                 i += 3; 
             }
         }
     }
+    alertAlignmentReplacements(replacements);
     finalizeLoad(seqs);
 }
 
@@ -3632,6 +3878,7 @@ function parseFasta(text) {
     const lines = text.split(/\r?\n/);
     const seqs = [];
     let name = null, buf = [];
+    const replacements = new Map();
     for(let line of lines) {
         line = line.trim();
         if(!line) continue;
@@ -3640,7 +3887,9 @@ function parseFasta(text) {
             name = line.substring(1).trim();
             buf = [];
         } else {
-            buf.push(line.toUpperCase().replace(/[^A-Z-]/g, ''));
+            const sanitized = sanitizeAlignmentSequenceLine(line);
+            mergeAlignmentReplacementCounts(replacements, sanitized.replacements);
+            buf.push(sanitized.text);
         }
     }
     if(name) seqs.push({name, seq: buf.join('').split('')});
@@ -3657,6 +3906,7 @@ function parseFasta(text) {
         }
     }
     
+    alertAlignmentReplacements(replacements);
     finalizeLoad(seqs);
 }
 
@@ -8605,14 +8855,14 @@ function parseFastaToSeqs(text) {
         const t = line.trim();
         if (!t) continue;
         if (t.startsWith('>')) {
-            if (name) seqs.push({ name, seq: buf.join('').toUpperCase().replace(/[^A-Z.-]/g, '').split('') });
+            if (name) seqs.push({ name, seq: buf.join('').split('') });
             name = t.substring(1).trim();
             buf = [];
         } else {
-            buf.push(t.toUpperCase().replace(/[^A-Z.-]/g, ''));
+            buf.push(sanitizeAlignmentSequenceLine(t, ['.']).text);
         }
     }
-    if (name) seqs.push({ name, seq: buf.join('').toUpperCase().replace(/[^A-Z.-]/g, '').split('') });
+    if (name) seqs.push({ name, seq: buf.join('').split('') });
     return seqs;
 }
 
