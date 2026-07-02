@@ -82,6 +82,17 @@
             background: white; font-size: 13px; cursor: pointer;
             white-space: nowrap;
         }
+
+        /* Hide native file input chrome; use custom button + filename field instead. */
+        #inp-file,
+        #inp-ref-file {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            opacity: 0 !important;
+            position: absolute !important;
+            pointer-events: none !important;
+        }
         button:hover { background-color: #f3f4f6; }
         button.active { background-color: var(--primary); color: white; border-color: var(--primary); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -221,7 +232,19 @@
         <div class="control-group">
             <label>Sequences</label>
             <div style="display:flex; gap:5px; align-items:center;">
-                <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt">
+                <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt" style="display:none;">
+                <button id="btn-choose-file" type="button">Choose file</button>
+                <input type="text" id="inp-file-name" value="No file chosen" readonly style="min-width: 180px; max-width: 260px; padding: 4px 6px; font-size: 12px; color: #374151; background: #f9fafb; border: 1px solid #d1d5db; border-radius: 4px;">
+                <input type="file" id="inp-ref-file" accept=".fasta,.fa,.txt" style="display:none;">
+                <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; white-space:nowrap;">
+                    <input type="checkbox" id="chk-has-reference" checked>
+                    Has reference
+                </label>
+                <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; white-space:nowrap;">
+                    <input type="checkbox" id="chk-has-subtype">
+                    Has subtype
+                </label>
+                <button id="btn-collapse-sequences" title="Read collapse counts from a name field">Collapse</button>
                 <button id="btn-group-sequences" title="Group sequences by name field">Group</button>
                 <button id="btn-sort-sequences" title="Sort by current grouping, or by name if no grouping (REF and SUBTYPE remain first)">Sort</button>
                 <button id="btn-prune" title="Remove sequences from selected groups">Prune</button>
@@ -233,8 +256,7 @@
             <label>Phylogeny</label>
             <div style="display:flex; gap:5px; align-items:center;">
                 <button id="btn-infer-tree" title="Infer NJ tree from sequences">Infer</button>
-                <!-- Choose file button commented out -->
-                <!-- <input type="file" id="inp-tree"> -->
+                <input type="file" id="inp-tree" accept=".nwk,.newick,.tree,.tre,.treefile,.txt" style="display:none;">
                 <button id="btn-reroot-tree" title="Reroot tree on subtype sequence">Reroot</button>
                 <button id="btn-ladderize-tree" title="Ladderize tree and reorder sequences">Ladderize</button>
                 <button id="btn-histogram" title="Show histogram of root-to-leaf distances" disabled>Histogram</button>
@@ -385,6 +407,7 @@
             <select id="sel-infer-method" style="width: 100%;">
                 <option value="nj">Neighbor-Joining (Internal)</option>
                 <option value="fasttree" selected>FastTree (bioWASM)</option>
+                <option value="load-tree">Load inferred tree (Newick file)</option>
             </select>
         </div>
         
@@ -643,6 +666,25 @@
     </div>
 </div>
 
+<div id="collapse-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 450px;">
+        <h2>Collapse Counts</h2>
+        <p style="font-size: 13px; color: #374151; margin: 0 0 12px 0;">Specify which name field holds an integer collapse count (how many times each sequence occurs). Leave field number empty to clear collapse.</p>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Delimiter Character</label>
+            <input type="text" id="inp-collapse-delimiter" value="_" maxlength="1" style="width: 100%; padding: 5px; font-size: 13px;">
+        </div>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 10px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Field Number (1-indexed; empty = no collapse)</label>
+            <input type="number" id="inp-collapse-field" value="" min="1" placeholder="none" style="width: 100%; padding: 5px; font-size: 13px;">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button type="button" onclick="document.getElementById('collapse-overlay').style.display='none'">Cancel</button>
+            <button type="button" id="btn-run-collapse" class="active">Apply</button>
+        </div>
+    </div>
+</div>
+
 <div id="group-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="help-box" style="width: 450px;">
         <h2>Group Sequences</h2>
@@ -723,9 +765,45 @@
     </div>
 </div>
 
+<div id="dual-load-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="help-box" style="width: 480px;">
+        <h2>Load Alignment and Reference</h2>
+        <p style="font-size: 13px; color: #374151; margin: 0 0 16px 0;">The reference is not in the alignment file. Choose an alignment file, then Load. If you loaded a reference earlier in this session, it is reused automatically; choose a new reference file only when you want to replace it.</p>
+        <div class="help-row" style="flex-direction: column; align-items: stretch; gap: 6px; margin-bottom: 12px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Alignment file</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button type="button" id="btn-dual-load-alignment">Choose alignment</button>
+                <span id="dual-load-alignment-name" style="font-size: 12px; color: #6b7280;">No file chosen</span>
+            </div>
+        </div>
+        <div class="help-row" style="flex-direction: column; align-items: stretch; gap: 6px; margin-bottom: 16px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Reference FASTA</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button type="button" id="btn-dual-load-reference">Choose reference</button>
+                <span id="dual-load-reference-name" style="font-size: 12px; color: #6b7280;">No file chosen</span>
+            </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" id="btn-dual-load-cancel">Cancel</button>
+            <button type="button" id="btn-dual-load-apply" class="active" disabled>Load</button>
+        </div>
+    </div>
+</div>
+
 <div id="subtype-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000;">
     <div class="help-box" style="width: 450px;">
         <h2>Add Founder Sequence</h2>
+        <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <label style="text-transform: none; font-size: 13px; color: #374151;">Founder Source</label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#374151; text-transform:none;">
+                <input type="radio" name="founder-source-mode" id="founder-source-consensus" value="consensus">
+                Consensus of a group
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#374151; text-transform:none;">
+                <input type="radio" name="founder-source-mode" id="founder-source-medoid" value="medoid" checked>
+                Medoid sequence of a group
+            </label>
+        </div>
         <div class="help-row" style="flex-direction: column; align-items: flex-start; gap: 5px;">
             <label style="text-transform: none; font-size: 13px; color: #374151;">Select Group</label>
             <select id="sel-subtype-group" style="width: 100%;">
@@ -986,7 +1064,9 @@ const state = {
     treeWidth: 0, 
     namesWidth: 200,
     refIndex: 0, 
-    subtypeIndex: 1, // Second sequence (index 1) is the subtype
+    subtypeIndex: 1, // Sequence index used as subtype; may be out-of-range when subtype is not present
+    alignmentHasReference: true, // Whether the alignment file already includes the reference as its first sequence
+    alignmentHasSubtype: false, // Whether loaded alignments include a dedicated subtype sequence
     refMap: [], 
     epitopes: [], // Array of {name: string, regions: [{start: number, end: number}]}
     selectedEpitope: null, // Selected epitope name or null
@@ -1003,9 +1083,15 @@ const state = {
     sequenceGroups: null, // Map from sequence name to group ID (from grouping by name field)
     groupDelimiter: null, // Delimiter used for grouping
     groupFieldNum: null, // Field number (1-based) used for grouping
+    sequenceCollapseCounts: null, // Map from sequence name to integer collapse count (when active)
+    collapseDelimiter: null, // Delimiter used for collapse field parsing
+    collapseFieldNum: null, // 1-based field number; null = no collapse
+    persistentCollapseFieldNum: null, // Last chosen collapse field number (survives load/clear)
     groupNames: null, // Map from group ID to group value (for legend)
+    founderSequenceName: null, // Current founder sequence name (consensus sequence or selected medoid sequence)
     originalSubtype: null, // Store original subtype sequence for reverting
     currentFileName: null, // Store the current alignment file name
+    rememberedExternalReference: null, // { text, fileName } — last reference FASTA for dual-load (no ref in alignment)
     pdbFileContent: null, // Raw PDB/CIF text for 3D viewer (set when Load PDB/CIF or fetch by ID)
     pdbFileName: null,    // PDB/CIF file name for 3D overlay title
     pdbFormat: 'pdb',   // 'pdb' or 'cif' for 3Dmol addModel
@@ -1015,6 +1101,11 @@ const state = {
 // --- DOM ---
 const dom = {
     file: document.getElementById('inp-file'),
+    btnChooseFile: document.getElementById('btn-choose-file'),
+    fileNameDisplay: document.getElementById('inp-file-name'),
+    chkHasReference: document.getElementById('chk-has-reference'),
+    chkHasSubtype: document.getElementById('chk-has-subtype'),
+    refFile: document.getElementById('inp-ref-file'),
     fileTree: document.getElementById('inp-tree'),
     btnInferTree: document.getElementById('btn-infer-tree'),
     btnExportTree: document.getElementById('btn-export-tree'),
@@ -1024,6 +1115,7 @@ const dom = {
     btnHistogram: document.getElementById('btn-histogram'),
     btnMds: document.getElementById('btn-mds'),
     btnSortSequences: document.getElementById('btn-sort-sequences'),
+    btnCollapseSequences: document.getElementById('btn-collapse-sequences'),
     btnGroupSequences: document.getElementById('btn-group-sequences'),
     btnPrune: document.getElementById('btn-prune'),
     btnSubtype: document.getElementById('btn-subtype'),
@@ -1094,6 +1186,7 @@ function drawDiamond(ctx, x, y, size) {
 function disableButtonsOnStartup() {
     // Disable all buttons except the help button and file input
     if (dom.btnSortSequences) dom.btnSortSequences.disabled = true;
+    if (dom.btnCollapseSequences) dom.btnCollapseSequences.disabled = true;
     if (dom.btnGroupSequences) dom.btnGroupSequences.disabled = true;
     if (dom.btnPrune) dom.btnPrune.disabled = true;
     if (dom.btnSubtype) dom.btnSubtype.disabled = true;
@@ -1123,6 +1216,7 @@ function enableButtonsAfterLoad() {
     // Mode buttons (NT/AA) are enabled; setMode() will disable NT when alignment is AA-only
     if (dom.btnNt) dom.btnNt.disabled = false;
     if (dom.btnAa) dom.btnAa.disabled = false;
+    if (dom.btnCollapseSequences) dom.btnCollapseSequences.disabled = false;
     if (dom.btnGroupSequences) dom.btnGroupSequences.disabled = false;
     if (dom.btnInferTree) dom.btnInferTree.disabled = false;
     if (dom.btnDownload) dom.btnDownload.disabled = false;
@@ -1187,12 +1281,65 @@ async function init() {
     // Disable buttons that require a file to be loaded
     disableButtonsOnStartup();
 
+    if (dom.chkHasReference) {
+        state.alignmentHasReference = !!dom.chkHasReference.checked;
+        dom.chkHasReference.addEventListener('change', function () {
+            state.alignmentHasReference = !!dom.chkHasReference.checked;
+        });
+    }
+    if (dom.chkHasSubtype) {
+        state.alignmentHasSubtype = !!dom.chkHasSubtype.checked;
+        dom.chkHasSubtype.addEventListener('change', function () {
+            applySubtypeToggleReset(!!dom.chkHasSubtype.checked);
+        });
+    }
+    if (dom.btnChooseFile && dom.file) {
+        dom.btnChooseFile.addEventListener('click', function () {
+            if (!state.alignmentHasReference) {
+                openDualLoadModal();
+                return;
+            }
+            dom.file.click();
+        });
+    }
     dom.file.addEventListener('change', function (e) {
         if (e.target.files && e.target.files[0]) {
-            loadFile(e.target.files[0]);
+            if (dualLoadPending.active) {
+                dualLoadPending.alignmentFile = e.target.files[0];
+                updateDualLoadModalUI();
+            } else {
+                loadFile(e.target.files[0]);
+            }
             e.target.value = '';
         }
     });
+    if (dom.refFile) {
+        dom.refFile.addEventListener('change', function (e) {
+            if (e.target.files && e.target.files[0]) {
+                if (dualLoadPending.active) {
+                    dualLoadPending.refFile = e.target.files[0];
+                    updateDualLoadModalUI();
+                }
+                e.target.value = '';
+            }
+        });
+    }
+    const btnDualLoadAlignment = document.getElementById('btn-dual-load-alignment');
+    const btnDualLoadReference = document.getElementById('btn-dual-load-reference');
+    const btnDualLoadCancel = document.getElementById('btn-dual-load-cancel');
+    const btnDualLoadApply = document.getElementById('btn-dual-load-apply');
+    if (btnDualLoadAlignment && dom.file) {
+        btnDualLoadAlignment.addEventListener('click', function () { dom.file.click(); });
+    }
+    if (btnDualLoadReference && dom.refFile) {
+        btnDualLoadReference.addEventListener('click', function () { dom.refFile.click(); });
+    }
+    if (btnDualLoadCancel) {
+        btnDualLoadCancel.addEventListener('click', closeDualLoadModal);
+    }
+    if (btnDualLoadApply) {
+        btnDualLoadApply.addEventListener('click', applyDualLoad);
+    }
     if (dom.fileTree) {
         dom.fileTree.addEventListener('change', function (e) {
             if (e.target.files && e.target.files[0]) {
@@ -1203,6 +1350,13 @@ async function init() {
     }
     if (dom.btnSortSequences) {
         dom.btnSortSequences.addEventListener('click', sortSequencesByName);
+    }
+    if (dom.btnCollapseSequences) {
+        dom.btnCollapseSequences.addEventListener('click', showCollapseModal);
+    }
+    const btnRunCollapse = document.getElementById('btn-run-collapse');
+    if (btnRunCollapse) {
+        btnRunCollapse.addEventListener('click', runCollapseTask);
     }
     if (dom.btnGroupSequences) {
         dom.btnGroupSequences.addEventListener('click', showGroupModal);
@@ -1968,10 +2122,16 @@ function clearAlignment() {
     state.maxLength = 0;
     state.refMap = [];
     state.pastedNameCounter = 1;
+    state.currentFileName = null;
+    state.founderSequenceName = null;
+    updateLoadedFileNameDisplay('');
     state.sequenceGroups = null;
     state.groupDelimiter = null;
     state.groupFieldNum = null;
     state.groupNames = null;
+    state.sequenceCollapseCounts = null;
+    state.collapseDelimiter = null;
+    state.collapseFieldNum = null;
     state.leafClusters = null;
     state.pdbFileContent = null;
     state.pdbFileName = null;
@@ -2024,7 +2184,8 @@ function saveState() {
     const snapshot = {
         seqs: JSON.parse(JSON.stringify(state.rawSequences)),
         sel: state.selection ? { ...state.selection } : null,
-        refIdx: state.refIndex
+        refIdx: state.refIndex,
+        founderName: state.founderSequenceName
     };
     state.history.push(snapshot);
     if(state.history.length > CONFIG.maxHistory) state.history.shift();
@@ -2035,6 +2196,7 @@ function undo() {
     const prev = state.history.pop();
     state.rawSequences = prev.seqs;
     state.selection = prev.sel;
+    state.founderSequenceName = prev.founderName || null;
     if(prev.refIdx < state.rawSequences.length) state.refIndex = prev.refIdx;
     else state.refIndex = 0;
     
@@ -2042,16 +2204,202 @@ function undo() {
 }
 
 // --- Loading ---
+function getDefaultSubtypeIndexForLoadedSequences(count) {
+    if (count <= 0) return 0;
+    if (!state.alignmentHasSubtype) return count; // out-of-range sentinel means "no subtype"
+    return count > 1 ? 1 : 0;
+}
+
+/** Returns the designated subtype sequence if present and not a founder, otherwise null. */
+function getDesignatedSubtypeSequence() {
+    if (state.subtypeIndex < 0 || state.subtypeIndex >= state.rawSequences.length) return null;
+    const seq = state.rawSequences[state.subtypeIndex];
+    if (!seq) return null;
+    if (isFounderSequenceName(seq.name)) return null;
+    return seq;
+}
+
+function getClusterSuffixPattern() {
+    const delimiter = state.groupDelimiter || '_';
+    return new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+}
+
+function normalizeSequenceName(name) {
+    return String(name || '').replace(getClusterSuffixPattern(), '');
+}
+
+function isFounderSequenceName(name) {
+    if (!name) return false;
+    if (name.startsWith('consensus_of_')) return true;
+    if (!state.founderSequenceName) return false;
+    return normalizeSequenceName(name) === normalizeSequenceName(state.founderSequenceName);
+}
+
+function getFounderSequenceIndex() {
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (isFounderSequenceName(state.rawSequences[i]?.name)) return i;
+    }
+    return -1;
+}
+
+function updateLoadedFileNameDisplay(fileName) {
+    if (!dom.fileNameDisplay) return;
+    const trimmed = String(fileName || '').trim();
+    dom.fileNameDisplay.value = trimmed || 'No file chosen';
+    dom.fileNameDisplay.title = dom.fileNameDisplay.value;
+}
+
+function applySubtypeToggleReset(hasSubtype) {
+    const previous = state.alignmentHasSubtype;
+    state.alignmentHasSubtype = !!hasSubtype;
+    if (previous === state.alignmentHasSubtype) return;
+    if (!state.rawSequences || state.rawSequences.length === 0) return;
+
+    // Preserve ability to undo user-driven subtype toggles.
+    saveState();
+
+    // Remove cluster suffixes from sequence names before clearing clustering/grouping state.
+    const delimiter = state.groupDelimiter || '_';
+    const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+    state.rawSequences.forEach(seq => {
+        if (seq && seq.name) seq.name = seq.name.replace(clusterPattern, '');
+    });
+
+    // Toggling subtype semantics invalidates grouping, tree inference, and clustering outputs.
+    state.sequenceGroups = null;
+    state.groupNames = null;
+    state.groupDelimiter = null;
+    state.groupFieldNum = null;
+    state.leafClusters = null;
+    state.hierarchicalActive = false;
+    state.hierarchicalDepths = [0, 0, 0];
+    state.lastAcceptedClusterMethod = null;
+    state.founderSequenceName = null;
+
+    state.tree = null;
+    setTreeWidth(0);
+
+    state.refIndex = 0;
+    state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
+    state.originalSubtype = null;
+    if (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length) {
+        state.originalSubtype = JSON.parse(JSON.stringify(state.rawSequences[state.subtypeIndex]));
+    }
+
+    state.selection = null;
+    disableButtonsOnStartup();
+    enableButtonsAfterLoad();
+    updateColorLegend();
+    calculateNamesWidth();
+    recalc();
+}
+
+/** Dual-file load state when reference is supplied separately (browser requires user click per file picker). */
+const dualLoadPending = {
+    active: false,
+    alignmentFile: null,
+    refFile: null
+};
+
+function openDualLoadModal() {
+    dualLoadPending.active = true;
+    dualLoadPending.alignmentFile = null;
+    dualLoadPending.refFile = null;
+    updateDualLoadModalUI();
+    const overlay = document.getElementById('dual-load-overlay');
+    if (overlay) overlay.style.display = 'flex';
+}
+
+function closeDualLoadModal() {
+    dualLoadPending.active = false;
+    dualLoadPending.alignmentFile = null;
+    dualLoadPending.refFile = null;
+    const overlay = document.getElementById('dual-load-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function hasRememberedExternalReference() {
+    const ref = state.rememberedExternalReference;
+    return !!(ref && ref.text && ref.fileName);
+}
+
+function rememberExternalReference(text, fileName) {
+    if (!text) return;
+    state.rememberedExternalReference = {
+        text: text,
+        fileName: fileName || 'Reference'
+    };
+}
+
+function updateDualLoadModalUI() {
+    const alignName = document.getElementById('dual-load-alignment-name');
+    const refName = document.getElementById('dual-load-reference-name');
+    const applyBtn = document.getElementById('btn-dual-load-apply');
+    const hasRef = !!(dualLoadPending.refFile || hasRememberedExternalReference());
+    if (alignName) {
+        alignName.textContent = dualLoadPending.alignmentFile
+            ? dualLoadPending.alignmentFile.name
+            : 'No file chosen';
+    }
+    if (refName) {
+        if (dualLoadPending.refFile) {
+            refName.textContent = dualLoadPending.refFile.name;
+        } else if (hasRememberedExternalReference()) {
+            refName.textContent = state.rememberedExternalReference.fileName + ' (previous)';
+        } else {
+            refName.textContent = 'No file chosen';
+        }
+    }
+    if (applyBtn) {
+        applyBtn.disabled = !(dualLoadPending.alignmentFile && hasRef);
+    }
+}
+
+function readFileAsText(file) {
+    return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function (e) { resolve(e.target.result); };
+        reader.onerror = function () { reject(new Error('Failed to read ' + (file && file.name ? file.name : 'file'))); };
+        reader.readAsText(file);
+    });
+}
+
+function applyDualLoad() {
+    if (!dualLoadPending.alignmentFile) return;
+    const alignFile = dualLoadPending.alignmentFile;
+    const refFile = dualLoadPending.refFile;
+    const remembered = state.rememberedExternalReference;
+    if (!refFile && !hasRememberedExternalReference()) return;
+    const alignName = alignFile.name.toLowerCase();
+    const isFastq = alignName.endsWith('.fastq') || alignName.endsWith('.fq');
+    closeDualLoadModal();
+    showOverlay(true);
+    dom.overlayMsg.textContent = 'Profile-aligning reference...';
+    dom.overlaySub.textContent = 'Mapping reference onto alignment columns';
+    const alignPromise = readFileAsText(alignFile);
+    const refPromise = refFile
+        ? readFileAsText(refFile)
+        : Promise.resolve(remembered.text);
+    const refFileName = refFile ? refFile.name : remembered.fileName;
+    Promise.all([alignPromise, refPromise])
+        .then(function (texts) {
+            state.currentFileName = alignFile.name;
+            loadAlignmentWithExternalReference(texts[0], texts[1], isFastq, refFileName);
+        })
+        .catch(function (err) {
+            console.error(err);
+            alert(err && err.message ? err.message : String(err));
+            showOverlay(false);
+        });
+}
+
 function loadFile(file) {
     if(!file) return;
     showOverlay(true);
     const reader = new FileReader();
     const name = file.name.toLowerCase();
     const isFastq = name.endsWith('.fastq') || name.endsWith('.fq');
-    
-    // Store the file name
     state.currentFileName = file.name;
-
     reader.onload = e => {
         if(isFastq) parseFastq(e.target.result);
         else parseFasta(e.target.result);
@@ -2059,12 +2407,190 @@ function loadFile(file) {
     reader.readAsText(file);
 }
 
+/** Strip gaps/dots and join for pairwise alignment. */
+function sequenceToUngappedString(seqArr) {
+    if (!seqArr) return '';
+    if (typeof seqArr === 'string') return seqArr.replace(/[-.]/g, '');
+    return seqArr.filter(c => c !== '-' && c !== '.').join('');
+}
+
+/**
+ * Profile-align an ungapped reference sequence onto an existing gapped MSA row (template).
+ * Uses global NW alignment (doubleDP_nwalign) of ungapped strings, then maps onto template columns.
+ */
+function profileAlignReferenceRow(refSeqArr, templateGappedArr) {
+    const width = templateGappedArr ? templateGappedArr.length : 0;
+    const result = Array(width).fill('-');
+    if (!width) return result;
+
+    const templateUngapped = sequenceToUngappedString(templateGappedArr);
+    const refUngapped = sequenceToUngappedString(refSeqArr);
+    if (!templateUngapped.length) return result;
+    if (!refUngapped.length) return result;
+
+    if (typeof doubleDP_nwalign !== 'function') {
+        throw new Error('Alignment library (doubleDP_nwalign) is not available.');
+    }
+
+    const [alnT, alnR] = doubleDP_nwalign(templateUngapped, refUngapped);
+    let a = 0;
+    for (let col = 0; col < width; col++) {
+        const tc = templateGappedArr[col];
+        if (tc === '-' || tc === '.') {
+            result[col] = '-';
+            continue;
+        }
+        while (a < alnT.length && alnT[a] === '-') a++;
+        if (a >= alnT.length) break;
+        const qChar = alnR[a];
+        result[col] = (qChar && qChar !== '-') ? qChar : '-';
+        a++;
+    }
+    return result;
+}
+
+function loadAlignmentWithExternalReference(alignmentText, refText, isFastq, refFileName) {
+    try {
+        const replacements = new Map();
+        let alignmentSeqs;
+        if (isFastq) {
+            alignmentSeqs = parseFastqContent(alignmentText, replacements);
+        } else {
+            const parsed = parseFastaContent(alignmentText);
+            alignmentSeqs = parsed.seqs;
+            mergeAlignmentReplacementCounts(replacements, parsed.replacements);
+        }
+        alertAlignmentReplacements(replacements);
+        if (!alignmentSeqs || alignmentSeqs.length === 0) {
+            alert('No sequences found in alignment file.');
+            showOverlay(false);
+            return;
+        }
+        if (!validateAlignedSeqLengths(alignmentSeqs, true)) {
+            showOverlay(false);
+            return;
+        }
+
+        const refParsed = parseFastaContent(refText);
+        alertAlignmentReplacements(refParsed.replacements);
+        if (!refParsed.seqs || refParsed.seqs.length === 0) {
+            alert('No sequences found in reference FASTA file.');
+            showOverlay(false);
+            return;
+        }
+        if (refParsed.seqs.length > 1) {
+            alert(`Reference FASTA contains ${refParsed.seqs.length} sequences; using the first ("${refParsed.seqs[0].name}").`);
+        }
+
+        const refEntry = refParsed.seqs[0];
+        const template = alignmentSeqs[0];
+        const alignedRefSeq = profileAlignReferenceRow(refEntry.seq, template.seq);
+        const profiledRef = {
+            name: refEntry.name || refFileName || 'Reference',
+            seq: alignedRefSeq
+        };
+        rememberExternalReference(refText, refFileName || refEntry.name || 'Reference');
+        finalizeLoad([profiledRef, ...alignmentSeqs]);
+    } catch (err) {
+        console.error(err);
+        alert('Failed to profile-align reference: ' + (err && err.message ? err.message : err));
+        showOverlay(false);
+    }
+}
+
 function loadTreeFile(file) {
     if(!file) return;
     showOverlay(true);
     const reader = new FileReader();
-    reader.onload = e => parseTree(e.target.result, false, false); // Don't reroot when loading from file
+    reader.onload = e => {
+        const newick = e.target.result;
+        const validation = validateTreeNamesAgainstAlignment(newick);
+        if (!validation.ok) {
+            showOverlay(false);
+            alert(validation.message);
+            return;
+        }
+        parseTree(newick, false, false); // Don't reroot when loading from file
+    };
     reader.readAsText(file);
+}
+
+function extractLeafNamesFromNewick(newickText) {
+    const text = String(newickText || '').trim();
+    if (!text) return [];
+    let s = text.split(/\r?\n/).filter(Boolean).pop() || '';
+    s = s.trim();
+    if (!s) return [];
+    if (s.endsWith(';')) s = s.slice(0, -1);
+    s = s.replace(/\[[^\]]*\]/g, '');
+    const tokens = s.split(/([(),:;])/).map(t => t.trim()).filter(t => t !== '');
+    const root = { children: [], name: null };
+    let stack = [];
+    let current = root;
+    for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t === '(') {
+            const node = { children: [], name: null, parent: current };
+            current.children.push(node);
+            stack.push(current);
+            current = node;
+        } else if (t === ',') {
+            current = stack.length > 0 ? stack[stack.length - 1] : root;
+            const node = { children: [], name: null, parent: current };
+            current.children.push(node);
+            current = node;
+        } else if (t === ')') {
+            current = stack.length > 0 ? stack.pop() : root;
+        } else if (t === ':') {
+            i++; // skip branch length token
+        } else {
+            if (!current) continue;
+            const isInternal = current.children && current.children.length > 0;
+            if (!isInternal) current.name = t.replace(/^['"]|['"]$/g, '');
+        }
+    }
+    const leaves = [];
+    function walk(node) {
+        if (!node) return;
+        if (!node.children || node.children.length === 0) {
+            if (node.name) leaves.push(node.name);
+            return;
+        }
+        node.children.forEach(walk);
+    }
+    walk(root);
+    return leaves;
+}
+
+function validateTreeNamesAgainstAlignment(newickText) {
+    const treeNames = extractLeafNamesFromNewick(newickText).map(normalizeSequenceName);
+    if (treeNames.length === 0) {
+        return { ok: false, message: "Tree file appears empty or is not valid Newick." };
+    }
+    const treeSet = new Set(treeNames);
+    const subtypeSeq = getDesignatedSubtypeSequence();
+    const subtypeNameNorm = subtypeSeq ? normalizeSequenceName(subtypeSeq.name) : null;
+    const expectedSet = new Set();
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (i === state.refIndex) continue;
+        const seq = state.rawSequences[i];
+        if (!seq || !seq.name || isPdbChainSequence(seq)) continue;
+        const norm = normalizeSequenceName(seq.name);
+        if (subtypeNameNorm && norm === subtypeNameNorm) continue;
+        expectedSet.add(norm);
+    }
+    const missing = [];
+    expectedSet.forEach(n => { if (!treeSet.has(n)) missing.push(n); });
+    const extra = [];
+    treeSet.forEach(n => { if (!expectedSet.has(n)) extra.push(n); });
+    if (missing.length === 0 && extra.length === 0) return { ok: true };
+    const missingMsg = missing.slice(0, 5).join(', ');
+    const extraMsg = extra.slice(0, 5).join(', ');
+    let message = "Tree/alignment name mismatch.\n";
+    if (missing.length > 0) message += `Missing from tree (${missing.length}): ${missingMsg}${missing.length > 5 ? ', ...' : ''}\n`;
+    if (extra.length > 0) message += `Not in alignment (${extra.length}): ${extraMsg}${extra.length > 5 ? ', ...' : ''}\n`;
+    message += "Tree leaf names must match alignment names (reference/subtype excluded; founder label differences are tolerated).";
+    return { ok: false, message };
 }
 
 // --- Sort Sequences by Name (or by current grouping when present) ---
@@ -2091,7 +2617,7 @@ function sortSequencesByName() {
         const s = state.rawSequences[i];
         if (isPdbChainSequence(s)) {
             pdbChains.push(s);
-        } else if (s && s.name && s.name.startsWith('consensus_of_')) {
+        } else if (s && isFounderSequenceName(s.name)) {
             // Founder is a special sequence: keep it out of the sort and place it after subtype
             founderSeq = s;
         } else {
@@ -2148,9 +2674,9 @@ function sortSequencesByName() {
     const subtypeName = subtypeSeq ? subtypeSeq.name : null;
     if (subtypeName) {
         const newSubtypeIdx = state.rawSequences.findIndex(s => s.name === subtypeName);
-        state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : 0;
+        state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
     } else {
-        state.subtypeIndex = state.rawSequences.length > 1 ? 1 : 0;
+        state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
     }
     
     // Recalculate view sequences
@@ -2160,6 +2686,149 @@ function sortSequencesByName() {
     calculateNamesWidth();
     
     // Re-render
+    recalc();
+}
+
+// --- Collapse counts from name field ---
+function extractNameFieldValue(name, delimiter, fieldNumOneBased) {
+    const fields = String(name || '').split(delimiter);
+    const idx = fieldNumOneBased - 1;
+    if (idx < 0 || fields.length <= idx) return null;
+    return fields[idx];
+}
+
+function getSequenceCollapseCount(seqName) {
+    if (!state.sequenceCollapseCounts || state.collapseFieldNum == null) return 1;
+    const key = normalizeSequenceName(seqName);
+    const count = state.sequenceCollapseCounts.get(key);
+    if (count == null || !Number.isFinite(count) || count < 1) return 1;
+    return Math.floor(count);
+}
+
+function getCollapseLabelSuffix(seqName) {
+    const count = getSequenceCollapseCount(seqName);
+    if (state.collapseFieldNum == null || count <= 1) return '';
+    return ` [×${count}]`;
+}
+
+function getCollapseWeight(value) {
+    if (value == null || !Number.isFinite(value) || value < 1) return 1;
+    return Math.floor(value);
+}
+
+function getCollapseWeightForLeafName(leafName) {
+    return getCollapseWeight(getSequenceCollapseCount(leafName));
+}
+
+function getCollapseWeightsForLeaves(leaves) {
+    if (!leaves || leaves.length === 0) return null;
+    return leaves.map(leaf => getCollapseWeightForLeafName(leaf && leaf.name));
+}
+
+function addWeightedClusterCount(clusterCounts, clusterId, leafName) {
+    const w = getCollapseWeightForLeafName(leafName);
+    clusterCounts.set(clusterId, (clusterCounts.get(clusterId) || 0) + w);
+}
+
+function clearCollapseState() {
+    state.sequenceCollapseCounts = null;
+    state.collapseDelimiter = null;
+    state.collapseFieldNum = null;
+}
+
+function getCollapseFieldInputDefault() {
+    if (state.collapseFieldNum != null) return String(state.collapseFieldNum);
+    if (state.persistentCollapseFieldNum != null) return String(state.persistentCollapseFieldNum);
+    return '';
+}
+
+function showCollapseModal() {
+    if (state.rawSequences.length === 0) {
+        alert('No sequences loaded.');
+        return;
+    }
+    const delimInput = document.getElementById('inp-collapse-delimiter');
+    const fieldInput = document.getElementById('inp-collapse-field');
+    if (delimInput) {
+        delimInput.value = state.collapseDelimiter != null ? state.collapseDelimiter : '_';
+    }
+    if (fieldInput) {
+        fieldInput.value = getCollapseFieldInputDefault();
+    }
+    document.getElementById('collapse-overlay').style.display = 'flex';
+}
+
+function runCollapseTask() {
+    const delimInput = document.getElementById('inp-collapse-delimiter');
+    const fieldInput = document.getElementById('inp-collapse-field');
+    const delimiter = (delimInput && delimInput.value != null && delimInput.value !== '') ? delimInput.value : '_';
+    const fieldRaw = fieldInput ? String(fieldInput.value).trim() : '';
+
+    document.getElementById('collapse-overlay').style.display = 'none';
+
+    if (!fieldRaw) {
+        saveState();
+        clearCollapseState();
+        calculateNamesWidth();
+        recalc();
+        return;
+    }
+
+    const fieldNumOneBased = parseInt(fieldRaw, 10);
+    if (!Number.isFinite(fieldNumOneBased) || fieldNumOneBased < 1) {
+        alert('Field number must be a positive integer, or leave empty for no collapse.');
+        return;
+    }
+    if (!delimiter.length) {
+        alert('Please specify a delimiter character.');
+        return;
+    }
+
+    const nameToCount = new Map();
+    const errors = [];
+
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (i === state.refIndex || i === state.subtypeIndex || isPdbChainSequence(state.rawSequences[i])) {
+            continue;
+        }
+        if (isFounderSequenceName(state.rawSequences[i].name)) {
+            continue;
+        }
+        const seq = state.rawSequences[i];
+        const name = seq.name || '';
+        const fieldVal = extractNameFieldValue(name, delimiter, fieldNumOneBased);
+        if (fieldVal == null || fieldVal === '') {
+            errors.push(`${name}: missing collapse field ${fieldNumOneBased}`);
+            continue;
+        }
+        if (!/^\d+$/.test(fieldVal)) {
+            errors.push(`${name}: "${fieldVal}" is not an integer`);
+            continue;
+        }
+        const count = parseInt(fieldVal, 10);
+        if (count < 1) {
+            errors.push(`${name}: collapse count must be at least 1`);
+            continue;
+        }
+        nameToCount.set(normalizeSequenceName(name), count);
+    }
+
+    if (errors.length > 0) {
+        const preview = errors.slice(0, 8).join('\n');
+        alert(
+            'Collapse field validation failed.\n\n' +
+            preview +
+            (errors.length > 8 ? `\n... and ${errors.length - 8} more` : '')
+        );
+        return;
+    }
+
+    saveState();
+    state.sequenceCollapseCounts = nameToCount;
+    state.collapseDelimiter = delimiter;
+    state.collapseFieldNum = fieldNumOneBased;
+    state.persistentCollapseFieldNum = fieldNumOneBased;
+    calculateNamesWidth();
     recalc();
 }
 
@@ -2348,7 +3017,7 @@ function applyPrune() {
     state.sequenceGroups = renumberedSequenceGroups;
     state.groupNames = renumberedGroupNames;
     state.refIndex = 0;
-    state.subtypeIndex = (state.rawSequences.length > 1) ? 1 : 0;
+    state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
     state.tree = null;
     state.selection = null;
     recalc();
@@ -2358,6 +3027,8 @@ function applyPrune() {
 
 // --- Add Founder Sequence ---
 function showSubtypeModal() {
+    const medoidRadio = document.getElementById('founder-source-medoid');
+    if (medoidRadio) medoidRadio.checked = true;
     // Populate group selector
     const select = document.getElementById('sel-subtype-group');
     select.innerHTML = '';
@@ -2381,17 +3052,20 @@ function showSubtypeModal() {
         });
     }
     
-    // Add subtype option last
-    const subtypeOpt = document.createElement('option');
-    subtypeOpt.value = 'subtype';
-    subtypeOpt.textContent = '[SubType]';
-    if (!hasGroups) subtypeOpt.selected = true;
-    select.appendChild(subtypeOpt);
+    // Add subtype option last (only when a subtype sequence exists)
+    const hasSubtypeSeq = state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length;
+    if (hasSubtypeSeq) {
+        const subtypeOpt = document.createElement('option');
+        subtypeOpt.value = 'subtype';
+        subtypeOpt.textContent = '[SubType]';
+        if (!hasGroups) subtypeOpt.selected = true;
+        select.appendChild(subtypeOpt);
+    }
     
     document.getElementById('subtype-overlay').style.display = 'flex';
 }
 
-function calculateFounder(sequences) {
+function calculateFounder(sequences, weights) {
     if (sequences.length === 0) return null;
     
     const founder = [];
@@ -2401,16 +3075,17 @@ function calculateFounder(sequences) {
         const counts = {};
         let total = 0;
         
-        sequences.forEach(seq => {
+        sequences.forEach((seq, idx) => {
+            const w = (weights && weights[idx] != null) ? Math.max(1, Math.floor(weights[idx])) : 1;
             if (pos < seq.length) {
                 const char = seq[pos].toUpperCase();
-                // Include all characters including gaps
-                counts[char] = (counts[char] || 0) + 1;
-                total++;
+                // Include all characters including gaps; weight by collapse count when set
+                counts[char] = (counts[char] || 0) + w;
+                total += w;
             } else {
                 // If sequence is shorter than this position, count it as a gap
-                counts['-'] = (counts['-'] || 0) + 1;
-                total++;
+                counts['-'] = (counts['-'] || 0) + w;
+                total += w;
             }
         });
         
@@ -2435,9 +3110,41 @@ function calculateFounder(sequences) {
     return founder;
 }
 
+function hammingDistancePadded(a, b) {
+    const len = Math.max(a ? a.length : 0, b ? b.length : 0);
+    let d = 0;
+    for (let i = 0; i < len; i++) {
+        const ca = (a && i < a.length) ? a[i] : '-';
+        const cb = (b && i < b.length) ? b[i] : '-';
+        if (ca !== cb) d++;
+    }
+    return d;
+}
+
+/** Return the entry whose sequence minimizes collapse-weighted total padded Hamming distance to all other entries. */
+function findMedoidEntry(entries) {
+    if (!entries || entries.length === 0) return null;
+    let bestIdx = 0;
+    let bestScore = Infinity;
+    for (let i = 0; i < entries.length; i++) {
+        let total = 0;
+        for (let j = 0; j < entries.length; j++) {
+            if (i === j) continue;
+            const w = entries[j].weight != null ? Math.max(1, Math.floor(entries[j].weight)) : 1;
+            total += w * hammingDistancePadded(entries[i].seq, entries[j].seq);
+        }
+        if (total < bestScore) {
+            bestScore = total;
+            bestIdx = i;
+        }
+    }
+    return entries[bestIdx];
+}
+
 function applySubtypeFounder() {
     const select = document.getElementById('sel-subtype-group');
     const selected = (select && select.value != null) ? String(select.value) : '';
+    const founderMode = document.querySelector('input[name="founder-source-mode"]:checked')?.value || 'consensus';
     if (!selected) {
         alert("Please select a group or [SubType].");
         return;
@@ -2445,6 +3152,7 @@ function applySubtypeFounder() {
     
     let founder = null;
     let founderName = null;
+    let medoidRawIndex = -1;
     
     if (selected === 'subtype') {
         if (state.subtypeIndex == null || state.subtypeIndex < 0 || state.subtypeIndex >= state.rawSequences.length) {
@@ -2452,8 +3160,13 @@ function applySubtypeFounder() {
             return;
         }
         const subtypeSeq = state.rawSequences[state.subtypeIndex];
-        founder = subtypeSeq && subtypeSeq.seq ? [...subtypeSeq.seq] : null;
-        founderName = 'consensus_of_subtype';
+        if (founderMode === 'medoid') {
+            medoidRawIndex = state.subtypeIndex;
+            founder = subtypeSeq && subtypeSeq.seq ? [...subtypeSeq.seq] : null;
+        } else {
+            founder = subtypeSeq && subtypeSeq.seq ? [...subtypeSeq.seq] : null;
+        }
+        founderName = founderMode === 'medoid' ? (subtypeSeq ? subtypeSeq.name : null) : 'consensus_of_subtype';
     } else {
         const selectedGroupId = parseInt(selected, 10);
         if (isNaN(selectedGroupId)) {
@@ -2467,27 +3180,45 @@ function applySubtypeFounder() {
         
         // Get group value for naming
         const groupValue = state.groupNames.get(selectedGroupId) || `group${selectedGroupId}`;
-        founderName = `consensus_of_${groupValue}`;
+        founderName = founderMode === 'medoid' ? null : `consensus_of_${groupValue}`;
         
         // Find all sequences in the selected group
-        const groupSequences = [];
+        const groupEntries = [];
         for (let i = 0; i < state.rawSequences.length; i++) {
             if (i === state.refIndex || i === state.subtypeIndex) continue; // Exclude REF and subtype
             const seq = state.rawSequences[i];
             const groupId = state.sequenceGroups.get(seq.name);
             if (groupId === selectedGroupId) {
                 const seqArr = state.isAASequence ? state.viewSequences[i].seq : state.rawSequences[i].seq;
-                groupSequences.push(seqArr);
+                groupEntries.push({
+                    rawIndex: i,
+                    seq: seqArr,
+                    weight: getSequenceCollapseCount(seq.name)
+                });
             }
         }
-        if (groupSequences.length === 0) {
+        if (groupEntries.length === 0) {
             alert("No sequences found in the selected group.");
             return;
         }
-        founder = calculateFounder(groupSequences);
-        if (!founder) {
-            alert("Failed to calculate founder sequence.");
-            return;
+        if (founderMode === 'medoid') {
+            const medoidEntry = findMedoidEntry(groupEntries);
+            if (!medoidEntry) {
+                alert("Failed to detect medoid sequence for the selected group.");
+                return;
+            }
+            medoidRawIndex = medoidEntry.rawIndex;
+            founder = medoidEntry.seq ? [...medoidEntry.seq] : null;
+            founderName = state.rawSequences[medoidRawIndex]?.name || null;
+        } else {
+            founder = calculateFounder(
+                groupEntries.map(e => e.seq),
+                groupEntries.map(e => e.weight)
+            );
+            if (!founder) {
+                alert("Failed to calculate founder sequence.");
+                return;
+            }
         }
     }
     
@@ -2508,28 +3239,47 @@ function applySubtypeFounder() {
         updateColorLegend();
     }
     
-    // Create new founder sequence
-    const founderSeq = {
-        name: founderName,
-        seq: [...founder]
-    };
-    
-    // Check if a founder already exists and replace it, otherwise insert after subtype
-    let existingFounderIndex = -1;
-    for (let i = 0; i < state.rawSequences.length; i++) {
-        if (state.rawSequences[i].name && state.rawSequences[i].name.startsWith('consensus_of_')) {
-            existingFounderIndex = i;
-            break;
+    // Check if a founder already exists
+    let existingFounderIndex = getFounderSequenceIndex();
+
+    if (founderMode === 'medoid') {
+        if (medoidRawIndex < 0 || medoidRawIndex >= state.rawSequences.length) {
+            alert("Failed to assign medoid founder.");
+            return;
         }
-    }
-    
-    if (existingFounderIndex >= 0) {
-        // Replace existing founder
-        state.rawSequences[existingFounderIndex] = founderSeq;
+        // Remove synthetic consensus founder when switching to medoid.
+        if (existingFounderIndex >= 0 && existingFounderIndex !== medoidRawIndex) {
+            const existingFounder = state.rawSequences[existingFounderIndex];
+            if (existingFounder && existingFounder.name && existingFounder.name.startsWith('consensus_of_')) {
+                state.rawSequences.splice(existingFounderIndex, 1);
+                if (medoidRawIndex > existingFounderIndex) medoidRawIndex--;
+            }
+        }
+        if (medoidRawIndex < 0 || medoidRawIndex >= state.rawSequences.length) {
+            alert("Failed to assign medoid founder.");
+            return;
+        }
+        const medoidSeq = state.rawSequences[medoidRawIndex];
+        state.founderSequenceName = medoidSeq && medoidSeq.name ? medoidSeq.name : null;
     } else {
-        // Insert after subtype (at index subtypeIndex + 1)
-        const insertIndex = state.subtypeIndex + 1;
-        state.rawSequences.splice(insertIndex, 0, founderSeq);
+        // Create synthetic founder sequence from consensus
+        const founderSeq = {
+            name: founderName,
+            seq: [...founder]
+        };
+        // If current founder is a medoid-tagged sequence, keep its original name and replace/add synthetic founder.
+        if (existingFounderIndex >= 0 && state.rawSequences[existingFounderIndex] && !state.rawSequences[existingFounderIndex].name.startsWith('consensus_of_')) {
+            existingFounderIndex = -1;
+        }
+        if (existingFounderIndex >= 0) {
+            // Replace existing founder
+            state.rawSequences[existingFounderIndex] = founderSeq;
+        } else {
+            // Insert after subtype (at index subtypeIndex + 1)
+            const insertIndex = state.subtypeIndex + 1;
+            state.rawSequences.splice(insertIndex, 0, founderSeq);
+        }
+        state.founderSequenceName = founderSeq.name;
     }
     
     // Update view sequences
@@ -2792,6 +3542,14 @@ function loadFromURLParams() {
     if (alignmentURL) {
         showOverlay(true);
         dom.overlayMsg.textContent = "Loading alignment...";
+        try {
+            const urlObj = new URL(alignmentURL, window.location.href);
+            const last = (urlObj.pathname || '').split('/').pop();
+            if (last) state.currentFileName = decodeURIComponent(last);
+        } catch (_) {
+            const fallback = alignmentURL.split('?')[0].split('#')[0].split('/').pop();
+            if (fallback) state.currentFileName = fallback;
+        }
         
         fetch(alignmentURL)
             .then(response => {
@@ -2847,6 +3605,15 @@ function showInferModal() {
 function runInferTask() {
     const method = document.getElementById('sel-infer-method').value;
     document.getElementById('infer-overlay').style.display = 'none';
+
+    if (method === 'load-tree') {
+        if (!dom.fileTree) {
+            alert("Tree file input is unavailable.");
+            return;
+        }
+        dom.fileTree.click();
+        return;
+    }
 
     // Disable buttons that require ladderize (will be re-enabled after ladderize)
     if (dom.btnHistogram) dom.btnHistogram.disabled = true;
@@ -2917,13 +3684,19 @@ function inferTreeNJ() {
     
     setTimeout(() => {
         try {
-            // Exclude reference, [subtype], and PDB chain sequences from tree inference
+            // Exclude reference, optional subtype, and PDB chain sequences from tree inference
             const refName = state.rawSequences[state.refIndex]?.name;
+            const subtypeCandidate = state.rawSequences[state.subtypeIndex];
+            const excludeSubtype =
+                state.subtypeIndex >= 0 &&
+                state.subtypeIndex < state.rawSequences.length &&
+                subtypeCandidate &&
+                !isFounderSequenceName(subtypeCandidate.name);
             const nonRefSequences = state.rawSequences.filter((s, idx) =>
-                idx !== state.refIndex && idx !== state.subtypeIndex && !isPdbChainSequence(s));
+                idx !== state.refIndex && !(excludeSubtype && idx === state.subtypeIndex) && !isPdbChainSequence(s));
             
             if (nonRefSequences.length < 2) {
-                alert("Need at least 2 sequences (excluding reference, subtype, and PDB) to infer a tree.");
+                alert("Need at least 2 sequences (excluding reference, optional subtype, and PDB) to infer a tree.");
                 showOverlay(false);
                 return;
             }
@@ -2962,21 +3735,27 @@ async function runFastTreeTask() {
     dom.overlaySub.textContent = "via bioWASM";
 
     try {
-        // Exclude reference, [subtype], and PDB chain sequences from tree inference
+        // Exclude reference, optional subtype, and PDB chain sequences from tree inference
+        const subtypeCandidate = state.rawSequences[state.subtypeIndex];
+        const excludeSubtype =
+            state.subtypeIndex >= 0 &&
+            state.subtypeIndex < state.rawSequences.length &&
+            subtypeCandidate &&
+            !isFounderSequenceName(subtypeCandidate.name);
         const nonRefSequences = state.rawSequences.filter((s, idx) =>
-            idx !== state.refIndex && idx !== state.subtypeIndex && !isPdbChainSequence(s));
+            idx !== state.refIndex && !(excludeSubtype && idx === state.subtypeIndex) && !isPdbChainSequence(s));
         
         if (nonRefSequences.length < 2) {
-            alert("Need at least 2 sequences (excluding reference, subtype, and PDB) to infer a tree.");
+            alert("Need at least 2 sequences (excluding reference, optional subtype, and PDB) to infer a tree.");
             showOverlay(false);
             return;
         }
         
-        // Use indices as temporary names (excluding ref, subtype, and PDB chains)
+        // Use indices as temporary names (excluding ref, optional subtype, and PDB chains)
         const indexMap = new Map();
         let newIdx = 0;
         state.rawSequences.forEach((s, origIdx) => {
-            if (origIdx !== state.refIndex && origIdx !== state.subtypeIndex && !isPdbChainSequence(s)) {
+            if (origIdx !== state.refIndex && !(excludeSubtype && origIdx === state.subtypeIndex) && !isPdbChainSequence(s)) {
                 indexMap.set(newIdx, origIdx);
                 newIdx++;
             }
@@ -3107,18 +3886,16 @@ function escapeXml(s) {
 }
 
 function getTreeClusterPattern() {
-    const delimiter = state.groupDelimiter || '_';
-    return new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
+    return getClusterSuffixPattern();
 }
 
 function findViewSeqRowForTreeNode(nodeName) {
     if (!nodeName) return -1;
     const idx = state.viewSequences.findIndex(s => s.name === nodeName);
     if (idx >= 0) return idx;
-    const pat = getTreeClusterPattern();
-    const stripped = nodeName.replace(pat, '');
+    const stripped = normalizeSequenceName(nodeName);
     for (let i = 0; i < state.viewSequences.length; i++) {
-        if (state.viewSequences[i].name.replace(pat, '') === stripped) return i;
+        if (normalizeSequenceName(state.viewSequences[i].name) === stripped) return i;
     }
     return -1;
 }
@@ -3127,12 +3904,11 @@ function findViewSeqRowForTreeNode(nodeName) {
 function getSvgLeafTipFill(nodeName) {
     let fillColor = '#374151';
     if (!nodeName) return fillColor;
-    const clusterPattern = getTreeClusterPattern();
-    const originalNodeName = nodeName.replace(clusterPattern, '');
+    const originalNodeName = normalizeSequenceName(nodeName);
     const subtypeOriginalName = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length)
-        ? state.rawSequences[state.subtypeIndex].name.replace(clusterPattern, '')
+        ? normalizeSequenceName(state.rawSequences[state.subtypeIndex].name)
         : '';
-    const isSubtype = state.subtypeIndex >= 0 && originalNodeName === subtypeOriginalName;
+    const isSubtype = state.subtypeIndex >= 0 && !isFounderSequenceName(originalNodeName) && originalNodeName === subtypeOriginalName;
     if (state.leafClusters && nodeName) {
         let clusterId = state.leafClusters.get(nodeName);
         if (clusterId === undefined) clusterId = state.leafClusters.get(originalNodeName);
@@ -3151,8 +3927,8 @@ function getSvgLeafLabelFill(nodeName) {
     const r = findViewSeqRowForTreeNode(nodeName);
     if (r < 0) return '#374151';
     const vs = state.viewSequences[r];
-    const isSubtype = vs.name === state.rawSequences[state.subtypeIndex]?.name;
-    const isFounder = vs.name && vs.name.startsWith('consensus_of_');
+    const isFounder = isFounderSequenceName(vs.name);
+    const isSubtype = !isFounder && vs.name === state.rawSequences[state.subtypeIndex]?.name;
     const isPdbChain = isPdbChainSequence(vs);
     if (r === state.refIndex || isSubtype || isFounder || isPdbChain) return '#ff00ff';
     const groupId = state.sequenceGroups ? state.sequenceGroups.get(vs.name) : undefined;
@@ -3164,8 +3940,8 @@ function getSvgLeafDisplayLabel(nodeName) {
     const r = findViewSeqRowForTreeNode(nodeName);
     if (r < 0) return escapeXml(nodeName || '');
     const vs = state.viewSequences[r];
-    const isSubtype = vs.name === state.rawSequences[state.subtypeIndex]?.name;
-    const isFounder = vs.name && vs.name.startsWith('consensus_of_');
+    const isFounder = isFounderSequenceName(vs.name);
+    const isSubtype = !isFounder && vs.name === state.rawSequences[state.subtypeIndex]?.name;
     const isPdbChain = isPdbChainSequence(vs);
     let label = isPdbChain ? getPdbChainDisplayLabel(vs) : vs.name;
     if (r === state.refIndex) label += ' [Reference]';
@@ -3233,7 +4009,7 @@ function estimateSvgCircularLabelWidthPx(nodeName) {
     if (r >= 0) {
         const vs = state.viewSequences[r];
         const isSubtype = vs.name === state.rawSequences[state.subtypeIndex]?.name;
-        const isFounder = vs.name && vs.name.startsWith('consensus_of_');
+        const isFounder = isFounderSequenceName(vs.name);
         const isPdbChain = isPdbChainSequence(vs);
         label = isPdbChain ? getPdbChainDisplayLabel(vs) : vs.name;
         if (r === state.refIndex) label += ' [Reference]';
@@ -3853,37 +4629,16 @@ function alertAlignmentReplacements(counts) {
     );
 }
 
-function parseFastq(text) {
-    const lines = text.split(/\r?\n/);
-    const seqs = [];
-    const replacements = new Map();
-    for(let i=0; i<lines.length; i++) {
-        const line = lines[i].trim();
-        if(!line) continue;
-        if(line.startsWith('@')) {
-            const name = line.substring(1); 
-            if(i + 1 < lines.length) {
-                const sanitized = sanitizeAlignmentSequenceLine(lines[i + 1].trim());
-                mergeAlignmentReplacementCounts(replacements, sanitized.replacements);
-                seqs.push({ name: name, seq: sanitized.text.split('') });
-                i += 3; 
-            }
-        }
-    }
-    alertAlignmentReplacements(replacements);
-    finalizeLoad(seqs);
-}
-
-function parseFasta(text) {
+function parseFastaContent(text) {
     const lines = text.split(/\r?\n/);
     const seqs = [];
     let name = null, buf = [];
     const replacements = new Map();
-    for(let line of lines) {
+    for (let line of lines) {
         line = line.trim();
-        if(!line) continue;
-        if(line.startsWith('>')) {
-            if(name) seqs.push({name, seq: buf.join('').split('')});
+        if (!line) continue;
+        if (line.startsWith('>')) {
+            if (name) seqs.push({ name, seq: buf.join('').split('') });
             name = line.substring(1).trim();
             buf = [];
         } else {
@@ -3892,21 +4647,62 @@ function parseFasta(text) {
             buf.push(sanitized.text);
         }
     }
-    if(name) seqs.push({name, seq: buf.join('').split('')});
-    
-    // Validate that all sequences are the same length (alignment check)
-    if(seqs.length > 1) {
-        const firstLength = seqs[0].seq.length;
-        for(let i = 1; i < seqs.length; i++) {
-            if(seqs[i].seq.length !== firstLength) {
-                alert(`Error: Sequences are not aligned. Sequence "${seqs[0].name}" has length ${firstLength}, but sequence "${seqs[i].name}" has length ${seqs[i].seq.length}. All sequences must be the same length.`);
-                showOverlay(false);
-                return;
+    if (name) seqs.push({ name, seq: buf.join('').split('') });
+    return { seqs, replacements };
+}
+
+function parseFastqContent(text, replacementsOut) {
+    const lines = text.split(/\r?\n/);
+    const seqs = [];
+    const replacements = replacementsOut || new Map();
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        if (line.startsWith('@')) {
+            const name = line.substring(1);
+            if (i + 1 < lines.length) {
+                const sanitized = sanitizeAlignmentSequenceLine(lines[i + 1].trim());
+                mergeAlignmentReplacementCounts(replacements, sanitized.replacements);
+                seqs.push({ name: name, seq: sanitized.text.split('') });
+                i += 3;
             }
         }
     }
-    
+    return seqs;
+}
+
+function validateAlignedSeqLengths(seqs, showAlert) {
+    if (!seqs || seqs.length <= 1) return true;
+    const firstLength = seqs[0].seq.length;
+    for (let i = 1; i < seqs.length; i++) {
+        if (seqs[i].seq.length !== firstLength) {
+            if (showAlert) {
+                alert(`Error: Sequences are not aligned. Sequence "${seqs[0].name}" has length ${firstLength}, but sequence "${seqs[i].name}" has length ${seqs[i].seq.length}. All sequences must be the same length.`);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+function parseFastq(text) {
+    const replacements = new Map();
+    const seqs = parseFastqContent(text, replacements);
     alertAlignmentReplacements(replacements);
+    if (!validateAlignedSeqLengths(seqs, true)) {
+        showOverlay(false);
+        return;
+    }
+    finalizeLoad(seqs);
+}
+
+function parseFasta(text) {
+    const { seqs, replacements } = parseFastaContent(text);
+    alertAlignmentReplacements(replacements);
+    if (!validateAlignedSeqLengths(seqs, true)) {
+        showOverlay(false);
+        return;
+    }
     finalizeLoad(seqs);
 }
 
@@ -3972,23 +4768,29 @@ function finalizeLoad(seqs) {
     state.history = [];
     state.tree = null;
     state.refIndex = 0; 
-    state.subtypeIndex = (seqs.length > 1) ? 1 : 0; // Second sequence is subtype, or first if only one sequence
+    state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(seqs.length);
+    state.founderSequenceName = null;
     
     // Clear previous grouping and clustering so color legend does not show stale data
     state.sequenceGroups = null;
     state.groupNames = null;
     state.groupDelimiter = null;
     state.groupFieldNum = null;
+    state.sequenceCollapseCounts = null;
+    state.collapseDelimiter = null;
+    state.collapseFieldNum = null;
     state.leafClusters = null;
     state.hierarchicalActive = false;
     state.hierarchicalDepths = [0, 0, 0];
     
     // Store original subtype
+    state.originalSubtype = null;
     if (state.subtypeIndex >= 0 && state.subtypeIndex < seqs.length) {
         state.originalSubtype = JSON.parse(JSON.stringify(seqs[state.subtypeIndex]));
     }
     
     state.pastedNameCounter = state.rawSequences.length + 1;
+    updateLoadedFileNameDisplay(state.currentFileName);
     
     // Detect sequence type and set mode accordingly
     const detectedType = detectSequenceType(seqs);
@@ -4028,7 +4830,7 @@ function showRerootModal() {
     // Check if founder exists
     let hasFounder = false;
     for (let i = 0; i < state.rawSequences.length; i++) {
-        if (state.rawSequences[i].name && state.rawSequences[i].name.startsWith('consensus_of_')) {
+        if (isFounderSequenceName(state.rawSequences[i].name)) {
             hasFounder = true;
             break;
         }
@@ -4085,7 +4887,7 @@ function rerootTreeOnTarget(targetType) {
         // Find founder sequence
         targetIndex = -1;
         for (let i = 0; i < state.rawSequences.length; i++) {
-            if (state.rawSequences[i].name && state.rawSequences[i].name.startsWith('consensus_of_')) {
+            if (isFounderSequenceName(state.rawSequences[i].name)) {
                 targetIndex = i;
                 targetName = state.rawSequences[i].name;
                 break;
@@ -4728,12 +5530,17 @@ function applyTreeOrder(root) {
     state.refIndex = 0; // Reference is always at index 0
     
     // Update subtype index to point to the subtype sequence by name (not position)
-    const newSubtypeIndex = state.rawSequences.findIndex(s => s.name === subtypeName);
-    if (newSubtypeIndex !== -1) {
-        state.subtypeIndex = newSubtypeIndex;
+    if (subtypeName) {
+        const newSubtypeIndex = state.rawSequences.findIndex(s => s.name === subtypeName);
+        if (newSubtypeIndex !== -1) {
+            state.subtypeIndex = newSubtypeIndex;
+        } else {
+            // Subtype not found in reordered list (shouldn't happen, but handle gracefully)
+            console.warn(`Subtype sequence "${subtypeName}" not found after reordering. Falling back to configured default.`);
+            state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
+        }
     } else {
-        // Subtype not found in reordered list (shouldn't happen, but handle gracefully)
-        console.warn(`Subtype sequence "${subtypeName}" not found after reordering. Keeping original index.`);
+        state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
     }
 }
 
@@ -4924,10 +5731,9 @@ function showMdsModal() {
         return;
     }
     
-    // Get subtype name
-    const subtypeName = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length) 
-        ? state.rawSequences[state.subtypeIndex].name 
-        : null;
+    // Get subtype name (founder should not be treated as subtype)
+    const subtypeSeq = getDesignatedSubtypeSequence();
+    const subtypeName = subtypeSeq ? subtypeSeq.name : null;
     
     // Calculate pairwise distance matrix
     const n = leaves.length;
@@ -5154,15 +5960,16 @@ function showProjectionPlot(selectedMethod) {
         let founderIdx = -1;
         let founderName = null;
         for (let i = 0; i < leaves.length; i++) {
-            if (leaves[i].name && leaves[i].name.startsWith('consensus_of_')) {
+            if (isFounderSequenceName(leaves[i].name)) {
                 founderIdx = i;
                 founderName = leaves[i].name;
                 break;
             }
         }
         
+        const leafWeights = getCollapseWeightsForLeaves(leaves);
         // Perform DBSCAN clustering (subtype will be isolated, founder can cluster naturally)
-        let clusters = performDBSCAN(projectionCoords, eps, minPts, subtypeIdx, null);
+        let clusters = performDBSCAN(projectionCoords, eps, minPts, subtypeIdx, null, leafWeights);
         
         // Renumber clusters by distance from founder (if present) or subtype
         clusters = renumberClustersByDistanceFromSubtype(clusters, projectionCoords, subtypeIdx, leaves, subtypeName);
@@ -5229,7 +6036,8 @@ function showProjectionPlot(selectedMethod) {
         let bestMetric = -Infinity;
         for (let i = 0; i <= nSteps; i++) {
             const eps = i < nSteps ? epsMin + (i / nSteps) * (epsMax - epsMin) : epsMax;
-            let clusters = performDBSCAN(data.coords, eps, minPts, subtypeIdx, null);
+            const leafWeights = getCollapseWeightsForLeaves(data.leaves);
+            let clusters = performDBSCAN(data.coords, eps, minPts, subtypeIdx, null, leafWeights);
             clusters = renumberClustersByDistanceFromSubtype(clusters, data.coords, subtypeIdx, data.leaves, data.subtypeName);
             const nameToCluster = buildNameToCluster(clusters, data.leaves);
             const metricVal = useBallHallAdapted
@@ -5304,14 +6112,15 @@ function showProjectionPlot(selectedMethod) {
             let founderIdx = -1;
             let founderName = null;
             for (let i = 0; i < leaves.length; i++) {
-                if (leaves[i].name && leaves[i].name.startsWith('consensus_of_')) {
+                if (isFounderSequenceName(leaves[i].name)) {
                     founderIdx = i;
                     founderName = leaves[i].name;
                     break;
                 }
             }
             
-            let clusters = performDBSCAN(projectionCoords, eps, minPts, subtypeIdx, null);
+            const leafWeights = getCollapseWeightsForLeaves(leaves);
+            let clusters = performDBSCAN(projectionCoords, eps, minPts, subtypeIdx, null, leafWeights);
             clusters = renumberClustersByDistanceFromSubtype(clusters, projectionCoords, subtypeIdx, leaves, subtypeName);
             currentClusters = clusters;
         }
@@ -6197,9 +7006,12 @@ function calinskiHarabaszTree(optionalLeafClusters) {
             node.children.forEach(collectLeaves);
         }
     }
+    function leafWeight(leaf) {
+        return getCollapseWeightForLeafName(leaf.name);
+    }
     collectLeaves(root);
     const k = clusterToLeaves.size;
-    const n = [...clusterToLeaves.values()].reduce((sum, list) => sum + list.length, 0);
+    const n = [...clusterToLeaves.values()].reduce((sum, list) => sum + list.reduce((s, leaf) => s + leafWeight(leaf), 0), 0);
     if (k < 1 || n < 1 || (k === 1 && n < 2)) return null;
     let W = 0;
     let B = 0;
@@ -6207,8 +7019,9 @@ function calinskiHarabaszTree(optionalLeafClusters) {
         const leavesList = clusterToLeaves.values().next().value;
         if (!leavesList) return null;
         leavesList.forEach(leaf => {
+            const w = leafWeight(leaf);
             const dLeaf = distToRoot(leaf);
-            W += dLeaf * dLeaf;
+            W += w * dLeaf * dLeaf;
         });
         let maxBranch = 0;
         function collectMaxBranch(node) {
@@ -6230,10 +7043,11 @@ function calinskiHarabaszTree(optionalLeafClusters) {
             const mrca = getMRCA(leaves);
             if (!mrca) return;
             const dMrca = distToRoot(mrca);
-            B += leaves.length * dMrca * dMrca;
             leaves.forEach(leaf => {
+                const w = leafWeight(leaf);
                 const dLeaf = distToRoot(leaf);
-                W += (dLeaf - dMrca) * (dLeaf - dMrca);
+                B += w * dMrca * dMrca;
+                W += w * (dLeaf - dMrca) * (dLeaf - dMrca);
             });
         });
         if (k === 2) {
@@ -6305,9 +7119,12 @@ function ballHallTree(optionalLeafClusters) {
         }
     }
 
+    function leafWeight(leaf) {
+        return getCollapseWeightForLeafName(leaf.name);
+    }
     collectLeaves(root);
     const k = clusterToLeaves.size;
-    const n = [...clusterToLeaves.values()].reduce((sum, list) => sum + list.length, 0);
+    const n = [...clusterToLeaves.values()].reduce((sum, list) => sum + list.reduce((s, leaf) => s + leafWeight(leaf), 0), 0);
     if (k < 1 || n < 1 || (k === 1 && n < 2)) return null;
 
     let dispersion = 0;
@@ -6316,9 +7133,10 @@ function ballHallTree(optionalLeafClusters) {
         if (!mrca) return;
         const dMrca = distToRoot(mrca);
         leaves.forEach(leaf => {
+            const w = leafWeight(leaf);
             const dLeaf = distToRoot(leaf);
             const delta = dLeaf - dMrca; // squared branch length from leaf to MRCA
-            dispersion += delta * delta;
+            dispersion += w * delta * delta;
         });
     });
 
@@ -6391,8 +7209,9 @@ function ballHallAdaptedTree(optionalLeafClusters, opts = {}) {
                 const orig = node.name.replace(clusterPattern, '');
                 const cid = leafClusters.get(orig);
                 if (cid !== undefined && cid !== -1) {
+                    const w = getCollapseWeightForLeafName(node.name);
                     const dLeaf = distToRoot(node);
-                    numer += dLeaf * dLeaf;
+                    numer += w * dLeaf * dLeaf;
                 }
             }
         } else {
@@ -6429,9 +7248,8 @@ function computeCladeClusterMap(threshold, minLeaves) {
     let nextClusterId = 2;
     const delimiter = state.groupDelimiter || '_';
     const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
-    const subtypeNameWithSuffix = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length)
-        ? state.rawSequences[state.subtypeIndex].name
-        : null;
+    const subtypeSeq = getDesignatedSubtypeSequence();
+    const subtypeNameWithSuffix = subtypeSeq ? subtypeSeq.name : null;
     const subtypeName = subtypeNameWithSuffix ? subtypeNameWithSuffix.replace(clusterPattern, '') : null;
     function assignSubtype(node) {
         if (!node.children || node.children.length === 0) {
@@ -6468,8 +7286,9 @@ function computeCladeClusterMap(threshold, minLeaves) {
         nameToCluster.set(leafName.replace(clusterPattern, ''), clusterId);
     }
     const clusterCounts = new Map();
-    for (const cid of nameToCluster.values()) {
-        clusterCounts.set(cid, (clusterCounts.get(cid) || 0) + 1);
+    for (const [originalName, cid] of nameToCluster.entries()) {
+        if (cid === 0 || cid === -1) continue;
+        addWeightedClusterCount(clusterCounts, cid, originalName);
     }
     for (const [originalName, cid] of nameToCluster.entries()) {
         if (cid !== 0 && (clusterCounts.get(cid) || 0) < minLeaves) {
@@ -6506,9 +7325,8 @@ function computeHierarchicalClusterMap(depth1, depth2, depth3, minLeaves) {
     const root = state.tree.root;
     const delimiter = state.groupDelimiter || '_';
     const clusterPattern = new RegExp(`${delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}cl-(\\d+|na)$`);
-    const subtypeNameWithSuffix = (state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length)
-        ? state.rawSequences[state.subtypeIndex].name
-        : null;
+    const subtypeSeq = getDesignatedSubtypeSequence();
+    const subtypeNameWithSuffix = subtypeSeq ? subtypeSeq.name : null;
     const subtypeName = subtypeNameWithSuffix ? subtypeNameWithSuffix.replace(clusterPattern, '') : null;
 
     const leafToCluster = new Map();
@@ -6741,10 +7559,11 @@ function computeHierarchicalClusterMap(depth1, depth2, depth3, minLeaves) {
         nameToCluster.set(originalName, cid);
     }
     
-    // Mark small clusters as noise (cluster -1), same as MDS/UMAP
+    // Mark small clusters as noise (cluster -1), same as MDS/UMAP; minLeaves uses collapse-weighted counts
     const clusterCounts = new Map();
-    for (const cid of nameToCluster.values()) {
-        clusterCounts.set(cid, (clusterCounts.get(cid) || 0) + 1);
+    for (const [originalName, cid] of nameToCluster.entries()) {
+        if (cid === 0 || cid === -1) continue;
+        addWeightedClusterCount(clusterCounts, cid, originalName);
     }
     for (const [originalName, cid] of nameToCluster.entries()) {
         if (cid !== 0 && (clusterCounts.get(cid) || 0) < minLeaves) {
@@ -6954,11 +7773,21 @@ function computeEigenDecomposition(matrix, numComponents) {
     return { vectors, values };
 }
 
-function performDBSCAN(coords, eps, minPts, subtypeIndex = null, founderIndex = null) {
+function performDBSCAN(coords, eps, minPts, subtypeIndex = null, founderIndex = null, weights = null) {
     const n = coords.length;
     const visited = new Array(n).fill(false);
     const clusters = new Array(n).fill(-1); // -1 means noise/unassigned
     let clusterId = 1; // Cluster numbers start at 1 (subtype is not part of clustering)
+
+    function pointWeight(i) {
+        if (weights && weights[i] != null) return getCollapseWeight(weights[i]);
+        return 1;
+    }
+    function neighborhoodWeight(pointIndex, neighborIndices) {
+        let sum = pointWeight(pointIndex);
+        for (let j = 0; j < neighborIndices.length; j++) sum += pointWeight(neighborIndices[j]);
+        return sum;
+    }
     
     // Calculate Euclidean distances between all points
     function distance(p1, p2) {
@@ -6995,7 +7824,7 @@ function performDBSCAN(coords, eps, minPts, subtypeIndex = null, founderIndex = 
                 visited[neighborIndex] = true;
                 const neighborNeighbors = getNeighbors(neighborIndex);
                 
-                if (neighborNeighbors.length >= minPts) {
+                if (neighborhoodWeight(neighborIndex, neighborNeighbors) >= minPts) {
                     // Add neighbors of this neighbor to the list
                     neighbors.push(...neighborNeighbors);
                 }
@@ -7025,7 +7854,7 @@ function performDBSCAN(coords, eps, minPts, subtypeIndex = null, founderIndex = 
         visited[i] = true;
         const neighbors = getNeighbors(i);
         
-        if (neighbors.length < minPts) {
+        if (neighborhoodWeight(i, neighbors) < minPts) {
             // Mark as noise (cluster -1)
             clusters[i] = -1;
         } else {
@@ -7061,7 +7890,7 @@ function renumberClustersByDistanceFromSubtype(clusters, coords, subtypeIndex, l
     let founderIdxInLeaves = -1;
     let founderClusterId = null;
     for (let i = 0; i < leaves.length; i++) {
-        if (leaves[i].name && leaves[i].name.startsWith('consensus_of_')) {
+        if (isFounderSequenceName(leaves[i].name)) {
             founderIdxInLeaves = i;
             founderClusterId = clusters[i];
             break;
@@ -7103,15 +7932,17 @@ function renumberClustersByDistanceFromSubtype(clusters, coords, subtypeIndex, l
     // Calculate centroids and distances
     const clusterDistances = [];
     clusterPoints.forEach((pointIndices, clusterId) => {
-        // Calculate centroid
-        let sumX = 0, sumY = 0;
+        // Calculate collapse-weighted centroid
+        let sumX = 0, sumY = 0, sumW = 0;
         pointIndices.forEach(idx => {
-            sumX += coords[idx].x;
-            sumY += coords[idx].y;
+            const w = getCollapseWeightForLeafName(leaves[idx] && leaves[idx].name);
+            sumX += coords[idx].x * w;
+            sumY += coords[idx].y * w;
+            sumW += w;
         });
         const centroid = {
-            x: sumX / pointIndices.length,
-            y: sumY / pointIndices.length
+            x: sumW > 0 ? sumX / sumW : 0,
+            y: sumW > 0 ? sumY / sumW : 0
         };
         
         // Calculate distance from reference (founder or subtype) to centroid
@@ -7788,10 +8619,11 @@ function calculateNamesWidth() {
     state.rawSequences.forEach((s, idx) => {
         let text = s.name;
         if(idx === state.refIndex) text += " [Reference]";
-        if(idx === state.subtypeIndex) text += " [Subtype]";
-        if(s.name && s.name.startsWith('consensus_of_')) {
+        if(idx === state.subtypeIndex && !isFounderSequenceName(s.name)) text += " [Subtype]";
+        if(isFounderSequenceName(s.name)) {
             text += " [Founder]";
         }
+        text += getCollapseLabelSuffix(s.name);
         const metrics = ctx.measureText(text);
         if (metrics.width > maxWidth) {
             maxWidth = metrics.width;
@@ -8303,9 +9135,7 @@ function render() {
     if (state.highlightMatches) {
         if (state.highlightMatches === 'founder') {
             // Find founder sequence (consensus_of_ prefix)
-            const founderIndex = state.viewSequences.findIndex(s => 
-                s.name && s.name.startsWith('consensus_of_')
-            );
+            const founderIndex = state.viewSequences.findIndex(s => isFounderSequenceName(s.name));
             if (founderIndex >= 0) {
                 highlightSeq = state.viewSequences[founderIndex].seq;
             }
@@ -8387,9 +9217,9 @@ function render() {
         let isSel = state.selection && (r >= state.selection.r1 && r <= state.selection.r2);
         
         // Check if this is the subtype sequence in viewSequences
-        const isSubtype = state.viewSequences[r].name === state.rawSequences[state.subtypeIndex]?.name;
         // Check if this is a founder sequence
-        const isFounder = state.viewSequences[r].name && state.viewSequences[r].name.startsWith('consensus_of_');
+        const isFounder = isFounderSequenceName(state.viewSequences[r].name);
+        const isSubtype = !isFounder && state.viewSequences[r].name === state.rawSequences[state.subtypeIndex]?.name;
         // Check if this is a PDB chain sequence (3D visualization only)
         const isPdbChain = isPdbChainSequence(state.viewSequences[r]);
         
@@ -8447,6 +9277,7 @@ function render() {
         if(isFounder) {
             label += " [Founder]";
         }
+        label += getCollapseLabelSuffix(seqName);
         ctxNames.fillText(label, 10, y + CONFIG.rowHeight/2);
     }
     
@@ -9097,7 +9928,7 @@ function applyStructureContent(text, fileName, format) {
         });
         state.rawSequences = pdbSeqs.length ? pdbSeqs : [{ name: pdbCode + '_Chain_?', seq: flat, isPdbChain: true, chainLength: (flat && flat.length) ? flat.length : 0 }];
         state.refIndex = 0;
-        state.subtypeIndex = 0;
+        state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(state.rawSequences.length);
     } else {
         showOverlay(true);
         if (dom.overlayMsg) dom.overlayMsg.textContent = 'Aligning structure chains to reference...';
@@ -9109,8 +9940,12 @@ function applyStructureContent(text, fileName, format) {
         }
         state.rawSequences = raw;
         state.refIndex = 0;
-        var newSubtypeIdx = raw.findIndex(function (s) { return s.name === subtypeName; });
-        state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : 0;
+        if (subtypeName) {
+            var newSubtypeIdx = raw.findIndex(function (s) { return s.name === subtypeName; });
+            state.subtypeIndex = newSubtypeIdx >= 0 ? newSubtypeIdx : getDefaultSubtypeIndexForLoadedSequences(raw.length);
+        } else {
+            state.subtypeIndex = getDefaultSubtypeIndexForLoadedSequences(raw.length);
+        }
         showOverlay(false);
     }
     state.viewSequences = state.rawSequences.slice();
@@ -10141,7 +10976,7 @@ function renderPdb3dWithChains(selectedChainIds, intrinsicChainIds) {
         select.style.cssText = 'width: 100%; padding: 8px; margin-bottom: 15px; font-size: 14px;';
         var hasReference = state.refIndex >= 0 && state.refIndex < state.rawSequences.length;
         var hasSubtype = state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length;
-        var founderIndex = state.rawSequences.findIndex(function (seq) { return seq.name && seq.name.startsWith('consensus_of_'); });
+        var founderIndex = state.rawSequences.findIndex(function (seq) { return isFounderSequenceName(seq.name); });
         var hasFounder = founderIndex !== -1;
         var pdbChains = state.rawSequences.filter(function (seq) { return isPdbChainSequence(seq); });
         if (hasReference) {
@@ -10510,9 +11345,7 @@ function showSequenceLogo() {
     // Check which sequences are available
     const hasReference = state.refIndex >= 0 && state.refIndex < state.rawSequences.length;
     const hasSubtype = state.subtypeIndex >= 0 && state.subtypeIndex < state.rawSequences.length;
-    const founderIndex = state.rawSequences.findIndex(seq => 
-        seq.name && seq.name.startsWith('consensus_of_')
-    );
+    const founderIndex = state.rawSequences.findIndex(seq => isFounderSequenceName(seq.name));
     const hasFounder = founderIndex !== -1;
     const pdbChains = state.rawSequences.filter(seq => isPdbChainSequence(seq));
     
