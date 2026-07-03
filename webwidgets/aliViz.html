@@ -519,6 +519,20 @@
                             </select>
                         </label>
                     </div>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                            <input type="radio" name="tree-svg-scale" id="tree-svg-scale-dsi" value="dsi">
+                            DSI (days since infection)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563;">
+                            <span class="tree-svg-dsi-hint">DSI (days):</span>
+                            <input type="number" id="tree-svg-dsi-days" value="14" min="0" step="1" disabled style="font-size: 12px; padding: 2px 6px; width: 5em;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563;">
+                            <span class="tree-svg-dsi-hint">Mutations/day:</span>
+                            <input type="number" id="tree-svg-dsi-mpd" value="0.001" min="0" step="0.0001" disabled style="font-size: 12px; padding: 2px 6px; width: 7em;">
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -834,6 +848,7 @@
         <div class="help-row"><span class="help-key">Cluster</span> <span>Show 2D projection and clustering of pairwise leaf distances</span></div>
         <div class="help-row"><span class="help-key">fasta</span> <span>Download current view (NT or AA) as FASTA</span></div>
         <div class="help-row"><span class="help-key">tree</span> <span>Export current tree as Newick format</span></div>
+        <div class="help-row"><span class="help-key">svg</span> <span>Export current tree as SVG (linear or circular; Auto, Fixed, or DSI scale)</span></div>
         <div class="help-row"><span class="help-key">Clear Alignment</span> <span>Remove all sequences</span></div>
         <div class="help-row"><span class="help-key">Clear Tree</span> <span>Remove current tree</span></div>
         <div class="help-row"><span class="help-key">View Mode</span> <span>Switch between Nucleotide (NT) and Amino Acid (AA) view</span></div>
@@ -1658,10 +1673,18 @@ async function init() {
         const fixed = document.getElementById('tree-svg-scale-fixed');
         const sel = document.getElementById('tree-svg-fixed-scale-select');
         const hint = document.getElementById('tree-svg-fixed-scale-hint');
-        if (!sel) return;
         const on = !!(fixed && fixed.checked);
-        sel.disabled = !on;
+        if (sel) sel.disabled = !on;
         if (hint) hint.style.opacity = on ? '1' : '0.5';
+        const dsi = document.getElementById('tree-svg-scale-dsi');
+        const dsiDays = document.getElementById('tree-svg-dsi-days');
+        const dsiMpd = document.getElementById('tree-svg-dsi-mpd');
+        const dsiOn = !!(dsi && dsi.checked);
+        if (dsiDays) dsiDays.disabled = !dsiOn;
+        if (dsiMpd) dsiMpd.disabled = !dsiOn;
+        document.querySelectorAll('.tree-svg-dsi-hint').forEach(h => {
+            h.style.opacity = dsiOn ? '1' : '0.5';
+        });
     }
     if (dom.btnExportTreeSvg) {
         dom.btnExportTreeSvg.addEventListener('click', () => {
@@ -1684,11 +1707,27 @@ async function init() {
         btnTreeSvgExport.addEventListener('click', () => {
             const circular = document.getElementById('tree-svg-circular') && document.getElementById('tree-svg-circular').checked;
             const scaleFixed = document.getElementById('tree-svg-scale-fixed') && document.getElementById('tree-svg-scale-fixed').checked;
-            const scaleMode = scaleFixed ? 'fixed' : 'auto';
+            const scaleDsi = document.getElementById('tree-svg-scale-dsi') && document.getElementById('tree-svg-scale-dsi').checked;
+            const scaleMode = scaleDsi ? 'dsi' : (scaleFixed ? 'fixed' : 'auto');
             const sel = document.getElementById('tree-svg-fixed-scale-select');
             let fixedBranchPerCm = sel ? parseFloat(sel.value, 10) : 0.001;
             if (!isFinite(fixedBranchPerCm) || fixedBranchPerCm <= 0) fixedBranchPerCm = 0.001;
-            const ok = exportTreeAsSvg(circular ? 'circular' : 'linear', scaleMode, scaleFixed ? fixedBranchPerCm : null);
+            let dsiParams = null;
+            if (scaleDsi) {
+                const daysEl = document.getElementById('tree-svg-dsi-days');
+                const mpdEl = document.getElementById('tree-svg-dsi-mpd');
+                let days = daysEl ? parseFloat(daysEl.value) : 14;
+                let mpd = mpdEl ? parseFloat(mpdEl.value) : 0.001;
+                if (!isFinite(days) || days <= 0) days = 14;
+                if (!isFinite(mpd) || mpd <= 0) mpd = 0.001;
+                dsiParams = { days, mpd };
+            }
+            const ok = exportTreeAsSvg(
+                circular ? 'circular' : 'linear',
+                scaleMode,
+                scaleFixed ? fixedBranchPerCm : null,
+                dsiParams
+            );
             if (ok) treeSvgOverlay.style.display = 'none';
         });
     }
@@ -3355,9 +3394,22 @@ function getSvgPxPerBranchUnit(branchLengthPerCm) {
     return SVG_PX_PER_CM / s;
 }
 
+/** Half of the 520 px branch region; the expected branch length (DSI x MPD) is scaled to land here. */
+const DSI_SVG_HALF_WIDTH_PX = 260;
+
+/** Pixels per tree branch-length unit for DSI scale: expected branch length (days x mutationsPerDay)
+ *  maps to DSI_SVG_HALF_WIDTH_PX (260 px, the half-way mark of the 520 px branch region). */
+function getDsiPxPerBranchUnit(days, mutationsPerDay) {
+    const d = parseFloat(days);
+    const m = parseFloat(mutationsPerDay);
+    const expected = d * m;
+    if (!isFinite(expected) || expected <= 0) return DSI_SVG_HALF_WIDTH_PX / (14 * 0.001);
+    return DSI_SVG_HALF_WIDTH_PX / expected;
+}
+
 /** Branch-length scale bar on exported tree SVG (same px/length mapping as tree drawing).
  *  @param {number|null|undefined} fixedBranchPerCm If set, label uses this branch length per cm value. */
-function appendSvgTreeScaleBarLinear(parts, xScale, maxD, fixedBranchPerCm) {
+function appendSvgTreeScaleBarLinear(parts, xScale, maxD, fixedBranchPerCm, customLabel) {
     let scaleVal;
     if (fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10))) {
         scaleVal = parseFloat(fixedBranchPerCm, 10);
@@ -3369,7 +3421,7 @@ function appendSvgTreeScaleBarLinear(parts, xScale, maxD, fixedBranchPerCm) {
     const x0 = 5;
     const y0 = 12;
     const labelX = x0 + pxLen + 8;
-    const num = escapeXml(formatPhyloBranchLength(scaleVal));
+    const num = customLabel != null ? escapeXml(customLabel) : escapeXml(formatPhyloBranchLength(scaleVal));
     parts.push(`<g fill="none" stroke="#111827" stroke-width="2">\n`);
     parts.push(`<line x1="${x0}" y1="${y0}" x2="${x0 + pxLen}" y2="${y0}"/>\n`);
     parts.push(`<line x1="${x0}" y1="${y0 - 4}" x2="${x0}" y2="${y0 + 4}"/>\n`);
@@ -4128,12 +4180,31 @@ function checkFixedScaleSvgOverflow(fixedBranchPerCm) {
 }
 
 /** @returns {boolean} True if export succeeded. */
-function exportTreeAsSvg(layout, scaleMode, fixedBranchPerCm) {
+/** SVG export filename: alignment basename + _gr-<numGroups>_cl-<numClusters>.svg (clusters exclude noise). */
+function buildTreeSvgFileName() {
+    const rawName = state.currentFileName || dom.file?.files?.[0]?.name || 'tree';
+    const baseName = rawName.replace(/\.[^.]+$/, '') || 'tree';
+    let numGroups = 0;
+    if (state.sequenceGroups && state.groupNames) {
+        numGroups = state.groupNames.size;
+    }
+    let numClusters = 0;
+    if (state.leafClusters) {
+        const clusterIds = new Set();
+        state.leafClusters.forEach(clusterId => {
+            if (clusterId !== -1) clusterIds.add(clusterId);
+        });
+        numClusters = clusterIds.size;
+    }
+    return `${baseName}_gr-${numGroups}_cl-${numClusters}.svg`;
+}
+
+function exportTreeAsSvg(layout, scaleMode, fixedBranchPerCm, dsiParams) {
     if (!state.tree || !state.tree.root) {
         alert('No tree to export.');
         return false;
     }
-    if (scaleMode !== 'fixed' && scaleMode !== 'auto') scaleMode = 'auto';
+    if (scaleMode !== 'fixed' && scaleMode !== 'auto' && scaleMode !== 'dsi') scaleMode = 'auto';
     if (scaleMode === 'fixed') {
         const overflowMsg = checkFixedScaleSvgOverflow(fixedBranchPerCm);
         if (overflowMsg) {
@@ -4141,11 +4212,12 @@ function exportTreeAsSvg(layout, scaleMode, fixedBranchPerCm) {
             return false;
         }
     }
+    // DSI scale never aborts on overflow: over-long branches are clipped to the plot width instead.
     let svgStr;
     try {
         svgStr = layout === 'circular'
-            ? buildTreeSvgCircular(scaleMode, fixedBranchPerCm)
-            : buildTreeSvgLinear(scaleMode, fixedBranchPerCm);
+            ? buildTreeSvgCircular(scaleMode, fixedBranchPerCm, dsiParams)
+            : buildTreeSvgLinear(scaleMode, fixedBranchPerCm, dsiParams);
     } catch (e) {
         console.error(e);
         alert('Failed to build SVG: ' + (e && e.message ? e.message : e));
@@ -4155,7 +4227,7 @@ function exportTreeAsSvg(layout, scaleMode, fixedBranchPerCm) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'tree.svg';
+    a.download = buildTreeSvgFileName();
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -4197,20 +4269,31 @@ function assignRadialInternalAngles(node) {
     node._svgAngle = count ? sum / count : 0;
 }
 
-/** @param {'auto'|'fixed'} scaleMode Branch-length scaling: 'auto' fits the tree; 'fixed' uses branch length per 1 cm of plot.
- *  @param {number|null|undefined} fixedBranchPerCm When scaleMode is 'fixed', branch length units represented by 1 cm of SVG (CSS px/cm). */
-function buildTreeSvgCircular(scaleMode = 'auto', fixedBranchPerCm) {
-    if (scaleMode !== 'fixed' && scaleMode !== 'auto') scaleMode = 'auto';
+/** @param {'auto'|'fixed'|'dsi'} scaleMode Branch-length scaling: 'auto' fits the tree; 'fixed' uses branch length per 1 cm of plot; 'dsi' scales so days x mutationsPerDay lands at the plot half-way mark.
+ *  @param {number|null|undefined} fixedBranchPerCm When scaleMode is 'fixed', branch length units represented by 1 cm of SVG (CSS px/cm).
+ *  @param {{days:number, mpd:number}|null|undefined} dsiParams When scaleMode is 'dsi', the days-since-infection and mutations-per-day. */
+function buildTreeSvgCircular(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
+    if (scaleMode !== 'fixed' && scaleMode !== 'auto' && scaleMode !== 'dsi') scaleMode = 'auto';
     const root = state.tree.root;
     const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
     const R = 260;
-    let fixedPxPerUnit = null;
-    if (scaleMode === 'fixed' && fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10))) {
-        fixedPxPerUnit = getSvgPxPerBranchUnit(fixedBranchPerCm);
+    const isDsiScale = scaleMode === 'dsi' && dsiParams != null;
+    // Branch-length value to force onto the scale bar (fixed: per-cm value; DSI: days x mpd). null = auto.
+    let scaleBarVal = null;
+    let explicitPxPerUnit = null;
+    if (isDsiScale) {
+        // Halve to match the fixed-scale circular convention (radius R vs linear width 2R).
+        explicitPxPerUnit = getDsiPxPerBranchUnit(dsiParams.days, dsiParams.mpd) * 0.5;
+        scaleBarVal = dsiParams.days * dsiParams.mpd;
+    } else if (scaleMode === 'fixed' && fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10))) {
+        explicitPxPerUnit = getSvgPxPerBranchUnit(fixedBranchPerCm) * 0.5;
+        scaleBarVal = fixedBranchPerCm;
     }
-    const circularPxPerUnit = fixedPxPerUnit != null ? fixedPxPerUnit * 0.5 : (R / maxD);
+    const circularPxPerUnit = explicitPxPerUnit != null ? explicitPxPerUnit : (R / maxD);
     function radialR(node) {
-        return node.xDepth * circularPxPerUnit;
+        const r = node.xDepth * circularPxPerUnit;
+        // DSI: never aborts on overflow; clamp radius to the plot edge so long branches are clipped.
+        return isDsiScale ? Math.min(r, R) : r;
     }
     /** Gap along the radius from the tip diamond to the inner edge of the label (first glyph) (px). */
     const labelGapPastDiamond = 48;
@@ -4402,7 +4485,7 @@ function buildTreeSvgCircular(scaleMode = 'auto', fixedBranchPerCm) {
         R,
         maxD,
         plotMargin,
-        scaleMode === 'fixed' ? fixedBranchPerCm : null,
+        scaleBarVal,
         circularPxPerUnit
     );
 
@@ -4412,16 +4495,32 @@ function buildTreeSvgCircular(scaleMode = 'auto', fixedBranchPerCm) {
     return parts.join('');
 }
 
-/** @param {'auto'|'fixed'} scaleMode Branch-length scaling: 'auto' fits the tree; 'fixed' uses branch length per 1 cm of plot.
- *  @param {number|null|undefined} fixedBranchPerCm When scaleMode is 'fixed', branch length units represented by 1 cm of SVG (CSS px/cm). */
-function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm) {
-    if (scaleMode !== 'fixed' && scaleMode !== 'auto') scaleMode = 'auto';
+/** @param {'auto'|'fixed'|'dsi'} scaleMode Branch-length scaling: 'auto' fits the tree; 'fixed' uses branch length per 1 cm of plot; 'dsi' scales so days x mutationsPerDay lands at 260 px (half the 520 px branch width).
+ *  @param {number|null|undefined} fixedBranchPerCm When scaleMode is 'fixed', branch length units represented by 1 cm of SVG (CSS px/cm).
+ *  @param {{days:number, mpd:number}|null|undefined} dsiParams When scaleMode is 'dsi', the days-since-infection and mutations-per-day. */
+function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
+    if (scaleMode !== 'fixed' && scaleMode !== 'auto' && scaleMode !== 'dsi') scaleMode = 'auto';
     const padding = 15;
     const branchW = 520;
     const maxD = state.tree.maxDepth > 0 ? state.tree.maxDepth : 1;
     const isFixedScale =
         scaleMode === 'fixed' && fixedBranchPerCm != null && isFinite(parseFloat(fixedBranchPerCm, 10));
-    const xScale = isFixedScale ? getSvgPxPerBranchUnit(fixedBranchPerCm) : branchW / maxD;
+    const isDsiScale = scaleMode === 'dsi' && dsiParams != null;
+    // Branch-length value to force onto the scale bar (fixed: per-cm value; DSI: days x mpd). null = auto.
+    let scaleBarVal = null;
+    // Custom scale-bar annotation (DSI mode), null = default numeric label.
+    let scaleBarLabel = null;
+    let xScale;
+    if (isDsiScale) {
+        xScale = getDsiPxPerBranchUnit(dsiParams.days, dsiParams.mpd);
+        scaleBarVal = dsiParams.days * dsiParams.mpd;
+        scaleBarLabel = `(${dsiParams.days} days @ ${dsiParams.mpd} = ${formatPhyloBranchLength(scaleBarVal)})`;
+    } else if (isFixedScale) {
+        xScale = getSvgPxPerBranchUnit(fixedBranchPerCm);
+        scaleBarVal = fixedBranchPerCm;
+    } else {
+        xScale = branchW / maxD;
+    }
     const rowH = CONFIG.rowHeight;
     const leftPad = 5;
     const nRows = Math.max(1, state.viewSequences.length);
@@ -4440,7 +4539,10 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm) {
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
     parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`);
     parts.push(`<rect width="${totalW}" height="${totalH}" fill="white"/>\n`);
-    parts.push(`<defs><clipPath id="clipTreeLinearSvg"><rect x="${leftPad}" y="0" width="${branchW}" height="${svgH}"/></clipPath></defs>\n`);
+    // Clip only the right border (at leftPad + branchW) so branches can't run into the seq-name column;
+    // left/top/bottom are left unbounded so nothing is clipped on those sides.
+    const clipRightEdge = leftPad + branchW;
+    parts.push(`<defs><clipPath id="clipTreeLinearSvg"><rect x="-100000" y="-100000" width="${100000 + clipRightEdge}" height="200000"/></clipPath></defs>\n`);
     const titleLines = getSvgTreeTitleLines();
     const titleLineX = padding + 5;
     parts.push(`<g font-family="sans-serif" fill="#111827" text-anchor="start">\n`);
@@ -4487,6 +4589,13 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm) {
     }
     drawNode(state.tree.root);
 
+    // DSI: vertical dotted line marking the expected tree depth (end of the scale bar, at DSI x MPD).
+    // Tips to the right mutate faster than expected; tips to the left mutate slower.
+    if (isDsiScale) {
+        const expectedX = leftPad + scaleBarVal * xScale;
+        parts.push(`<line x1="${expectedX}" y1="0" x2="${expectedX}" y2="${svgH}" stroke="#6b7280" stroke-width="1" stroke-dasharray="3 3"/>\n`);
+    }
+
     if (state.hierarchicalActive && state.hierarchicalDepths) {
         const [depth1, depth2, depth3] = state.hierarchicalDepths;
         const totalH = nRows * rowH;
@@ -4508,7 +4617,9 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm) {
 
     parts.push('</g>\n');
 
-    parts.push('<g stroke="#374151" fill="none">\n');
+    // In DSI mode branches can extend past the plot width; clip the tip/internal markers to the branch region.
+    const markerClipAttr = isDsiScale ? ' clip-path="url(#clipTreeLinearSvg)"' : '';
+    parts.push(`<g stroke="#374151" fill="none"${markerClipAttr}>\n`);
     markerInternalNodes.forEach(node => {
         const x = nx(node);
         const y = ny(node);
@@ -4554,7 +4665,7 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm) {
     parts.push('</g>\n');
 
     parts.push(`<g transform="translate(${padding},${padding + titleSpace})">\n`);
-    appendSvgTreeScaleBarLinear(parts, xScale, maxD, scaleMode === 'fixed' ? fixedBranchPerCm : null);
+    appendSvgTreeScaleBarLinear(parts, xScale, maxD, scaleBarVal, scaleBarLabel);
     parts.push('</g>\n');
 
     appendTreeSvgColorLegend(parts, plotW, titleSpace, legendW, totalH);
