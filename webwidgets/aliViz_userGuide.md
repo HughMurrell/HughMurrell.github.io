@@ -9,8 +9,14 @@ aliViz is a bioinformatics alignment and phylogeny viewer. It supports loading a
 ### Choose file
 - **Function:** Load an alignment from a **FASTA** or **FASTQ** file.
 - **Usage:** Click **Choose file**, select your alignment. The loaded filename appears in the text box beside the button (replacing the initial “No file chosen” placeholder).
-- **Reference:** The **first** sequence is always treated as **Reference (REF)**.
-- **Subtype:** If **Has subtype** is checked (see below), the **second** sequence is treated as **SubType**. If unchecked, no sequence is designated as subtype unless you add one later by other means.
+- **Reference:** If **Has reference** is checked (see below), the **first** sequence is treated as **Reference (REF)**. If unchecked, you load the alignment and reference separately (dual-load dialog).
+- **Subtype:** If **Has subtype** is checked (see below), the **second** sequence is treated as **SubType** when a reference is present (otherwise sequence 1). If unchecked, no sequence is designated as subtype unless you add one later by other means.
+
+### Has reference
+- **Function:** Tell aliViz whether the alignment file already includes the reference as its **first** sequence.
+- **Default:** **Unchecked** (many workflows load the reference from a separate FASTA).
+- **When checked:** Choose file loads the alignment directly; sequence 1 is **Reference (REF)**.
+- **When unchecked:** Choose file opens a **dual-load** dialog: pick the alignment, then optionally pick a reference FASTA (or reuse a reference loaded earlier in the session). The reference is prepended to the alignment for display and analysis.
 
 ### Has subtype
 - **Function:** Tell aliViz whether the alignment includes a dedicated subtype sequence in position 2 (after reference).
@@ -23,6 +29,26 @@ aliViz is a bioinformatics alignment and phylogeny viewer. It supports loading a
 - **Allowed characters:** Uppercase letters **A–Z**, gap **`-`**, and stop codon **`*`** (common in amino acid alignments).
 - **Non-standard symbols:** Any other character in a sequence line is **replaced with `X`** (alignment length is unchanged). You receive an alert listing what was replaced (e.g. `? → X (12)`).
 - **Nucleotide alignments:** Standard IUPAC nucleotide letters are within A–Z and are kept as-is.
+
+### Sequence functionality (functional / non-functional)
+On every alignment load, aliViz tests each sequence for **functionality** and stores a **`functional`** tag (`true` or `false`) on that sequence.
+
+- **Amino acid (AA) alignment:** A sequence is **functional** when its **ungapped** sequence (gaps ignored):
+  - **Starts with M** (start codon),
+  - **Ends with `*`** (stop codon),
+  - Has **no internal `*`** (no premature stop codons).
+- **Nucleotide (NT) alignment:** Each row is translated using **reading frame 1** (same default as at load), then tested with the AA rules above.
+- **Non-functional:** Any sequence that fails one or more of these rules.
+
+**Load summary (`s`, `f`, `nf`):** Above the alignment filename you will see a compact report, e.g. **`s=56, f=25, nf=31`**, meaning 56 sequences total, 25 functional, 31 non-functional. This updates when you **Prune** sequences or when NT rows are converted to AA (e.g. after loading epitopes). It resets to **`s=0, f=0, nf=0`** when the alignment is cleared.
+
+**Tree indicators (interactive panel and SVG export):** Whenever a tree is drawn— in the **tree panel** beside the alignment, or in an exported **SVG** figure— leaf tips are shown as **diamonds** coloured by **cluster** (when clustering is active). **Non-functional** leaves are marked with a **red cross** (`#dc2626`) drawn on top of the diamond (no extra border). The cross appears on:
+- Full tip diamonds (normal tips),
+- **Right-half diamonds** on linear SVG exports when a tip is **clipped** at the plot boundary (DSI scale overflow).
+
+Functional leaves show only the cluster-coloured diamond with no cross. **Red is reserved** for this non-functional marker: the shared group/cluster colour palette does **not** use red or pink (palette indices 5 and 10 are sky and slate instead), so the cross remains visually distinct from cluster colours.
+
+**SVG title line:** Exported tree SVG figures include the same **`s=…, f=…, nf=…`** counts on the **second title line**, placed after the **Infer** method and before **Max depth**, e.g. `Infer: FastTree (bioWASM) | s=56, f=25, nf=31 | Max depth: 0.014 | Cluster: …`.
 
 ### View Mode: NT / AA
 - **Function:** Switch between **Nucleotide (NT)** and **Amino acid (AA)** view.
@@ -116,16 +142,17 @@ The plot has a **520 px** branch region (≈ **13.76 cm** at 96 px/inch) availab
   - **DSI (days):** number of days since infection (default **14**).
   - **Mutations/day (MPD):** expected substitution rate per day (default **0.001**).
   - The expected branch length is **DSI × MPD** (e.g. 14 × 0.001 = 0.014), and the scale is set so this value maps to 260 px (i.e. `px per unit = 260 / (DSI × MPD)`). In circular mode the same value maps to a **130 px** radius (half, matching the Fixed circular convention).
-  - **No overflow abort:** unlike Fixed scale, DSI **never** aborts. Branches longer than the plot are **clipped at the right border** (so they cannot run into the sequence-name column); nothing is clipped on the left. In circular mode over-long branches are clamped to the outer radius.
+  - **No overflow abort:** unlike Fixed scale, DSI **never** aborts. Branches longer than the plot width are truncated at the **right border** (so they cannot run into the sequence-name column); nothing is clipped on the left. In circular mode over-long branches are clamped to the outer radius.
+  - **Clipped-branch marker (half diamond):** on **linear** SVG exports, any horizontal branch that would extend past the right border is drawn only up to that boundary. If the tip falls past the boundary, the full diamond is replaced by the **right half** of the diamond (apex on the boundary, pointing right), filled with the same **cluster** color as an unclipped tip. **Non-functional** clipped tips also receive the **red cross** on the half diamond. The dashed connector to the sequence name still starts from the boundary.
   - **Expected-depth marker:** a **gray vertical dotted line** is drawn across the plot at the expected depth (the end of the scale bar, 260 px). Tips to the **right** are mutating **faster** than expected; tips to the **left** are mutating **slower** than expected.
 
 #### Titles, scale bar, and legend (SVG only)
-- **Title (two lines):** Full alignment **filename** (no truncation); second line includes **inference method** (or load method), **max tree depth** (3 significant figures), and **last clustering method** (or “No clustering”). Linear layout: titles are **left-aligned** with the scale bar; circular: titles are **centred**.
+- **Title (two lines):** Full alignment **filename** (no truncation); second line includes **inference method**, **`s=…, f=…, nf=…`** (sequence functionality counts), **max tree depth** (3 significant figures), and **last clustering method** (or “No clustering”). Linear layout: titles are **left-aligned** with the scale bar; circular: titles are **centred**.
 - **Phylogenetic scale bar:** Drawn on the **tree** panel (top-left for linear, top-right for circular—not in the floating HTML legend). Shows branch-length units; in **fixed** mode the bar is **1 cm** long with a numeric label matching the selected scale (circular bar length is **half** the linear bar for the same scale value). In **DSI** mode the bar is **260 px** long (linear; 130 px circular) and is annotated with the parameters and expected depth, e.g. **`(14 days @ 0.001 = 0.014)`**, updating to match whatever DSI and MPD you enter.
 - **Legend panel:** Header **Legend** (not “Color Legend”). **Groups** and **Clusters** as in the app; cluster rows show the **number only** (e.g. `1`, not `Cluster 1`). Page width split **7/8** tree, **1/8** legend.
 
 #### Layout details (unchanged behaviour, for reference)
-- Tip markers use **cluster** colors where clustering is active; label and connector colors use **group** / special-sequence rules (magenta for REF, subtype, founder, PDB as in the app).
+- Tip markers use **cluster** colors where clustering is active; **non-functional** tips add a **red cross** on the diamond (see §1). Label and connector colors use **group** / special-sequence rules (magenta for REF, subtype, founder, PDB as in the app).
 - Circular plot height grows as needed for long radial labels.
 
 ### Clear Tree
@@ -284,7 +311,7 @@ If BH(k) = 0, the adapted index is returned as ∞.
 ## 8. Color legend
 
 - **Groups:** Lists group labels and colors for sequence **names** (from Group).
-- **Clusters:** Lists cluster IDs (numeric labels) and colors for tree tips (from any clustering method). Noise appears when applicable.
+- **Clusters:** Lists cluster IDs (numeric labels) and colors for tree tips (from any clustering method). Noise appears when applicable. **Red is not used** in the cluster palette (reserved for the non-functional leaf cross on trees).
 - **Note:** The floating legend does **not** include an alignment-length or phylogenetic scale bar; phylogenetic scale bars appear only on **exported SVG** tree figures (see §3).
 - Cluster colors are removed when clustering is cleared (e.g. **None** or **Cancel**). Group colors are preserved after Cancel by rekeying group membership to the stripped (no `_cl-*`) names.
 
@@ -295,6 +322,7 @@ If BH(k) = 0, the adapted index is returned as ∞.
 | Feature        | Algorithm / formula |
 |----------------|---------------------|
 | Load sanitize  | A–Z, `-`, `*` kept; other chars → `X`; alert user. |
+| Functionality  | AA: ungapped M start, `*` end, no internal `*`; NT: translate frame 1 then same test; tag `functional`; report `s,f,nf` above filename and in SVG title; red cross on non-functional tree tips. |
 | Has subtype    | If off, no subtype index; toggling clears group/tree/cluster state. |
 | Group          | Split name by delimiter; group = field value; unique IDs. |
 | Sort           | REF, SubType (if any) fixed; others by group ID then name. |
@@ -307,7 +335,7 @@ If BH(k) = 0, the adapted index is returned as ∞.
 | Reroot         | Find founder leaf; reroot on edge to that leaf. |
 | Ladderize      | By weight: sort children by leaf count. By depth: sort by max root-to-leaf depth in subtree. |
 | Histogram      | Root-to-leaf distance = sum of branch lengths; bin and plot. |
-| SVG scale      | Auto: fit to 520 px (linear) / R=260 (circular, ½ px per unit). Fixed: branch length per cm; overflow check. DSI: expected depth (DSI × MPD) → 260 px (linear) / 130 px (circular); no overflow abort (clip right border); dotted expected-depth line. |
+| SVG scale      | Auto: fit to 520 px (linear) / R=260 (circular, ½ px per unit). Fixed: branch length per cm; overflow check. DSI: expected depth (DSI × MPD) → 260 px (linear) / 130 px (circular); no overflow abort (truncate at right border, half diamond + red cross if non-functional on clipped tips); dotted expected-depth line. |
 | Tree-clade     | DFS; new cluster when edge length > threshold; min-leaves → noise. |
 | Tree-cut       | Three depth cutoffs; BFS assign clusters; min-leaves → noise. |
 | Cluster None   | Clear `leafClusters`; strip `_cl-*`; keep groups. |

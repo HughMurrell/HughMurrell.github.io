@@ -234,10 +234,13 @@
             <div style="display:flex; gap:5px; align-items:center;">
                 <input type="file" id="inp-file" accept=".fasta,.fa,.fastq,.fq,.txt" style="display:none;">
                 <button id="btn-choose-file" type="button">Choose file</button>
-                <input type="text" id="inp-file-name" value="No file chosen" readonly style="min-width: 180px; max-width: 260px; padding: 4px 6px; font-size: 12px; color: #374151; background: #f9fafb; border: 1px solid #d1d5db; border-radius: 4px;">
+                <div style="display:flex; flex-direction:column; gap:1px;">
+                    <span id="inp-file-stats" style="font-size:11px; color:#6b7280; white-space:nowrap;">s=0, f=0, nf=0</span>
+                    <input type="text" id="inp-file-name" value="No file chosen" readonly style="min-width: 180px; max-width: 260px; padding: 4px 6px; font-size: 12px; color: #374151; background: #f9fafb; border: 1px solid #d1d5db; border-radius: 4px;">
+                </div>
                 <input type="file" id="inp-ref-file" accept=".fasta,.fa,.txt" style="display:none;">
                 <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; white-space:nowrap;">
-                    <input type="checkbox" id="chk-has-reference" checked>
+                    <input type="checkbox" id="chk-has-reference">
                     Has reference
                 </label>
                 <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; white-space:nowrap;">
@@ -987,12 +990,12 @@ const COLOR_PALETTE = [
     '#10b981', // Green (index 2 - for second group/cluster 2)
     '#f59e0b', // Amber (index 3 - for third group/cluster 3)
     '#8b5cf6', // Purple (index 4 - for fourth group/cluster 4)
-    '#ec4899', // Pink (index 5)
+    '#06b6d4', // Sky (index 5 — replaced pink; reserved red for non-functional marks)
     '#84cc16', // Lime (index 6)
     '#f97316', // Orange (index 7)
     '#6366f1', // Indigo (index 8)
     '#14b8a6', // Teal (index 9)
-    '#ef4444', // Red (index 10)
+    '#64748b', // Slate (index 10 — replaced red; reserved red for non-functional marks)
     '#fbbf24', // Yellow (index 11)
     '#a855f7', // Violet (index 12)
     '#22c55e', // Emerald (index 13)
@@ -1006,13 +1009,12 @@ const GROUP_LIGHT_BG = [
     '#d1fae5', // Light green
     '#fef3c7', // Light amber
     '#ede9fe', // Light purple
-    '#fce7f3', // Light pink
-    '#cffafe', // Light cyan
+    '#cffafe', // Light sky (index 5)
     '#ecfccb', // Light lime
     '#fed7aa', // Light orange
     '#e0e7ff', // Light indigo
     '#ccfbf1', // Light teal
-    '#fee2e2', // Light red
+    '#e2e8f0', // Light slate (index 10)
     '#fef3c7', // Light yellow
     '#f3e8ff', // Light violet
     '#d1fae5', // Light emerald
@@ -1080,7 +1082,7 @@ const state = {
     namesWidth: 200,
     refIndex: 0, 
     subtypeIndex: 1, // Sequence index used as subtype; may be out-of-range when subtype is not present
-    alignmentHasReference: true, // Whether the alignment file already includes the reference as its first sequence
+    alignmentHasReference: false, // Whether the alignment file already includes the reference as its first sequence
     alignmentHasSubtype: false, // Whether loaded alignments include a dedicated subtype sequence
     refMap: [], 
     epitopes: [], // Array of {name: string, regions: [{start: number, end: number}]}
@@ -1118,6 +1120,7 @@ const dom = {
     file: document.getElementById('inp-file'),
     btnChooseFile: document.getElementById('btn-choose-file'),
     fileNameDisplay: document.getElementById('inp-file-name'),
+    fileStatsDisplay: document.getElementById('inp-file-stats'),
     chkHasReference: document.getElementById('chk-has-reference'),
     chkHasSubtype: document.getElementById('chk-has-subtype'),
     refFile: document.getElementById('inp-ref-file'),
@@ -2164,6 +2167,7 @@ function clearAlignment() {
     state.currentFileName = null;
     state.founderSequenceName = null;
     updateLoadedFileNameDisplay('');
+    updateLoadedFileStatsDisplay();
     state.sequenceGroups = null;
     state.groupDelimiter = null;
     state.groupFieldNum = null;
@@ -2286,6 +2290,71 @@ function updateLoadedFileNameDisplay(fileName) {
     const trimmed = String(fileName || '').trim();
     dom.fileNameDisplay.value = trimmed || 'No file chosen';
     dom.fileNameDisplay.title = dom.fileNameDisplay.value;
+}
+
+/** Ungapped uppercase string from a gapped alignment row (array or string). */
+function sequenceToUngappedUpper(seq) {
+    const arr = Array.isArray(seq) ? seq : String(seq || '').split('');
+    return arr.filter(c => c !== '-' && c !== '.').map(c => String(c).toUpperCase()).join('');
+}
+
+/** Translate a gapped NT row to AA using the given reading-frame offset (0 = frame 1). */
+function translateDnaRowToAA(dnaArr, frameOffset) {
+    const aa = [];
+    const dna = Array.isArray(dnaArr) ? dnaArr : String(dnaArr || '').split('');
+    for (let i = frameOffset; i + 2 < dna.length; i += 3) {
+        const codon = dna.slice(i, i + 3).join('');
+        if (/[-.]/.test(codon)) aa.push('-');
+        else if (/[^ACGT]/i.test(codon)) aa.push('X');
+        else aa.push(CODON_TABLE[codon.toUpperCase()] || 'X');
+    }
+    return aa;
+}
+
+/** Functional AA: starts with M, ends with *, no internal stop codons (gaps ignored). */
+function isFunctionalAASequence(aaSeq) {
+    const s = sequenceToUngappedUpper(aaSeq);
+    if (!s.length) return false;
+    if (s[0] !== 'M') return false;
+    if (s[s.length - 1] !== '*') return false;
+    for (let i = 1; i < s.length - 1; i++) {
+        if (s[i] === '*') return false;
+    }
+    return true;
+}
+
+/** Set seq.functional on each loaded sequence (AA row directly; NT row via translation). */
+function annotateSequencesFunctionality(seqs, isAA) {
+    if (!seqs || !seqs.length) return;
+    const frameOffset = (state.frame || 1) - 1;
+    seqs.forEach(seq => {
+        if (!seq || !seq.seq) {
+            seq.functional = false;
+            return;
+        }
+        const aa = isAA ? seq.seq : translateDnaRowToAA(seq.seq, frameOffset);
+        seq.functional = isFunctionalAASequence(aa);
+    });
+}
+
+function getSequenceFunctionalityStats() {
+    const n = state.rawSequences ? state.rawSequences.length : 0;
+    let f = 0;
+    let nf = 0;
+    if (n > 0) {
+        state.rawSequences.forEach(seq => {
+            if (seq && seq.functional === true) f++;
+            else nf++;
+        });
+    }
+    return { n, f, nf };
+}
+
+function updateLoadedFileStatsDisplay() {
+    if (!dom.fileStatsDisplay) return;
+    const { n, f, nf } = getSequenceFunctionalityStats();
+    dom.fileStatsDisplay.textContent = `s=${n}, f=${f}, nf=${nf}`;
+    dom.fileStatsDisplay.title = `${n} sequences, ${f} functional, ${nf} non-functional`;
 }
 
 function applySubtypeToggleReset(hasSubtype) {
@@ -3062,9 +3131,8 @@ function applyPrune() {
     recalc();
     updateColorLegend();
     calculateNamesWidth();
+    updateLoadedFileStatsDisplay();
 }
-
-// --- Add Founder Sequence ---
 function showSubtypeModal() {
     const medoidRadio = document.getElementById('founder-source-medoid');
     if (medoidRadio) medoidRadio.checked = true;
@@ -3974,6 +4042,66 @@ function getSvgLeafTipFill(nodeName) {
     return fillColor;
 }
 
+function findRawSequenceForTreeNode(nodeName) {
+    if (!nodeName || !state.rawSequences || !state.rawSequences.length) return null;
+    const direct = state.rawSequences.find(s => s.name === nodeName);
+    if (direct) return direct;
+    const stripped = normalizeSequenceName(nodeName);
+    for (let i = 0; i < state.rawSequences.length; i++) {
+        if (normalizeSequenceName(state.rawSequences[i].name) === stripped) {
+            return state.rawSequences[i];
+        }
+    }
+    return null;
+}
+
+function isTreeLeafNonFunctional(nodeName) {
+    const seq = findRawSequenceForTreeNode(nodeName);
+    return !!(seq && seq.functional === false);
+}
+
+/** Red cross overlay for non-functional tip diamonds (canvas). */
+function drawNonFunctionalLeafMark(ctx, x, y, size) {
+    ctx.save();
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 2;
+    const cs = size * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(x - cs, y - cs);
+    ctx.lineTo(x + cs, y + cs);
+    ctx.moveTo(x + cs, y - cs);
+    ctx.lineTo(x - cs, y + cs);
+    ctx.stroke();
+    ctx.restore();
+}
+
+/** SVG: red cross for non-functional leaves (no diamond border). */
+function appendSvgNonFunctionalLeafMark(parts, cx, cy, d) {
+    const cs = d * 0.55;
+    parts.push(`<g stroke="#dc2626" stroke-width="2" fill="none">\n`);
+    parts.push(`<line x1="${cx - cs}" y1="${cy - cs}" x2="${cx + cs}" y2="${cy + cs}"/>\n`);
+    parts.push(`<line x1="${cx + cs}" y1="${cy - cs}" x2="${cx - cs}" y2="${cy + cs}"/>\n`);
+    parts.push('</g>\n');
+}
+
+/** SVG: red cross for non-functional clipped (right-half) tip diamonds. */
+function appendSvgNonFunctionalClippedLeafMark(parts, boundaryX, y, d) {
+    const cx = boundaryX - d;
+    const cs = d * 0.45;
+    const markCx = cx + d * 0.45;
+    parts.push(`<g stroke="#dc2626" stroke-width="2" fill="none">\n`);
+    parts.push(`<line x1="${markCx - cs}" y1="${y - cs}" x2="${markCx + cs}" y2="${y + cs}"/>\n`);
+    parts.push(`<line x1="${markCx + cs}" y1="${y - cs}" x2="${markCx - cs}" y2="${y + cs}"/>\n`);
+    parts.push('</g>\n');
+}
+
+/** Right half of a tip diamond at the plot boundary (apex on boundary, points right); cluster-colored clipped-leaf marker. */
+function appendSvgClippedLeafHalfDiamond(parts, boundaryX, y, tipFill, d = 10, nonFunctional = false) {
+    const cx = boundaryX - d;
+    parts.push(`<polygon points="${cx},${y - d} ${boundaryX},${y} ${cx},${y + d}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/>\n`);
+    if (nonFunctional) appendSvgNonFunctionalClippedLeafMark(parts, boundaryX, y, d);
+}
+
 /** Tip label fill: group / special sequence colors (same as name panel). */
 function getSvgLeafLabelFill(nodeName) {
     const r = findViewSeqRowForTreeNode(nodeName);
@@ -4048,9 +4176,11 @@ function getSvgTreeTitleLines() {
         maxDepthStr = formatThreeSignificantFigures(state.tree.maxDepth);
     }
 
+    const { n, f, nf } = getSequenceFunctionalityStats();
+
     return [
         escapeXml(fastaName),
-        escapeXml(`Infer: ${inferLabel} | Max depth: ${maxDepthStr} | Cluster: ${clusterLabel}`)
+        escapeXml(`Infer: ${inferLabel} | s=${n}, f=${f}, nf=${nf} | Max depth: ${maxDepthStr} | Cluster: ${clusterLabel}`)
     ];
 }
 
@@ -4461,8 +4591,12 @@ function buildTreeSvgCircular(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
         const tipFill = getSvgLeafTipFill(node.name);
         const deg = (th * 180) / Math.PI;
         const diamondRot = deg + 90;
+        const nf = isTreeLeafNonFunctional(node.name);
         const pts = `${p.x.toFixed(2)},${(p.y - diamond).toFixed(2)} ${(p.x + diamond).toFixed(2)},${p.y.toFixed(2)} ${p.x.toFixed(2)},${(p.y + diamond).toFixed(2)} ${(p.x - diamond).toFixed(2)},${p.y.toFixed(2)}`;
-        parts.push(`<g transform="rotate(${diamondRot}, ${p.x.toFixed(2)}, ${p.y.toFixed(2)})"><polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/></g>\n`);
+        parts.push(`<g transform="rotate(${diamondRot}, ${p.x.toFixed(2)}, ${p.y.toFixed(2)})">`);
+        parts.push(`<polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/>`);
+        if (nf) appendSvgNonFunctionalLeafMark(parts, p.x, p.y, diamond);
+        parts.push('</g>\n');
     });
     parts.push('</g>\n');
 
@@ -4539,10 +4673,15 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
     parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`);
     parts.push(`<rect width="${totalW}" height="${totalH}" fill="white"/>\n`);
-    // Clip only the right border (at leftPad + branchW) so branches can't run into the seq-name column;
-    // left/top/bottom are left unbounded so nothing is clipped on those sides.
     const clipRightEdge = leftPad + branchW;
-    parts.push(`<defs><clipPath id="clipTreeLinearSvg"><rect x="-100000" y="-100000" width="${100000 + clipRightEdge}" height="200000"/></clipPath></defs>\n`);
+    /** Draw horizontal branch segment; truncate at right boundary (clipped leaves marked with a half diamond). */
+    function drawHorizBranch(x1, y, x2) {
+        if (x2 <= clipRightEdge) {
+            parts.push(`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/>\n`);
+        } else if (x1 < clipRightEdge) {
+            parts.push(`<line x1="${x1}" y1="${y}" x2="${clipRightEdge}" y2="${y}"/>\n`);
+        }
+    }
     const titleLines = getSvgTreeTitleLines();
     const titleLineX = padding + 5;
     parts.push(`<g font-family="sans-serif" fill="#111827" text-anchor="start">\n`);
@@ -4551,7 +4690,6 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
     parts.push(`</g>\n`);
     // Main plot group shifted down to leave room for the title.
     parts.push(`<g transform="translate(${padding},${padding + titleSpace})" stroke="#374151" stroke-width="1" fill="none">\n`);
-    parts.push(`<g clip-path="url(#clipTreeLinearSvg)">\n`);
 
     function nx(node) {
         return leftPad + node.xDepth * xScale;
@@ -4575,11 +4713,11 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
                 drawNode(c);
                 const cx = nx(c);
                 const cy = ny(c);
-                parts.push(`<line x1="${x}" y1="${cy}" x2="${cx}" y2="${cy}"/>\n`);
+                drawHorizBranch(x, cy, cx);
                 if (cy < minY) minY = cy;
                 if (cy > maxY) maxY = cy;
             });
-            if (minY !== Infinity) {
+            if (minY !== Infinity && x <= clipRightEdge) {
                 parts.push(`<line x1="${x}" y1="${minY}" x2="${x}" y2="${maxY}"/>\n`);
             }
             markerInternalNodes.push(node);
@@ -4602,27 +4740,30 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
         parts.push(`<g stroke-width="1.5" stroke-dasharray="">\n`);
         if (depth1 > 0) {
             const x1 = nx({ xDepth: depth1 });
-            parts.push(`<line x1="${x1}" y1="0" x2="${x1}" y2="${totalH}" stroke="#ef4444"/>\n`);
+            if (x1 <= clipRightEdge) {
+                parts.push(`<line x1="${x1}" y1="0" x2="${x1}" y2="${totalH}" stroke="#ef4444"/>\n`);
+            }
         }
         if (depth2 > depth1) {
             const x2 = nx({ xDepth: depth2 });
-            parts.push(`<line x1="${x2}" y1="0" x2="${x2}" y2="${totalH}" stroke="#f59e0b"/>\n`);
+            if (x2 <= clipRightEdge) {
+                parts.push(`<line x1="${x2}" y1="0" x2="${x2}" y2="${totalH}" stroke="#f59e0b"/>\n`);
+            }
         }
         if (depth3 > depth2) {
             const x3 = nx({ xDepth: depth3 });
-            parts.push(`<line x1="${x3}" y1="0" x2="${x3}" y2="${totalH}" stroke="#10b981"/>\n`);
+            if (x3 <= clipRightEdge) {
+                parts.push(`<line x1="${x3}" y1="0" x2="${x3}" y2="${totalH}" stroke="#10b981"/>\n`);
+            }
         }
         parts.push('</g>\n');
     }
 
-    parts.push('</g>\n');
-
-    // In DSI mode branches can extend past the plot width; clip the tip/internal markers to the branch region.
-    const markerClipAttr = isDsiScale ? ' clip-path="url(#clipTreeLinearSvg)"' : '';
-    parts.push(`<g stroke="#374151" fill="none"${markerClipAttr}>\n`);
+    parts.push(`<g stroke="#374151" fill="none">\n`);
     markerInternalNodes.forEach(node => {
         const x = nx(node);
         const y = ny(node);
+        if (x > clipRightEdge) return;
         parts.push(`<circle cx="${x}" cy="${y}" r="3" fill="#374151" stroke="none"/>\n`);
     });
     markerLeafNodes.forEach(node => {
@@ -4630,8 +4771,14 @@ function buildTreeSvgLinear(scaleMode = 'auto', fixedBranchPerCm, dsiParams) {
         const y = ny(node);
         const tipFill = getSvgLeafTipFill(node.name);
         const d = 10;
+        const nf = isTreeLeafNonFunctional(node.name);
+        if (x > clipRightEdge) {
+            appendSvgClippedLeafHalfDiamond(parts, clipRightEdge, y, tipFill, d, nf);
+            return;
+        }
         const pts = `${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`;
         parts.push(`<polygon points="${pts}" fill="${tipFill}" stroke="#374151" stroke-width="0.5"/>\n`);
+        if (nf) appendSvgNonFunctionalLeafMark(parts, x, y, d);
     });
     parts.push('</g>\n');
 
@@ -4901,8 +5048,7 @@ function finalizeLoad(seqs) {
     }
     
     state.pastedNameCounter = state.rawSequences.length + 1;
-    updateLoadedFileNameDisplay(state.currentFileName);
-    
+
     // Detect sequence type and set mode accordingly
     const detectedType = detectSequenceType(seqs);
     if (detectedType === 'AA') {
@@ -4914,6 +5060,10 @@ function finalizeLoad(seqs) {
         state.isAASequence = false; // Sequences are DNA
         setMode('NT', false);
     }
+
+    annotateSequencesFunctionality(state.rawSequences, state.isAASequence);
+    updateLoadedFileStatsDisplay();
+    updateLoadedFileNameDisplay(state.currentFileName);
     
     // Re-apply startup disabled state, then enable only buttons valid after a fresh load
     disableButtonsOnStartup();
@@ -8454,6 +8604,7 @@ function convertRawSequencesNTtoAA() {
         if (s.isPdbChain) out.isPdbChain = true;
         if (s.chainLength != null) out.chainLength = s.chainLength;
         if (s.alignedLength != null) out.alignedLength = s.alignedLength;
+        if (s.functional != null) out.functional = s.functional;
         return out;
     });
     var maxLen = 0;
@@ -8461,6 +8612,8 @@ function convertRawSequencesNTtoAA() {
     converted.forEach(function (s) { while (s.seq.length < maxLen) s.seq.push('-'); });
     state.rawSequences = converted;
     state.isAASequence = true;
+    annotateSequencesFunctionality(state.rawSequences, true);
+    updateLoadedFileStatsDisplay();
 }
 
 // --- Epitope Loading and Selection ---
@@ -9569,7 +9722,10 @@ function render() {
                 }
                 
                 ctxTree.fillStyle = fillColor;
-                drawDiamond(ctxTree, x, y, 10); // Doubled from 5 to 10
+                drawDiamond(ctxTree, x, y, 10);
+                if (isTreeLeafNonFunctional(node.name)) {
+                    drawNonFunctionalLeafMark(ctxTree, x, y, 10);
+                }
             }
         };
 
